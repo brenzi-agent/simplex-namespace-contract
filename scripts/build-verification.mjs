@@ -205,6 +205,17 @@ export function assembleVerification({
     },
   }
 
+  if (addresses.SimplexSponsor) {
+    targets.SimplexSponsor = {
+      address: addresses.SimplexSponsor,
+      artifact: 'contracts/simplex/SimplexSponsor.sol/SimplexSponsor.json',
+      constructorArgs: encodeAbiParameters(
+        [{ type: 'address' }, { type: 'address' }],
+        [addresses.ETHRegistrarController, addresses.BaseRegistrarImplementation],
+      ),
+    }
+  }
+
   if (addresses.DummyGatewayProvider) {
     targets.DummyGatewayProvider = {
       address: addresses.DummyGatewayProvider,

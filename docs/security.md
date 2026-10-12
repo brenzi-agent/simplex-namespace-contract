@@ -69,7 +69,9 @@ Two names-v2 changes narrow this window. `withdraw()` now pays `beneficiary`,
 not `owner()`, and the beneficiary is set *before* the ownership transfer and can
 afterwards only be changed by itself — so revenue is out of the deployer's reach
 from the first block. And `setRegistrarAllowance` is beneficiary-only, so the
-deployer cannot fund a registrar even while it still owns everything else.
+deployer cannot fund a registrar even while it still owns everything else. It can
+still point the controller at a sponsor of its own with `setSponsor`, but that is
+no more than the upgrade authority it already holds in this window.
 
 **Accepted because** it is inherent to the ephemeral-deployer + 2-step pattern
 and cannot be closed from the deploy script (only the cold owner can accept).
@@ -304,22 +306,25 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 
 | Function | Who | Notes |
 |---|---|---|
-| `setRegistrarAllowance(registrar, attoUSD)` | beneficiary only | Replaces, not adds. Zeroing it is the kill switch for a compromised registrar and must take one transaction. |
+| `SimplexSponsor.setRegistrarAllowance(registrar, attoUSD)` | the controller's beneficiary only | Replaces, not adds. Zeroing it is the kill switch for a compromised registrar and must take one transaction. |
 | `setBeneficiary(address)` | owner while unset, beneficiary thereafter | Set before the ownership handover, so revenue is independent of the deploy key from the first block. |
 | `setPublicSalesOpen(bool)` | owner **or** beneficiary | Restrictive direction on the fast key: an exploit in the payable path accrues harm per block. Dies at `freeze()`. |
 | `addReservedNames(string[])` | owner **or** beneficiary | Also fast, and for a sharper reason: a scheduled reservation would tell a squatter which name is valuable and how long it stays unprotected. |
 | `removeReservedNames`, `registerReserved`, `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. |
-| `freeze()` | owner only | One-way. Makes the implementation permanent and seals `setPublicSalesOpen`. Refuses while sales are closed, so a mis-ordered freeze cannot shut the payable path forever. |
-| `registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. |
-| `transferWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
+| `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Dies at `freeze()`. |
+| `freeze()` | owner only | One-way. Makes the implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed, so a mis-ordered freeze cannot shut the payable path forever. |
+| `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
+| `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
+| `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient; nothing else can move a name to them. |
 
 ### What `freeze()` does not stop
 
 `freeze()` fixes the implementation and seals the sales switch. It does **not**
 end issuance, and the plan should not be read as saying it does:
 
-- the guardian can still fund a registrar (`setRegistrarAllowance`) and that
-  registrar can still mint names through `registerWithCredit`;
+- the guardian can still fund a registrar (`setRegistrarAllowance`, on the
+  sponsor) and that registrar can still mint names through `registerWithCredit`,
+  each to an owner who signed for it;
 - the owner can still `addReservedNames` and `registerReserved`.
 
 That is deliberate — brand reservation and outreach have to continue for the
@@ -351,10 +356,13 @@ has no generation, so **selling the 2LD does not move it**: after the sale
 `pay.alice.simplex` can still be owned — and still resolve — to the seller,
 while `alice.simplex` belongs to the buyer.
 
-This cannot be prevented on-chain. Registry authority over a subnode belongs to
-the parent's owner by construction, and the registrar's soulbinding works only
-because the registrar happens to own the nodes it created; a 2LD owner can pull
-even a *tracked* subname back out the same way.
+Registry authority over a subnode belongs to the parent's owner by construction,
+and the registrar's soulbinding works only because the registrar happens to own
+the nodes it created; a 2LD owner can pull even a *tracked* subname back out the
+same way. Since recipient consent the registry refuses to make anyone but the
+caller the owner of such a node, so a shadow subnode can no longer name a third
+party — but its holder can still keep one for themselves, and that cannot be
+prevented on-chain.
 
 What makes it a disclosure problem rather than a theft one is that it is always
 recoverable: `setSubnodeOwner` is authorised against the **parent**, so the new
@@ -370,6 +378,43 @@ So the requirement lands on the buyer, and on whatever surfaces a name for sale:
 - **After buying, overwrite anything unexpected.** One `setSubnodeOwner` per
   label; no cooperation from the seller is needed.
 - A subname's records survive the overwrite, so re-point or clear them too.
+
+### Recipient consent
+
+An address can be tied on chain to content it never chose: register a name with
+illegitimate records to it, transfer one to it, or make it the owner of a node,
+and the chain records it as the holder for good. So nothing is given to an
+address that did not agree, and agreeing means being the caller or signing an
+EIP-712 intent ([`plans/recipient-consent.md`](./plans/recipient-consent.md)):
+
+- the payable `register` registers to the caller only; `SimplexSponsor` checks the
+  owner's `RegisterName` signature, which covers the label, the resolver and every
+  record written at registration;
+- a transfer is an offer (`approve` / `approveWithSig`) that only the recipient can
+  complete (`transferFrom` to itself / `claimWithSig`), and an offer dies with any
+  change of holder;
+- `ENSRegistry` makes nobody the owner of a node but the caller, except where the
+  parent is the root or a TLD, whose owners — `Root` and the registrar — assign
+  names whose consent was already checked; `reclaim` points at the holder only.
+
+Accepted:
+
+- **`registerReserved` is exempt.** The admin hands a reserved name to a brand
+  without the brand's signature. It is an admin call, and public.
+- **An offer is public before it is accepted.** `Approval`, and the announcement
+  when one is sent, name the recipient though nothing has moved.
+- **Records can still name someone else.** A text record can carry another
+  person's SimpleX link; the client shows a name against a profile only with that
+  profile's `SimplexDomainProof`.
+- **No marketplace sales.** A settlement contract that delivers to the buyer is
+  neither the buyer nor signed by them. Counting a buyer's operator approval as
+  consent was turned down: anyone who had approved a marketplace could then be
+  sent names through it.
+- **No push to a burn address.** A holder who wants rid of a name approves a
+  contract that takes it.
+- **The root of trust is no longer additive.** The rule is a restriction in
+  `ENSRegistry` itself. The upstream `ReverseRegistrar`, which hands each address
+  a node under `addr.reverse`, cannot run against it; SNRC deploys none.
 
 ### Client and relayer version coupling
 
@@ -434,8 +479,9 @@ hot.
 `available(id)` is `expiries[id] + GRACE_PERIOD < block.timestamp`. That check is
 in the **immutable** registrar, so no owner power on any contract — including an
 arbitrary controller upgrade before the freeze — can seize, transfer or re-point
-a name someone holds. `reclaim` requires `_isApprovedOrOwner`; `transferWithSig`
-requires the owner's signature and a grace-aware `ownerOf`.
+a name someone holds. `reclaim` requires `_isApprovedOrOwner` and points the node
+at the holder only; `approveWithSig` requires the holder's signature and a
+grace-aware `ownerOf`, and only the recipient can complete the transfer.
 
 ### Adversarial review (three expert personas + independent refutation)
 

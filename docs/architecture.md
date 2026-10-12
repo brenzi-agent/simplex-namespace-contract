@@ -86,6 +86,7 @@ all-zero price oracle it is also free. `.simplex` shares the same
 User → SimplexController.commit(hash)
      → wait 60s (minCommitmentAge)
      → SimplexController.register{value: price}(Registration)
+       ├─ require(owner == msg.sender)          ← NEW: recipient consent
        ├─ _checkSimplexGates(label)             ← NEW
        │   ├─ require(label.strlen ≥ minCharLength)
        │   ├─ require(!reservedNames[hash(label)])
@@ -95,18 +96,24 @@ User → SimplexController.commit(hash)
        ├─ commit-reveal age check              ← unchanged
        ├─ base.registerWithLabel(label, owner, duration)  ← v3: passes the
        │      plaintext label so the registrar records labelOf (hash→name)
-       ├─ ens.setRecord(node, owner, resolver, 0)    ← unchanged (if resolver ≠ 0)
+       ├─ ens.setRecord(node, this, resolver, 0)     ← if resolver ≠ 0; the owner
+       │      arrives with the token below (the registry gives a node only to
+       │      its caller)
        ├─ resolver.multicallWithNodeCheck(...)        ← unchanged
-       ├─ base.transferFrom(this, owner, labelhash)  ← unchanged
+       ├─ base.transferFrom(this, owner, labelhash)  ← a controller may hand
+       │      a name over; anyone else must be its recipient
        └─ refund excess ETH                            ← unchanged
 
    (the reverse-record branch is gone — names-v2 removed reverse resolution, and
     makeCommitment now rejects any non-zero reverseRecord up front)
 ```
 
-New vs ENS's `ETHRegistrarController.register`: the `_checkSimplexGates` line, and
-`base.registerWithLabel(label,…)` in place of `base.register(labelhash,…)` so the
-registrar records the on-chain label index. Everything else is identical.
+New vs ENS's `ETHRegistrarController.register`: the owner-is-caller check, the
+`_checkSimplexGates` line, `base.registerWithLabel(label,…)` in place of
+`base.register(labelhash,…)` so the registrar records the on-chain label index,
+and the controller rather than the owner in `setRecord`. Registering for someone
+else goes through `SimplexSponsor.registerWithCredit`, with the owner's
+`RegisterName` signature ([`plans/recipient-consent.md`](./plans/recipient-consent.md)).
 
 ## SimpleX data on-chain
 

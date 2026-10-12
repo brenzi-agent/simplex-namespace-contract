@@ -14,8 +14,14 @@ trial run), not `.eth`. Each TLD is its own separate deployment.
 
 **Names are ordinary NFTs.** ENS added a "NameWrapper" that turns names into a
 more complex token with programmable locks ("fuses"). SNRC removed all of it. A
-name is a plain ERC-721 NFT — it shows up in your wallet and trades on any
-marketplace with no special handling.
+name is a plain ERC-721 NFT and shows up in your wallet.
+
+**Nobody gets a name they didn't ask for.** In ENS anyone can register a name to
+your address or send you one, and the chain then shows it as yours. In SNRC a
+name goes only to an address that agreed — by sending the transaction or by
+signing. Sending a name is an offer the recipient takes; the sender cannot push
+it. The price is that names don't sell on marketplaces, which deliver to the
+buyer without the buyer's say.
 
 **The picture is drawn on-chain.** ENS renders a name's NFT image on a hosted
 server. SNRC builds the image and all its metadata entirely on-chain, so it needs

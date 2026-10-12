@@ -5,6 +5,12 @@ Target: `.simplex` deployed on mainnet 30 Oct 2026, governance handover 2 Nov, a
 4 Nov, investor window 12 Nov, public registration 12 Dec. Custody and the freeze are in
 [`names-v2-launch-to-freeze-plan.md`](./names-v2-launch-to-freeze-plan.md).
 
+Amended by [`recipient-consent.md`](./recipient-consent.md): the sponsored path
+(`registerWithCredit`, `renewWithCredit`, the registrar allowance) moved to
+`SimplexSponsor` and needs the owner's signature, and `transferWithSig` became
+`approveWithSig` plus the recipient's `claimWithSig`. The rest of this plan is the
+record of names-v2 as built.
+
 ## 1. Table of contents
 
 1. Table of contents
@@ -694,6 +700,10 @@ These carry security properties the contracts deliberately do not:
 - Treat the thresholds as tunable configuration, not constants.
 - Monitor the registrar allowance with generous headroom, in money rather than in
   operations: exhaustion is a hard service stop only the guardian Safe can clear.
+- Get the owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`)
+  before registering for them, and submit it with `registerWithCredit`.
+- Relay a transfer as two intents: the holder's `approveWithSig`, then the
+  recipient's `claimWithSig`. Nothing moves until the recipient claims.
 
 ## 10. Test plan
 

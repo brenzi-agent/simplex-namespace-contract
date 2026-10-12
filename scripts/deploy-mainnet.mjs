@@ -251,6 +251,14 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
   // ever holding ETH.
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
+  // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
+  // and the owner's signed consent, split out of the controller, which trusts it
+  // until `freeze`. The guardian funds registrars on this contract.
+  const sponsor = await deploy('SimplexSponsor',
+    'simplex/SimplexSponsor.sol/SimplexSponsor.json',
+    [controller.address, baseRegistrar.address])
+  await write(controller, 'setSponsor', [sponsor.address])
+
   const dummyGateway = await deploy('DummyGatewayProvider',
     'mocks/DummyGatewayProvider.sol/DummyGatewayProvider.json')
   const universalResolver = await deploy('UniversalResolver',
@@ -258,7 +266,9 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
     [account.address, ensRegistry.address, dummyGateway.address])
 
   await write(ensRegistry, 'setResolver', [tldNode, publicResolver.address])
-  await write(ensRegistry, 'setOwner', [tldNode, baseRegistrar.address])
+  // The registry hands a node only to its caller, except from the root or a TLD,
+  // so the TLD goes to the registrar from the root.
+  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), baseRegistrar.address])
 
   await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), account.address])
   await write(ensRegistry, 'setResolver', [namehash('eth'), publicResolver.address])
@@ -291,9 +301,12 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
     // pointer on the deploy key, which is destroyed after the handover. The
     // vendored oracle `.testing` runs has no owner at all.
     if (!isTesting) await write(priceOracle, 'transferOwnership', [ownerAddress])
-    await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), ownerAddress])
-    await write(ensRegistry, 'setOwner', [namehash('data.eth'), ownerAddress])
-    await write(ensRegistry, 'setOwner', [namehash('eth'), ownerAddress])
+    // The registry gives a node only to its caller, except from the root or a
+    // TLD. data.eth is neither, so eth-usd.data.eth cannot be handed on: the
+    // deploy key drops it, and data.eth's new owner can take it back.
+    await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
+    await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), ownerAddress])
+    await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), ownerAddress])
     await write(ensRegistry, 'setOwner', [zeroHash, ownerAddress])
     await write(controller, 'transferOwnership', [ownerAddress])
   }
@@ -312,6 +325,7 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
     // ETHRegistrarController proxy. Surfaced so Etherscan source
     // verification can target both impl + proxy.
     SimplexControllerImpl: controllerImpl.address,
+    SimplexSponsor: sponsor.address,
     [isTesting ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     // 3rd constructor arg of UniversalResolver — kept so verification
@@ -379,6 +393,8 @@ async function verifyWiring(publicClient, addresses) {
     () => read(controller, [], ADDR, 'defaultResolver'))
   await check('controller beneficiary is the guardian', guardianAddress,
     () => read(controller, [], ADDR, 'beneficiary'))
+  await check('controller sponsor', addresses.SimplexSponsor,
+    () => read(controller, [], ADDR, 'sponsor'))
   await check('controller nftGateEnabled', String(nftGateEnabled),
     () => read(controller, [], [{ type: 'bool' }], 'nftGateEnabled'))
   await check('controller minCharLength', '6',

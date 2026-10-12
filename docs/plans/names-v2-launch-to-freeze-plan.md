@@ -63,9 +63,9 @@ multi-signer rotation are deferred to GOV8, not abandoned.
 | Key | GOV2 until GOV9 | After GOV9 |
 |---|---|---|
 | Deploy key | nothing | nothing |
-| Admin key | upgrade the controller; `removeReservedNames`; `registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls and without `freeze()`, since both are used up |
-| Guardian key | `addReservedNames`; `setPublicSalesOpen`; `setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
-| Registrar hot wallet | `registerWithCredit`; `renewWithCredit`; and relaying signed user requests: `transferWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | same |
+| Admin key | upgrade the controller; `setSponsor`; `removeReservedNames`; `registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
+| Guardian key | `addReservedNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
+| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | same |
 | Anyone | `commit`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
 
 Until GOV8 every call in this table takes effect when it is signed. After GOV8 the admin's
@@ -92,7 +92,8 @@ rather than edited.
 
 No key can take, transfer or re-point a name somebody owns. `_register` requires
 `available(id)`, false until 90 days past expiry, and that check lives in the immutable
-registrar. `reclaim` needs the token holder. `transferWithSig` needs the owner's signature.
+registrar. `reclaim` needs the token holder. `approveWithSig` needs the owner's signature, and
+only the recipient can complete a transfer.
 After GOV9 no key can change the controller's code either, so no key can write records on a
 name it does not own. That matters because the controller is `trustedETHController` on the
 resolver, and a hostile upgrade would abuse exactly that authority.
@@ -312,7 +313,7 @@ destroyed only once all eight calls have landed and those checks pass. That is G
 
 Caller: **guardian key**.
 
-1. `controller.setRegistrarAllowance(registrarHotWallet, N)`, with `N` in **attoUSD**, sized
+1. `sponsor.setRegistrarAllowance(registrarHotWallet, N)`, with `N` in **attoUSD**, sized
    to expected sales plus headroom.
 
 A sponsored registration or renewal deducts that name's own list price, so the allowance
@@ -323,7 +324,7 @@ ones.
 There is no separate step to register a registrar: any address with a non-zero allowance is
 one, and zero means it is not. The hot wallet also needs its own ETH for gas, because the
 allowance authorises spending but does not pay for it. `setRegistrarAllowance` is
-beneficiary-only and does not depend on who owns the controller, so it works regardless of
+beneficiary-only (the controller's beneficiary) and does not depend on who owns the controller, so it works regardless of
 how far the handover has got.
 
 ### A4. Open public sales (GOV7)
@@ -366,8 +367,8 @@ in brackets.
 |---|---|---|
 | Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `controller.addReservedNames([name])` |
 | Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `controller.registerReserved(label, brandAddr, duration)` |
-| Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `controller.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
-| Cut off a compromised registrar | guardian key *(guardian Safe, 2 sigs)* | `controller.setRegistrarAllowance(registrar, 0)` |
+| Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
+| Cut off a compromised registrar | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, 0)` |
 | Pause payable sales | guardian key *(guardian Safe, 2 sigs)* | `controller.setPublicSalesOpen(false)` |
 | Change prices | admin key *(admin Safe, timelock, 7 days)* | `priceOracle.setPrices(base, rungs)`; replaces base and rungs together, and rejects a curve where a shorter name is cheaper than a longer one |
 | Replace a retired ETH/USD feed | admin key *(admin Safe, timelock, 7 days)* | `priceOracle.setUsdOracle(feed, decimals)`; the scale is explicit, since the interface has no `decimals()` to read |

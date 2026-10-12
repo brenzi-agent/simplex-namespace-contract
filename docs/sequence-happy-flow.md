@@ -267,7 +267,9 @@ sequenceDiagram
     participant P as PublicResolver
 
     note over A,P: pre: Alice holds the alice.testing NFT#59; mobile.alice.testing<br/>exists (registrar-owned) with simplex.contact = link
-    A->>B: transferFrom(Alice, Bob, tokenId)
+    A->>B: approve(Bob, tokenId)
+    note over A,B: the offer: nothing moves until Bob takes it
+    BOB->>B: transferFrom(Alice, Bob, tokenId)
     note over B: _beforeTokenTransfer auto-reclaim (real transfer:<br/>from!=0, to!=0, ens.owner(baseNode)==self).<br/>generation is NOT bumped (unlike re-registration, 7b)
     B->>R: setSubnodeOwner(baseNode, tokenId, Bob)
     note over B,R: ens.owner("alice.testing") is now Bob —<br/>the 2LD registry node follows the token in the SAME tx

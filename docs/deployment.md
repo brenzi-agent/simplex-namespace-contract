@@ -357,14 +357,17 @@ key. `setPriceOracle` deliberately survives `freeze()`.
   `register()` only. The credited path, `registerReserved` and both renew paths
   are exempt, so pausing never blocks the app-store flow or a renewal. Two-way
   until `freeze()`, then sealed in its current position.
-- `setRegistrarAllowance(address,uint256)` — **beneficiary only**. The registrar's
-  spending limit in attoUSD; a sponsored registration or renewal deducts the
+- `setSponsor(address)` — owner-only, refused after `freeze()`. The
+  `SimplexSponsor` the controller lets register and renew without value; the
+  deploy scripts set it.
+- `SimplexSponsor.setRegistrarAllowance(address,uint256)` — **the controller's
+  beneficiary only**. The registrar's spending limit in attoUSD; a sponsored registration or renewal deducts the
   name's own list price. Replaces rather than adds, so zeroing it is a
   one-transaction kill switch for a compromised registrar.
 - `setBeneficiary(address)` — owner while unset, beneficiary thereafter. Set it
   **before** transferring ownership, or the deploy key controls revenue.
-- `freeze()` — owner-only, one-way. Makes the implementation permanent and seals
-  the sales switch. Refuses while sales are closed. There is no `setTreasury`;
+- `freeze()` — owner-only, one-way. Makes the implementation and the sponsor
+  permanent and seals the sales switch. Refuses while sales are closed. There is no `setTreasury`;
   `withdraw()` is permissionless and pays `beneficiary`.
 
 ### Registering a registrar service
@@ -373,12 +376,15 @@ There is no separate registration step: any address with a non-zero allowance is
 a registrar, and zero means it is not one. From the guardian key:
 
 ```
-controller.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 100000000000000000000000)  // $100,000
+sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 100000000000000000000000)  // $100,000
 ```
 
 The hot wallet also needs its own ETH for gas — the allowance authorises, it does
 not pay. Kill switch, same key, no delay:
-`controller.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 0)`.
+`sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 0)`. The registrar calls
+`sponsor.registerWithCredit(registration, deadline, sig)`, where `sig` is the
+owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`), unless the
+registrar registers to itself.
 
 ### Upgrading the controller (UUPS)
 

@@ -194,6 +194,14 @@ async function main() {
   await write(baseRegistrar, 'setSubnameHook', [subnameRegistrar.address])
   await write(baseRegistrar, 'setMaxLabelLength', [63n])
   await write(controller, 'setDefaultResolver', [publicResolver.address])
+
+  // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
+  // and the owner's signed consent, split out of the controller, which trusts it
+  // until `freeze`. The guardian funds registrars on this contract.
+  const sponsor = await deploy('SimplexSponsor',
+    'simplex/SimplexSponsor.sol/SimplexSponsor.json',
+    [controller.address, baseRegistrar.address])
+  await write(controller, 'setSponsor', [sponsor.address])
   await write(controller, 'setBeneficiary', [account.address])
   await write(controller, 'setPublicSalesOpen', [true])
 
@@ -205,7 +213,9 @@ async function main() {
     [account.address, ensRegistry.address, dummyGateway.address])
 
   await write(ensRegistry, 'setResolver', [tldNode, publicResolver.address])
-  await write(ensRegistry, 'setOwner', [tldNode, baseRegistrar.address])
+  // The registry hands a node only to its caller, except from the root or a TLD,
+  // so the TLD goes to the registrar from the root.
+  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), baseRegistrar.address])
   console.log(`.${tld} node transferred to BaseRegistrar`)
 
   // The frontend's `useEthPrice` resolves eth-usd.data.eth -> oracle on chain.
@@ -254,9 +264,12 @@ async function main() {
     // Transfer them explicitly so the deployer can't change the price
     // oracle pointer or rebind the reverse namespace post-handoff.
     await write(ensRegistry, 'setOwner', [namehash('reverse'), ownerAddress])
-    await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), ownerAddress])
-    await write(ensRegistry, 'setOwner', [namehash('data.eth'), ownerAddress])
-    await write(ensRegistry, 'setOwner', [namehash('eth'), ownerAddress])
+    // The registry gives a node only to its caller, except from the root or a
+    // TLD. data.eth is neither, so eth-usd.data.eth cannot be handed on: the
+    // deploy key drops it, and data.eth's new owner can take it back.
+    await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
+    await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), ownerAddress])
+    await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), ownerAddress])
     console.log(`  ENS subnodes (reverse, eth-usd.data.eth, data.eth, eth) -> cold`)
 
     // ENS root last. After this the deployer can't reassign any TLD.
@@ -294,6 +307,7 @@ async function main() {
     SubnameRegistrar: subnameRegistrar.address,
     PublicResolver: publicResolver.address,
     ETHRegistrarController: controller.address,
+    SimplexSponsor: sponsor.address,
     [isTesting ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     // ChainLink feed (used in place of DummyOracle on Sepolia).

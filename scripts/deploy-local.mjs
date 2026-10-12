@@ -152,6 +152,14 @@ async function main() {
   await write(subnameRegistrar, 'setResolver', [publicResolver.address])
   await write(baseRegistrar, 'setSubnameHook', [subnameRegistrar.address])
   await write(controller, 'setDefaultResolver', [publicResolver.address])
+
+  // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
+  // and the owner's signed consent, split out of the controller, which trusts it
+  // until `freeze`. The guardian funds registrars on this contract.
+  const sponsor = await deploy('SimplexSponsor',
+    'simplex/SimplexSponsor.sol/SimplexSponsor.json',
+    [controller.address, baseRegistrar.address])
+  await write(controller, 'setSponsor', [sponsor.address])
   // local dev: one key plays both roles, and sales are open so the payable path works
   await write(controller, 'setBeneficiary', [account.address])
   await write(controller, 'setPublicSalesOpen', [true])
@@ -194,7 +202,9 @@ async function main() {
 
   // Set resolver then transfer TLD to BaseRegistrar
   await write(ensRegistry, 'setResolver', [tldNode, publicResolver.address])
-  await write(ensRegistry, 'setOwner', [tldNode, baseRegistrar.address])
+  // The registry hands a node only to its caller, except from the root or a TLD,
+  // so the TLD goes to the registrar from the root.
+  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), baseRegistrar.address])
   console.log(`.${tld} node transferred to BaseRegistrar`)
 
   // Frontend's useEthPrice resolves eth-usd.data.eth -> ChainLink-like oracle.
@@ -218,6 +228,7 @@ async function main() {
     SubnameRegistrar: subnameRegistrar.address,
     PublicResolver: publicResolver.address,
     ETHRegistrarController: controller.address,
+    SimplexSponsor: sponsor.address,
     [tld === 'testing' ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     DummyOracle: dummyOracle.address,
