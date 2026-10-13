@@ -217,7 +217,7 @@ ETH/USD). On mainnet the oracle points at the live Chainlink ETH/USD feed.
 |----------------------------------|---------------------------------------------|
 | `setMinCharLength(uint8)`        | monotonic decrease only (6 → 5 → 4 → 3)     |
 | `disableNftGate()`               | one-way (true → false)                      |
-| `addReservedNames(string[])`     | bulk; ~1000 names per tx                    |
+| `addReservedNames(string[])`     | bulk; up to 200 names per tx                |
 | `removeReservedNames(string[])`  | bulk; ~1000 names per tx                    |
 | `registerReserved(string,address,uint256)` | bypasses gates                    |
 | `setPriceOracle(IPriceOracleUSD)` | survives `freeze()`                        |

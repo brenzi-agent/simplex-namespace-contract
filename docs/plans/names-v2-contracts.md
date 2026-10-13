@@ -306,11 +306,11 @@ out free names.
 `setDefaultResolver` after both the controller and the resolver exist — the dependency is
 circular, which is why it is a setter and not an initializer argument.
 
-The script also reserves the ~3000 a-priori names, in batches of about 300. Measured cost
-is 25.4k gas per name — 7.6M per batch, 76M in total — so at the base fee quoted in the
-launch-to-freeze plan the whole set is single-digit dollars. Note that gas *estimators* run
-roughly 3x over actual for this loop, so the submitted limit will look far larger than the
-gas the batch really burns. It stops there: the registrar allowance and the ownership transfer are governance actions
+The script also reserves the ~3000 a-priori names from `reserved-names.simplex.csv`, in batches of 200. Measured cost
+is 25.8k gas per name — 5.2M per batch, 77M in total — so at the base fee quoted in the
+launch-to-freeze plan the whole set is single-digit dollars. A transaction may use at most
+16,777,216 gas (EIP-7825), and the gas estimate for this loop passes that above about 210
+names. It stops there: the registrar allowance and the ownership transfer are governance actions
 with their own dates and callers (§7), and the script must not perform them.
 It requires the admin `TimelockController` and both Safes to exist already, since it prints
 the handover calls against their addresses.

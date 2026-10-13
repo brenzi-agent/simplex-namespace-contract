@@ -238,14 +238,15 @@ Caller: **deploy key**, alone.
 4. `subnameRegistrar.setResolver(simplexResolver)`.
 5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`.
 6. `controller.addReservedNames([...])` for the roughly 3000 names chosen in advance, in
-   batches of about 300. Measured cost is 25.4k gas per name: 7.6M per batch, 76M in total,
+   batches of 200. Measured cost is 25.8k gas per name: 5.2M per batch, 77M in total,
    single-digit dollars at the base fee we expect. Run it at a low base fee;
    `deploy-mainnet.mjs` supports that through `MAX_BASE_FEE_GWEI`.
 7. Leave `publicSalesOpen == false` and `Root.locked("simplex") == false`.
 
-Gas *estimators* report roughly 3x the real cost on the loop in step 6, so the submitted
-limit will look far larger than the gas the batch actually burns. Size the batches by the
-measured cost, not by the estimate. The name list is final well before GOV1.
+A transaction may use at most 16,777,216 gas (EIP-7825), and the gas estimate for the loop
+in step 6 passes that above about 210 names, so the batches stay at 200. The name list is
+final well before GOV1: the deployer commits it as `reserved-names.simplex.csv`, and
+`deploy-mainnet.mjs` refuses to deploy `.simplex` without it.
 
 No reverse registrar is deployed. That is possible because `PublicResolver` and
 `UniversalResolver` no longer inherit `ReverseClaimer`, whose constructor called `claim` on
@@ -271,10 +272,10 @@ Mind the unit: these are attoUSD **per year**. The older oracle that `.testing` 
 attoUSD **per second**, so the two lists are not interchangeable. Pasting one into the other
 is off by a factor of 31,536,000, and neither contract rejects it.
 
-Reserving at GOV1 rather than after the handover closes no open hole. `publicSalesOpen` is
-false and the registrar has no credits, so nothing can be registered before GOV6 anyway. It
-removes a task that could slip, and makes the reserved set part of the deployment's
-acceptance check.
+Reserving at GOV1 rather than after the handover closes a hole. `publicSalesOpen` gates only
+the payable `register`, so once the guardian funds a registrar (A3) the sponsored path can
+register any label that is not reserved. The post-deploy read-back checks every reserved
+label, which makes the reserved set part of the deployment's acceptance check.
 
 Before GOV1, the hardware wallets must be initialised, their addresses recorded, and **each
 must have executed one rehearsal transaction on mainnet** from the device itself. Two of the
@@ -318,6 +319,9 @@ Caller: **guardian key**.
 
 1. `sponsor.setRegistrarAllowance(registrarHotWallet, N)`, with `N` in **attoUSD**, sized
    to expected sales plus headroom.
+
+Not before the post-deploy read-back has reported every reserved name: a funded registrar
+can register any label that is not reserved, whatever the sales switch says.
 
 A sponsored registration or renewal deducts that name's own list price, so the allowance
 bounds exposure in money rather than counting transactions. At the launch curve, $100,000

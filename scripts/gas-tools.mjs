@@ -485,8 +485,21 @@ export function createWaitForBaseRunner({
         .getTransactionReceipt({ hash: a.txHash })
         .catch(() => null)
       if (r) {
+        // The attempts log outlives a journal moved aside, so the hash may be an
+        // earlier run's different call. Adopt only this exact call from this key.
+        const tx = await publicClient.getTransaction({ hash: a.txHash })
+        const sent = callDigest(tx.to, tx.input, tx.value)
+        if (tx.from.toLowerCase() !== account.address.toLowerCase() || sent !== digest) {
+          throw new Error(
+            `[${step}] the attempts log names ${a.txHash}, sent by ${tx.from} as ${sent},\n` +
+              `  but this run would send ${digest} from ${account.address}. That is an earlier\n` +
+              `  run's call: to start over, move ${attemptsLogPath} aside along with the journal.`,
+          )
+        }
+        const settled = await awaitConfirmations(step, r)
+        if (!settled) continue
         console.log(`  ⤿ ${step}: recovered ${a.txHash} from a previous run — not resending`)
-        return recordSuccess(step, r, digest)
+        return recordSuccess(step, settled, digest)
       }
     }
 

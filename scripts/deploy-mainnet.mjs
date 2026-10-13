@@ -36,6 +36,8 @@
  *                      to avoid Reth/Geth's stock 8545/8546 ports)
  *   CONFIRM=yes        skip the interactive confirmation prompt
  *
+ * Reads reserved-names.${tld}.csv (name,reason,category), required for .simplex.
+ *
  * Files written next to the addresses file:
  *   deployments.mainnet.${tld}.json            ← final addresses (on success)
  *   deployments.mainnet.${tld}.journal.jsonl   ← per-tx journal (resume source)
@@ -46,6 +48,7 @@
  */
 import { createPublicClient, createWalletClient, encodeFunctionData, getAddress, http, labelhash, namehash, parseGwei, parseEther, zeroHash, zeroAddress } from 'viem'
 import { mainnet } from 'viem/chains'
+import { normalize } from 'viem/ens'
 import { privateKeyToAccount } from 'viem/accounts'
 import { execFileSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
@@ -115,6 +118,67 @@ if (!guardianAddress || guardianAddress.toLowerCase() === ownerAddress.toLowerCa
       '  collapses the two-key split the admin model is built on.',
   )
   process.exit(1)
+}
+
+// SimplexController.Reason — the on-chain enum. Append-only once names are
+// reserved, so these integers are fixed by the contract, not by this script.
+const REASONS = { Internal: 1, Trademark: 2, Community: 3 }
+// About 5.2M gas each, well under the per-transaction cap of 16,777,216 (EIP-7825).
+const RESERVE_BATCH = 200
+const reservedNamesPath = join(REPO_ROOT, `reserved-names.${tld}.csv`)
+const reservedByReason = loadReservedNames(reservedNamesPath)
+
+/// RFC 4180: a quoted field may hold commas, line breaks and doubled quotes.
+function parseCsv(text) {
+  const rows = [[]]
+  let field = ''
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++ }
+      else if (c === '"') quoted = false
+      else field += c
+    } else if (c === '"') quoted = true
+    else if (c === ',') { rows.at(-1).push(field); field = '' }
+    else if (c === '\n') { rows.at(-1).push(field.replace(/\r$/, '')); field = ''; rows.push([]) }
+    else field += c
+  }
+  if (field || rows.at(-1).length) rows.at(-1).push(field)
+  return rows.filter((r) => r.length > 1 || r[0])
+}
+
+/// `name,reason,category` rows, as labels grouped by Reason. Only the category
+/// goes on chain; the reason is for whoever reads the file.
+function loadReservedNames(path) {
+  const [header, ...rows] = existsSync(path) ? parseCsv(readFileSync(path, 'utf8')) : []
+  const errors = []
+  if (header && header.join(',') !== 'name,reason,category') {
+    errors.push(`header must be "name,reason,category", got "${header.join(',')}"`)
+  }
+  const byReason = new Map(Object.values(REASONS).map((r) => [r, []]))
+  const seen = new Set()
+  rows.forEach(([name, , category, ...extra], i) => {
+    const where = `row ${i + 2} (${JSON.stringify(name)})`
+    let normalized
+    try { normalized = normalize(name) } catch {}
+    if (extra.length || category === undefined) errors.push(`${where}: expected 3 fields`)
+    else if (!name || name.includes('.')) errors.push(`${where}: not a single label`)
+    else if (normalized !== name) errors.push(`${where}: not ENS-normalized (users register ${JSON.stringify(normalized)})`)
+    else if (!(category in REASONS)) errors.push(`${where}: category must be one of ${Object.keys(REASONS).join(', ')}`)
+    else if (seen.has(name)) errors.push(`${where}: duplicate`)
+    else { seen.add(name); byReason.get(REASONS[category]).push(name) }
+  })
+  if (tld !== 'testing' && rows.length === 0) {
+    errors.push(`no names: .${tld} is not deployed without its reserved set`)
+  }
+  if (errors.length) {
+    console.error(`${path}:\n  ${errors.join('\n  ')}`)
+    process.exit(1)
+  }
+  const own = ['simplex', 'simplex-chat'].filter((name) => !seen.has(name))
+  byReason.get(REASONS.Internal).unshift(...own)
+  return byReason
 }
 
 const bumpAfterMs = (parseFloat(process.env.BUMP_AFTER_HOURS) || (DEFAULTS.BUMP_AFTER_MS / 3600000)) * 3600 * 1000
@@ -221,11 +285,11 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
 
   await write(baseRegistrar, 'addController', [controller.address])
 
-  // SimplexController.Reason — the on-chain enum. Append-only once names are
-  // reserved, so these integers are fixed by the contract, not by this script.
-  const REASON_INTERNAL = 1
-  const reservedAtDeploy = ['simplex', 'simplex-chat']
-  await write(controller, 'addReservedNames', [reservedAtDeploy, REASON_INTERNAL])
+  for (const [reason, names] of reservedByReason) {
+    for (let i = 0; i < names.length; i += RESERVE_BATCH) {
+      await write(controller, 'addReservedNames', [names.slice(i, i + RESERVE_BATCH), reason])
+    }
+  }
 
   // SubnameRegistrar owns + resolves subnames, soulbound to the 2LD NFT. It is
   // deployed before the resolver because the resolver's nameWrapper slot points
@@ -407,6 +471,23 @@ async function verifyWiring(publicClient, addresses) {
     () => read(controller, [], [{ type: 'bool' }], 'publicSalesOpen'))
   await check('subname registrar resolver', addresses.PublicResolver,
     () => read(addresses.SubnameRegistrar, [], ADDR, 'resolver'))
+  // The sales switch does not gate the sponsored path, so a label missing here is
+  // registrable as soon as the guardian funds a registrar.
+  const reserved = [...reservedByReason].flatMap(([reason, names]) => names.map((name) => ({ name, reason })))
+  const reasons = await publicClient.multicall({
+    batchSize: 65_536,
+    contracts: reserved.map(({ name }) => ({
+      address: controller,
+      abi: [{ type: 'function', name: 'reservedNames', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint8' }], stateMutability: 'view' }],
+      functionName: 'reservedNames',
+      args: [labelhash(name)],
+    })),
+  })
+  const unreserved = reserved.filter((r, i) => reasons[i].result !== r.reason)
+  console.log(`  ${unreserved.length ? '✗' : '✓'} reserved names read back: ${reserved.length - unreserved.length} of ${reserved.length}`)
+  if (unreserved.length) {
+    failures.push(`reserved names (${unreserved.slice(0, 5).map((r) => r.name).join(', ')}${unreserved.length > 5 ? ', …' : ''})`)
+  }
   // A six-character name must quote the cheapest rung. `.testing` is priced at
   // zero on purpose, so only a paid TLD can assert non-zero — for that one, zero
   // means the oracle is misconfigured and every name would be free.
@@ -433,6 +514,10 @@ async function verifyWiring(publicClient, addresses) {
   if (addresses.SimplexPriceOracle) {
     const oracle = addresses.SimplexPriceOracle
     const U256 = [{ type: 'uint256' }]
+    await check('controller prices from this oracle', oracle,
+      () => read(controller, [], ADDR, 'prices'))
+    await check('oracle reads the Chainlink ETH/USD feed', chainlinkEthUsd,
+      () => read(oracle, [], ADDR, 'usdOracle'))
     await check('oracle feed scale matches the Chainlink feed decimals', String(10 ** USD_FEED_DECIMALS),
       () => read(oracle, [], U256, 'usdOracleScale'))
     await check('oracle base price per year', String(SIMPLEX_PRICE_BASE),
@@ -510,7 +595,7 @@ async function main() {
     console.error(
       `${addressesPath} already exists but ${journalPath} is empty or missing.\n` +
         `  That pairing means a completed deployment whose journal is gone — this run would\n` +
-        `  overwrite the record of live addresses. Move the file aside deliberately if you\n` +
+        `  overwrite the record of live addresses. Move it and ${attemptsLogPath} aside deliberately if you\n` +
         `  really are starting over.`,
     )
     process.exit(1)

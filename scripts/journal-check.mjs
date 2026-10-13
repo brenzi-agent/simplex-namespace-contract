@@ -13,6 +13,7 @@ const ADDR = '0x2222222222222222222222222222222222222222'
 
 let sent = 0
 const receipts = new Map()
+const txs = new Map()
 let nextStatus = 'success'
 const mk = (hash) => ({ transactionHash: hash, gasUsed: 21000n, effectiveGasPrice: 1n, contractAddress: null, status: nextStatus, blockNumber: 100n })
 
@@ -25,8 +26,12 @@ const stub = (opts = {}) => createWaitForBaseRunner({
     getTransactionReceipt: async ({ hash }) => {
       const r = receipts.get(hash); if (!r) throw new Error('none'); return r
     },
+    getTransaction: async ({ hash }) => txs.get(hash),
   },
-  walletClient: { sendTransaction: async () => { sent++; const h = `0xdead${sent}`; receipts.set(h, mk(h)); return h } },
+  walletClient: { sendTransaction: async ({ to, data, value }) => {
+    sent++; const h = `0xdead${sent}`; receipts.set(h, mk(h))
+    txs.set(h, { from: ADDR, to, input: data, value }); return h
+  } },
   account: { address: ADDR },
   maxBaseFeeWei: 10n, bumpAfterMs: 1000, bumpPct: 20n,
   journalPath: J, attemptsLogPath: A, ...opts,
@@ -140,6 +145,19 @@ try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message
 console.assert(!existsSync(J) || readFileSync(J, 'utf8') === '', 'reorged tx was journalled')
 console.assert(readFileSync(A, 'utf8').includes('reorged-out'), 'reorg not logged')
 console.log('8 ok: a receipt undone by a reorg is not journalled')
+
+// 9. an attempts-log tx that made a different call is refused, not adopted
+clean(); sent = 0
+r = stub()
+await r.write(C, 'setBeneficiary', ['0x3333333333333333333333333333333333333333'])
+writeFileSync(J, '')
+writeFileSync(A, JSON.stringify({ step: 'write:setBeneficiary', txHash: '0xdead1', outcome: 'submitted' }) + '\n')
+r = stub()
+threw = null
+try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
+console.assert(threw && /earlier\s+run's call/.test(threw), `expected refusal, got ${threw}`)
+console.assert(readFileSync(J, 'utf8') === '', 'a different call was journalled')
+console.log('9 ok: an earlier run\'s different call is not adopted')
 
 clean()
 console.log('\nall journal checks passed')

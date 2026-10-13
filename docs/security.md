@@ -551,7 +551,7 @@ And what it now proves rather than assumes: a **post-deploy read-back** checks
 the TLD node's owner, the controller's registration, `maxLabelLength`, the
 subname hook, the metadata renderer, the default resolver, the beneficiary, the
 sponsor and its controller, the NFT gate, `minCharLength`, the freeze and sales flags, the subname registrar's
-resolver, and that a six-character name quotes a non-zero price. A journal proves
+resolver, every reserved label, the oracle and its feed, and that a six-character name quotes a non-zero price. A journal proves
 each transaction was mined; only the read-back proves the stack is wired the way
 the script intended. It runs while the deploy key still owns everything, and the
 run then prints the `acceptOwnership()` calls the admin must make — until those

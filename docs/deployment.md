@@ -172,8 +172,8 @@ Pass `CONFIRM=yes` to skip the prompt. The dry run is read-only against mainnet
    `SimplexController` + UUPS proxy, `SimplexSponsor`, `SubnameRegistrar`,
    `PublicResolver`, `MetadataRenderer`, `UniversalResolver`.
 2. Wires the controller into the `BaseRegistrar` and the sponsor into the
-   controller (`setSponsor`), pre-loads the reserved labels
-   (`simplex`, `simplex-chat`), sets the metadata renderer, caps
+   controller (`setSponsor`), reserves every label in `reserved-names.<tld>.csv`
+   plus `simplex` and `simplex-chat`, in batches of 200, sets the metadata renderer, caps
    `maxLabelLength` at 63, and registers `eth-usd.data.eth` → the Chainlink feed
    so the frontend's `useEthPrice` resolves on chain.
 3. Hands ownership of every persistent role to `OWNER_ADDRESS`; the ENS-root
@@ -183,14 +183,24 @@ Pass `CONFIRM=yes` to skip the prompt. The dry run is read-only against mainnet
    over: the registry assigns a node to someone other than the caller only under
    the root or a TLD, and the owner of `data.eth` can take it back.
 
+The deployer commits `reserved-names.simplex.csv`: a `name,reason,category`
+header, then one label per row, with `category` one of `Internal`, `Trademark`
+or `Community` (only the category goes on chain) and RFC 4180 quoting where a
+reason holds a comma. The script refuses to deploy `.simplex` without it, and
+stops on a duplicate, a dotted or non-normalized label, or an unknown category.
+The read-back after the deploy checks every label.
+
 ### Resume on interruption
 
 Re-run with the same env vars. The runner reads
 `deployments.mainnet.${tld}.journal.jsonl`, skips every step already recorded as
-mined, and continues from the next one. Step labels (`step:001…NNN`) are
-deterministic from the script's operation order — the journal stays valid as
-long as you don't reorder or insert operations in `scripts/deploy-mainnet.mjs`.
-If you edit the script mid-flight, delete the journal and re-deploy.
+mined, and continues from the next one. Steps are named by operation
+(`deploy:ENSRegistry`, `write:addReservedNames#3`), and each journal entry
+records a digest of the exact call, so a resume that would skip a different call
+stops instead. A step whose transaction was still pending when the run died is
+recovered from `deployments.mainnet.${tld}.attempts.log`, but only if that
+transaction is the same call from the same key. To start over, move the journal
+and the attempts log aside together.
 
 ### Commit the addresses file AND the journal
 
@@ -338,9 +348,9 @@ key. `setPriceOracle` deliberately survives `freeze()`.
 - `setMinCharLength(uint8)` — monotonic decrease only (6 → 5 → 4 → 3).
 - `addReservedNames(string[],Reason)` — owner **or beneficiary**, so a name under
   threat can be reserved immediately rather than at the timelock's pace. Bulk, one
-  reason for the batch; about 25k gas per name, so batch ~300 per transaction (gas
-  *estimators* run roughly 3× over actual on this loop, so the submitted limit
-  looks far larger than the gas really burned). `Reason.None` (0) is rejected — it
+  reason for the batch; about 26k gas per name, so batch at most 200 per transaction:
+  one may use at most 16,777,216 gas (EIP-7825), and the gas estimate passes that
+  above about 210 names. `Reason.None` (0) is rejected — it
   is the value meaning *not reserved*, so passing it would silently unreserve.
   `removeReservedNames(string[])` is owner-only — releasing a reserved name is the
   direction that should be visible before it lands.
@@ -348,8 +358,8 @@ key. `setPriceOracle` deliberately survives `freeze()`.
   names that are already reserved. Use this rather than removing and re-adding,
   which would leave the name registrable for the gap between the two transactions.
   Reverts for a name that is not reserved: it is not a second way to reserve.
-- `Reason` is an on-chain enum — `None(0)`, `Unspecified(1)`, `Trademark(2)`,
-  `PublicInterest(3)`, `Offensive(4)`, `Internal(5)`, `Premium(6)`. The wording a
+- `Reason` is an on-chain enum — `None(0)`, `Internal(1)`, `Trademark(2)`,
+  `Community(3)`. The wording a
   user sees is client-side, so new phrasing needs no upgrade. The integers are
   **append-only** once names are reserved against them: reordering silently
   relabels every existing reservation and nothing on chain can detect it.
