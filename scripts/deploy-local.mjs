@@ -154,12 +154,13 @@ async function main() {
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
   // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
-  // and the owner's signed consent, split out of the controller, which trusts it
-  // until `freeze`. The guardian funds registrars on this contract.
+  // and the owner's signature check. Only this contract may call the controller's
+  // sponsored entry points; `freeze` fixes it. The guardian funds registrars here.
   const sponsor = await deploy('SimplexSponsor',
     'simplex/SimplexSponsor.sol/SimplexSponsor.json',
-    [controller.address, baseRegistrar.address])
+    [controller.address])
   await write(controller, 'setSponsor', [sponsor.address])
+
   // local dev: one key plays both roles, and sales are open so the payable path works
   await write(controller, 'setBeneficiary', [account.address])
   await write(controller, 'setPublicSalesOpen', [true])
@@ -202,8 +203,8 @@ async function main() {
 
   // Set resolver then transfer TLD to BaseRegistrar
   await write(ensRegistry, 'setResolver', [tldNode, publicResolver.address])
-  // The registry hands a node only to its caller, except from the root or a TLD,
-  // so the TLD goes to the registrar from the root.
+  // The registry assigns a node to someone other than the caller only under the
+  // root or a TLD, so the TLD is assigned to the registrar from the root.
   await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), baseRegistrar.address])
   console.log(`.${tld} node transferred to BaseRegistrar`)
 

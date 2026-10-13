@@ -312,19 +312,19 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `addReservedNames(string[])` | owner **or** beneficiary | Also fast, and for a sharper reason: a scheduled reservation would tell a squatter which name is valuable and how long it stays unprotected. |
 | `removeReservedNames`, `registerReserved`, `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. |
 | `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Dies at `freeze()`. |
-| `freeze()` | owner only | One-way. Makes the implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed, so a mis-ordered freeze cannot shut the payable path forever. |
+| `freeze()` | owner only | One-way. Makes the implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed or no sponsor is set, so a mis-ordered freeze cannot shut the payable or the sponsored path forever. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
-| `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient; nothing else can move a name to them. |
+| `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient. |
 
 ### What `freeze()` does not stop
 
-`freeze()` fixes the implementation and seals the sales switch. It does **not**
+`freeze()` fixes the implementation and the sponsor, and seals the sales switch. It does **not**
 end issuance, and the plan should not be read as saying it does:
 
 - the guardian can still fund a registrar (`setRegistrarAllowance`, on the
   sponsor) and that registrar can still mint names through `registerWithCredit`,
-  each to an owner who signed for it;
+  each to itself or to an owner who signed for it;
 - the owner can still `addReservedNames` and `registerReserved`.
 
 That is deliberate — brand reservation and outreach have to continue for the
@@ -381,39 +381,118 @@ So the requirement lands on the buyer, and on whatever surfaces a name for sale:
 
 ### Recipient consent
 
-An address can be tied on chain to content it never chose: register a name with
-illegitimate records to it, transfer one to it, or make it the owner of a node,
-and the chain records it as the holder for good. So nothing is given to an
-address that did not agree, and agreeing means being the caller or signing an
-EIP-712 intent ([`plans/recipient-consent.md`](./plans/recipient-consent.md)):
+An address can be tied on chain to content its owner never chose: register a
+name with illegitimate records to it, transfer one to it, or make it the owner of
+a node, and the chain records it as the holder for good. So nothing is assigned
+to an address without its owner's consent, which means being the caller or
+signing an EIP-712 intent ([`plans/recipient-consent.md`](./plans/recipient-consent.md)):
 
 - the payable `register` registers to the caller only; `SimplexSponsor` checks the
   owner's `RegisterName` signature, which covers the label, the resolver and every
-  record written at registration;
-- a transfer is an offer (`approve` / `approveWithSig`) that only the recipient can
-  complete (`transferFrom` to itself / `claimWithSig`), and an offer dies with any
-  change of holder;
-- `ENSRegistry` makes nobody the owner of a node but the caller, except where the
-  parent is the root or a TLD, whose owners — `Root` and the registrar — assign
-  names whose consent was already checked; `reclaim` points at the holder only.
+  record written at registration, and is single-use through a per-signer nonce;
+- a transfer is an offer (`approve` / `approveWithSig`) that only the recipient,
+  or a controller, can complete (`transferFrom` to itself / `claimWithSig`), and
+  any change of holder clears the offer;
+- `ENSRegistry` makes nobody the owner of a node but the caller, except for the
+  root node and the subnodes of the root and of a TLD; `reclaim` points at the
+  holder only.
 
 Accepted:
 
-- **`registerReserved` is exempt.** The admin hands a reserved name to a brand
-  without the brand's signature. It is an admin call, and public.
+- **The root's and the TLDs' owners are trusted, permanently.** They assign nodes
+  to anyone, and so do their registry operators. The admin key owns the root and
+  `eth`; the registrar owns `simplex` and assigns a name's node only to its holder.
+  The deploy scripts deploy no `Root`, so nothing locks the `simplex` label: the
+  admin key can point it at itself and re-point the registry owner and resolver of
+  any held name, also after `freeze`.
+- **`registerReserved` is exempt.** The admin assigns a reserved name to any
+  address, for any term of two years or more, without its signature, also after
+  `freeze`; the admin or the guardian can reserve any unregistered name at once.
+  It is an admin call, and public.
+- **Controllers are trusted.** A controller may register any available name
+  directly to any address and transfer a name it holds, was offered or operates
+  for to anyone, and `addController` survives `freeze` as the repair path.
+- **Consent covers the name, not its contents.** Between the recipient's consent
+  and the claim landing, the holder can still change the name's records, point
+  its registry resolver at a contract of the holder's own, and create subnames
+  and shadow subnodes under it, and they stay under the name after the claim; a
+  holder watching the mempool can do so right before the claim. Each subname has
+  to be deleted separately, and a transfer does not invalidate subnames the way a
+  re-registration does. No relayed call resets a 2LD's registry resolver: a
+  recipient without ETH needs a registry operator for that. A shadow subnode can
+  be taken over without ETH by `setApprovalForAllWithSig(SubnameRegistrar)`,
+  `createSubnameWithSig` (after a permissionless `purge` if it is stale) and
+  `deleteSubnameWithSig`, but only when its label is known, non-empty and at
+  most 63 bytes; otherwise only ETH or a registry operator clears it, so clients
+  refuse to claim a name with such a subnode. A holder who front-runs the claim
+  can still add one. A claim signature is valid for one offer (`offers(tokenId)`
+  is in `ClaimName`), so a holder cannot withdraw, keep the signature and submit
+  it later. Before signing a claim, clients must check the name's registry
+  resolver and enumerate its subnodes, and theirs in turn, from the registry's
+  `NewOwner` logs, ownerless ones included, since those can still have a
+  resolver; they must never claim automatically, and should clear records and
+  remove unexpected subnames right after claiming.
+- **A sponsor is never reinstalled.** Nonces and allowances belong to each
+  sponsor, so pointing the controller back at an earlier one would revive its
+  unused signatures and allowances.
+- **Contract wallets must be deployed to consent.** ERC-1271 signatures work only
+  for deployed contracts; a counterfactual smart wallet cannot sign `RegisterName`
+  or `ClaimName` (no ERC-6492).
+- **A signature consents to whatever it names.** As for L1, the client never
+  signs a `RegisterName` or `ClaimName` it did not construct itself, and shows
+  the name and what it carries before signing.
+- **An unused `RegisterName` signature stays valid until its deadline.** Nothing
+  cancels it, so clients sign with short deadlines: a sponsored registration needs
+  only the commitment age. The same holds for an unused `ClaimName` signature
+  while its offer stands, including an offer that a renewal revives after the
+  name expired, and for an unused `ApproveName` signature, which a plain
+  `approve` does not invalidate.
+- **A failed claim holds up the recipient's later intents.** `ApproveName` and
+  `ClaimName` share the registrar's per-signer nonce, and the holder can make a
+  claim fail by withdrawing the offer, so clients sign no other registrar intent
+  behind an unlanded claim and re-sign after a failed one.
+- **Old records can come back with a re-registration.** Records are retired only
+  on the resolver the registry points at when the name is re-registered. A
+  previous holder who pointed the node at no resolver, or at another past
+  default, before the name lapsed leaves records in a default resolver that
+  resolve again once the new registration points back at it; a bare registration
+  (`resolver == 0`) keeps a non-default resolver pointer. Subnames have similar
+  gaps: a subname under a deleted subname, or one taken out of the
+  `SubnameRegistrar`, keeps its records, and the previous holder keeps owning and
+  writing any shadow subnode, so clients enumerate a previously held label's
+  subnodes before registering it, as before a claim. These predate recipient
+  consent.
 - **An offer is public before it is accepted.** `Approval`, and the announcement
-  when one is sent, name the recipient though nothing has moved.
-- **Records can still name someone else.** A text record can carry another
-  person's SimpleX link; the client shows a name against a profile only with that
-  profile's `SimplexDomainProof`.
+  when one is sent, name the recipient though nothing has moved. So do
+  `ApprovalForAll` on the registry, the registrar and the resolver, and the
+  resolver's per-node `Approved`; none of them assigns anything. An announcement
+  costs its sender only gas and stays in the logs after the offer is withdrawn or
+  replaced, so a scanner treats it as an offer only while `getApproved` returns
+  its stealth address.
+- **An offer outlives its signature.** The `ApproveName` deadline limits when the
+  signature can be submitted. The offer itself stands until a transfer, a burn or
+  a withdrawal, including through the grace period, so a renewal by anyone
+  revives it. Plain `approve` still accepts a lapsed name, and a renewal makes
+  that offer claimable too. `approveWithSig` refuses a lapsed name, so a holder
+  without ETH withdraws an offer during the grace period only after a renewal.
+- **Records can still name someone else.** An `addr` record, and the registry's
+  resolver pointer, can point at any address, and a text record can contain
+  another person's SimpleX link. Records assign nothing; the client shows a name
+  against a profile only with that profile's `SimplexDomainProof`.
 - **No marketplace sales.** A settlement contract that delivers to the buyer is
   neither the buyer nor signed by them. Counting a buyer's operator approval as
   consent was turned down: anyone who had approved a marketplace could then be
   sent names through it.
-- **No push to a burn address.** A holder who wants rid of a name approves a
-  contract that takes it.
+- **No push to a burn address.** A holder who wants rid of a name offers it to a
+  contract that takes it and never transfers it on. None is deployed, a holder
+  without ETH cannot deploy one, and letting the name lapse is not in the holder's
+  control, since anyone may renew it.
+- **Contracts that take a name and transfer it on trap it.** Escrow-style markets,
+  lending and staking vaults transfer to a third party without calling `approve`
+  first, so the transfer reverts and the name stays in the contract until it
+  lapses. Clients must warn before offering a name to a contract.
 - **The root of trust is no longer additive.** The rule is a restriction in
-  `ENSRegistry` itself. The upstream `ReverseRegistrar`, which hands each address
+  `ENSRegistry` itself. The upstream `ReverseRegistrar`, which assigns each address
   a node under `addr.reverse`, cannot run against it; SNRC deploys none.
 
 ### Client and relayer version coupling
@@ -430,6 +509,12 @@ cannot coexist in one deployment and cannot be migrated after the fact.
   permanently. A client must key both off the deployment it is addressing, not
   off its own build. `.testing` is not being upgraded, so this is a fork in the
   client, not a migration.
+- Recipient consent changed the shapes again for `.simplex`. `transferWithSig`
+  and `TRANSFER_TYPEHASH` are gone: a transfer is an `ApproveName` offer, whose
+  `approveWithSig` emits the announcement, followed by the recipient's
+  `ClaimName`, which names the offer it claims. A sponsored registration needs
+  `RegisterName`, verified by `SimplexSponsor`. `.testing` keeps
+  `transferWithSig` and has neither.
 
 ### Deployment opsec
 
@@ -465,7 +550,7 @@ What it now refuses to do:
 And what it now proves rather than assumes: a **post-deploy read-back** checks
 the TLD node's owner, the controller's registration, `maxLabelLength`, the
 subname hook, the metadata renderer, the default resolver, the beneficiary, the
-NFT gate, `minCharLength`, the freeze and sales flags, the subname registrar's
+sponsor and its controller, the NFT gate, `minCharLength`, the freeze and sales flags, the subname registrar's
 resolver, and that a six-character name quotes a non-zero price. A journal proves
 each transaction was mined; only the read-back proves the stack is wired the way
 the script intended. It runs while the deploy key still owns everything, and the
@@ -481,7 +566,7 @@ in the **immutable** registrar, so no owner power on any contract — including 
 arbitrary controller upgrade before the freeze — can seize, transfer or re-point
 a name someone holds. `reclaim` requires `_isApprovedOrOwner` and points the node
 at the holder only; `approveWithSig` requires the holder's signature and a
-grace-aware `ownerOf`, and only the recipient can complete the transfer.
+grace-aware `ownerOf`, and only the recipient, or a controller, can complete the transfer.
 
 ### Adversarial review (three expert personas + independent refutation)
 

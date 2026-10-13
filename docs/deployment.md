@@ -74,6 +74,7 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
      so its address can be passed as `trustedETHController`)
    - `SubnameRegistrar`, then `PublicResolver` (its `nameWrapper` slot =
      `SubnameRegistrar`, `trustedETHController` = controller)
+   - `SimplexSponsor` → `controller.setSponsor(...)`
    - `MetadataRenderer` → `baseRegistrar.setMetadataRenderer(...)`
    - `UniversalResolver`, mock `Multicall3` (implements both `aggregate3` and
      `tryAggregate`)
@@ -168,16 +169,19 @@ Pass `CONFIRM=yes` to skip the prompt. The dry run is read-only against mainnet
 1. Deploys the full wrapper-free stack: `ENSRegistry`, `BaseRegistrarImplementation`
    (v3), the price oracle (`SimplexPriceOracle` for `.simplex`,
    `ExponentialPremiumPriceOracle` for `.testing`),
-   `SimplexController` + UUPS proxy, `SubnameRegistrar`, `PublicResolver`,
-   `MetadataRenderer`, `UniversalResolver`.
-2. Wires the controller into the `BaseRegistrar`, pre-loads the reserved labels
+   `SimplexController` + UUPS proxy, `SimplexSponsor`, `SubnameRegistrar`,
+   `PublicResolver`, `MetadataRenderer`, `UniversalResolver`.
+2. Wires the controller into the `BaseRegistrar` and the sponsor into the
+   controller (`setSponsor`), pre-loads the reserved labels
    (`simplex`, `simplex-chat`), sets the metadata renderer, caps
    `maxLabelLength` at 63, and registers `eth-usd.data.eth` → the Chainlink feed
    so the frontend's `useEthPrice` resolves on chain.
 3. Hands ownership of every persistent role to `OWNER_ADDRESS`; the ENS-root
    transfer is the last write, after which the deployer can't reassign any TLD
    or contract role (except that it still holds the controller until the cold
-   owner accepts).
+   owner accepts). `eth-usd.data.eth` is left with owner zero rather than handed
+   over: the registry assigns a node to someone other than the caller only under
+   the root or a TLD, and the owner of `data.eth` can take it back.
 
 ### Resume on interruption
 
@@ -357,17 +361,17 @@ key. `setPriceOracle` deliberately survives `freeze()`.
   `register()` only. The credited path, `registerReserved` and both renew paths
   are exempt, so pausing never blocks the app-store flow or a renewal. Two-way
   until `freeze()`, then sealed in its current position.
-- `setSponsor(address)` — owner-only, refused after `freeze()`. The
-  `SimplexSponsor` the controller lets register and renew without value; the
-  deploy scripts set it.
-- `SimplexSponsor.setRegistrarAllowance(address,uint256)` — **the controller's
-  beneficiary only**. The registrar's spending limit in attoUSD; a sponsored registration or renewal deducts the
+- `SimplexSponsor.setRegistrarAllowance(address,uint256)` — **the controller's beneficiary only**. The registrar's
+  spending limit in attoUSD; a sponsored registration or renewal deducts the
   name's own list price. Replaces rather than adds, so zeroing it is a
   one-transaction kill switch for a compromised registrar.
 - `setBeneficiary(address)` — owner while unset, beneficiary thereafter. Set it
   **before** transferring ownership, or the deploy key controls revenue.
+- `setSponsor(address)` — owner-only, refused after `freeze()`. Sets the
+  `SimplexSponsor`, the only caller of `registerSponsored` / `renewSponsored`; the
+  deploy scripts set it.
 - `freeze()` — owner-only, one-way. Makes the implementation and the sponsor
-  permanent and seals the sales switch. Refuses while sales are closed. There is no `setTreasury`;
+  permanent and seals the sales switch. Refuses while sales are closed or while no sponsor is set. There is no `setTreasury`;
   `withdraw()` is permissionless and pays `beneficiary`.
 
 ### Registering a registrar service
@@ -382,9 +386,12 @@ sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 100000000000000000000000) 
 The hot wallet also needs its own ETH for gas — the allowance authorises, it does
 not pay. Kill switch, same key, no delay:
 `sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 0)`. The registrar calls
-`sponsor.registerWithCredit(registration, deadline, sig)`, where `sig` is the
-owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`), unless the
-registrar registers to itself.
+`sponsor.registerWithCredit(registration, nonce, deadline, sig)`, where `sig` is
+the owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`) over the
+owner's current `sponsor.nonces(owner)`, unless the registrar registers to itself.
+The registrar refuses a client's registration whose owner is the registrar's own
+address: no signature is checked then, so the client would choose the name and
+records the registrar holds.
 
 ### Upgrading the controller (UUPS)
 

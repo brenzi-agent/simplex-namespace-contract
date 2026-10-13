@@ -18,8 +18,9 @@ name is a plain ERC-721 NFT and shows up in your wallet.
 
 **Nobody gets a name they didn't ask for.** In ENS anyone can register a name to
 your address or send you one, and the chain then shows it as yours. In SNRC a
-name goes only to an address that agreed — by sending the transaction or by
-signing. Sending a name is an offer the recipient takes; the sender cannot push
+name goes to an address only if its owner agreed — by sending the transaction or
+by signing — except where the admin keys assign it, a reserved brand name for
+instance. Sending a name is an offer the recipient takes; the sender cannot push
 it. The price is that names don't sell on marketplaces, which deliver to the
 buyer without the buyer's say.
 

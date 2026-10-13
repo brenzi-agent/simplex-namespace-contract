@@ -93,7 +93,7 @@ rather than edited.
 No key can take, transfer or re-point a name somebody owns. `_register` requires
 `available(id)`, false until 90 days past expiry, and that check lives in the immutable
 registrar. `reclaim` needs the token holder. `approveWithSig` needs the owner's signature, and
-only the recipient can complete a transfer.
+only the recipient, or a controller, can complete a transfer.
 After GOV9 no key can change the controller's code either, so no key can write records on a
 name it does not own. That matters because the controller is `trustedETHController` on the
 resolver, and a hostile upgrade would abuse exactly that authority.
@@ -193,6 +193,9 @@ from configuration we ship, so switching them is a release, not a migration user
 remaining expiry, its `simplex.contact` and `simplex.channel` records, and any subnames.
 `registerReserved` is owner-callable forever and takes an arbitrary owner and duration, so
 the new deployment re-mints the snapshot directly, with no user action and no signature.
+Subnames are the exception: only a name's holder can create them, and a name the admin holds
+reaches its holder only when the holder claims it, so re-creating them needs a purpose-built
+migration controller or the holders' signatures.
 
 **The order that makes it safe.**
 
@@ -207,9 +210,9 @@ the new deployment re-mints the snapshot directly, with no user action and no si
    dead.
 
 **What can still be lost.** A redeploy voids the old NFTs: they stay in wallets and stop
-meaning anything. Anyone who buys a `.simplex` NFT on a secondary market between the snapshot
+meaning anything. Anyone who buys a `.simplex` NFT from its holder between the snapshot
 and the switch has bought a dead asset, and step 4 is the only thing that catches it. Names
-held by a contract, a marketplace escrow for example, are re-minted to that contract, which
+held by a contract are re-minted to that contract, which
 may have no idea what to do with them. Both risks grow with the number of names and the depth
 of any secondary market.
 
@@ -227,13 +230,13 @@ Every on-chain call, in order, with who signs it.
 Caller: **deploy key**, alone.
 
 1. Deploy `ENSRegistry`, `Root`, `BaseRegistrarImplementation`, `SimplexPriceOracle`,
-   `SimplexController` implementation and proxy, `SubnameRegistrar`, `SimplexResolver`,
-   `MetadataRenderer`, `UniversalResolver`.
+   `SimplexController` implementation and proxy, `SimplexSponsor(controllerProxy)`,
+   `SubnameRegistrar`, `SimplexResolver`, `MetadataRenderer`, `UniversalResolver`.
 2. `Root.setController(deployKey, true)`; `Root.setSubnodeOwner(labelhash("simplex"), baseRegistrar)`.
 3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.setMetadataRenderer(renderer)`;
    `baseRegistrar.setMaxLabelLength(63)`; `baseRegistrar.setSubnameHook(subnameRegistrar)`.
 4. `subnameRegistrar.setResolver(simplexResolver)`.
-5. `controller.setDefaultResolver(simplexResolver)`.
+5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`.
 6. `controller.addReservedNames([...])` for the roughly 3000 names chosen in advance, in
    batches of about 300. Measured cost is 25.4k gas per name: 7.6M per batch, 76M in total,
    single-digit dollars at the base fee we expect. Run it at a low base fee;
@@ -301,7 +304,7 @@ correct, and there is no second chance. Confirm the admin device can sign before
 having it execute step 3.
 
 Verify: `owner()` is the admin key on all four contracts; `beneficiary()` is the guardian
-key; `pendingOwner()` is empty on both the controller and the price oracle; every call the
+key; `sponsor()` is the verified `SimplexSponsor`, whose `controller()` is this controller; `pendingOwner()` is empty on both the controller and the price oracle; every call the
 deploy key used to make now reverts. The oracle is the one most easily missed, because it is
 not reachable from the controller. A handover that checks only the controller looks complete
 while the price curve is still held by a key that is about to be destroyed.
@@ -396,8 +399,11 @@ If any of them fails, wait. There is no date to move.
 2. `controller.freeze()`
 
 **Seven days later.** Before executing, read `controller.publicSalesOpen()`. If it is false,
-the guardian Safe sets it true first, and this is the last moment it can. Then execute both
-operations in order. The executor role is open, so anyone can submit them.
+the guardian Safe sets it true first, and this is the last moment it can. Also read
+`controller.sponsor()` and confirm that its code is the verified `SimplexSponsor` and its
+`controller()` is this controller: the freeze fixes the sponsor, and `freeze()` reverts only
+while none is set. Then execute both operations in order. The executor role is open, so anyone
+can submit them.
 
 The contract enforces this ordering: `freeze()` reverts with `PublicSalesClosed` while sales
 are closed. The race is real. The pause belongs to the guardian and is immediate, the freeze
@@ -406,11 +412,11 @@ scheduling and the execution. With the guard in place the queued freeze reverts 
 again, instead of sealing the payable path shut forever.
 
 Verify: `root.locked(labelhash("simplex")) == true`; `controller.frozen() == true`; simulated
-`upgradeTo`, `upgradeToAndCall` and `setPublicSalesOpen` all revert; simulated
+`upgradeTo`, `upgradeToAndCall`, `setPublicSalesOpen` and `setSponsor` all revert; simulated
 `setPriceOracle` still succeeds; the oracle's own `setPrices`, `setUsdOracle` and
 `setPremium` still succeed, because the freeze belongs to the controller and the oracle is a
 separate contract; `owner()` is still the timelock and not `address(0)` on both.
 
-Then confirm live: a sponsored registration, a relayed record edit, a signed transfer,
+Then confirm live: a sponsored registration, a relayed record edit, a signed offer and claim,
 `registerReserved`, and `withdraw()` paying the guardian Safe, which is the beneficiary by
 then because GOV9 comes after GOV8.

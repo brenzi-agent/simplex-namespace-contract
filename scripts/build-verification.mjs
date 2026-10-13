@@ -174,6 +174,14 @@ export function assembleVerification({
         [getImplAddress(addresses), proxyInitData],
       ),
     },
+    SimplexSponsor: {
+      address: addresses.SimplexSponsor,
+      artifact: 'contracts/simplex/SimplexSponsor.sol/SimplexSponsor.json',
+      constructorArgs: encodeAbiParameters(
+        [{ type: 'address' }],
+        [addresses.ETHRegistrarController],
+      ),
+    },
     // The deployment resolver is SimplexResolver (PublicResolver + signed record
     // writes). It is recorded under the `PublicResolver` key for dApp
     // compatibility, but it is a different artifact and different bytecode.
@@ -203,17 +211,6 @@ export function assembleVerification({
       artifact: 'contracts/simplex/MetadataRenderer.sol/MetadataRenderer.json',
       constructorArgs: encodeAbiParameters([{ type: 'string' }], [`.${tld}`]),
     },
-  }
-
-  if (addresses.SimplexSponsor) {
-    targets.SimplexSponsor = {
-      address: addresses.SimplexSponsor,
-      artifact: 'contracts/simplex/SimplexSponsor.sol/SimplexSponsor.json',
-      constructorArgs: encodeAbiParameters(
-        [{ type: 'address' }, { type: 'address' }],
-        [addresses.ETHRegistrarController, addresses.BaseRegistrarImplementation],
-      ),
-    }
   }
 
   if (addresses.DummyGatewayProvider) {

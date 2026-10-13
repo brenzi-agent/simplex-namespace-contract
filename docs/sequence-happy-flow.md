@@ -291,8 +291,8 @@ records **carry over to the new holder intact**: Bob can immediately edit
 longer touch them, and resolution is never interrupted. The previous holder instantly loses
 both the subnames and the right to mint new ones (the `_controller` gate now reads Bob).
 Contrast flow 7b: a *re-registration* after expiry bumps `generation` and **retires** the old
-subtree instead of handing it over. Integrator note: buying a 2LD on the secondary market
-inherits the seller's subnames and their records as-is — re-point or clear them if needed.
+subtree instead of handing it over. Integrator note: taking over a 2LD from its holder
+inherits the holder's subnames and their records as-is — re-point or clear them if needed.
 
 ### 7b — Re-register an expired 2LD (onReregister — generation GC)
 

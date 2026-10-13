@@ -700,8 +700,12 @@ These carry security properties the contracts deliberately do not:
 - Treat the thresholds as tunable configuration, not constants.
 - Monitor the registrar allowance with generous headroom, in money rather than in
   operations: exhaustion is a hard service stop only the guardian Safe can clear.
-- Get the owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`)
-  before registering for them, and submit it with `registerWithCredit`.
+- Get the owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`, with
+  the owner's current `nonces` value) before registering for them, and submit it
+  with `registerWithCredit`.
+- Refuse a registration whose owner is the registrar's own address:
+  `registerWithCredit` checks no signature then, so the client would choose the
+  name and records the registrar holds.
 - Relay a transfer as two intents: the holder's `approveWithSig`, then the
   recipient's `claimWithSig`. Nothing moves until the recipient claims.
 

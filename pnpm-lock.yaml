@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       viem:
-        specifier: ^2.33.0
+        specifier: 2.51.2
         version: 2.51.2
     devDependencies:
       '@ensdomains/headless-web3-provider':

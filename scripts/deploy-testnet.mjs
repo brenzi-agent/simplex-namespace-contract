@@ -196,12 +196,13 @@ async function main() {
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
   // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
-  // and the owner's signed consent, split out of the controller, which trusts it
-  // until `freeze`. The guardian funds registrars on this contract.
+  // and the owner's signature check. Only this contract may call the controller's
+  // sponsored entry points; `freeze` fixes it. The guardian funds registrars here.
   const sponsor = await deploy('SimplexSponsor',
     'simplex/SimplexSponsor.sol/SimplexSponsor.json',
-    [controller.address, baseRegistrar.address])
+    [controller.address])
   await write(controller, 'setSponsor', [sponsor.address])
+
   await write(controller, 'setBeneficiary', [account.address])
   await write(controller, 'setPublicSalesOpen', [true])
 
@@ -213,8 +214,8 @@ async function main() {
     [account.address, ensRegistry.address, dummyGateway.address])
 
   await write(ensRegistry, 'setResolver', [tldNode, publicResolver.address])
-  // The registry hands a node only to its caller, except from the root or a TLD,
-  // so the TLD goes to the registrar from the root.
+  // The registry assigns a node to someone other than the caller only under the
+  // root or a TLD, so the TLD is assigned to the registrar from the root.
   await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), baseRegistrar.address])
   console.log(`.${tld} node transferred to BaseRegistrar`)
 
@@ -255,22 +256,18 @@ async function main() {
     console.log(`  BaseRegistrar owner -> cold`)
     await write(mockNft, 'transferOwnership', [ownerAddress])
     console.log(`  MockSMPXNFT owner -> cold`)
-    console.log(`  ReverseRegistrar owner -> cold`)
-    await write(defaultReverseRegistrar, 'transferOwnership', [ownerAddress])
-    console.log(`  DefaultReverseRegistrar owner -> cold`)
 
     // ENS subnodes still owned by the deployer (from the dApp-helper
-    // setup of the eth-usd.data.eth path and the reverse namespace).
+    // setup of the eth-usd.data.eth path).
     // Transfer them explicitly so the deployer can't change the price
-    // oracle pointer or rebind the reverse namespace post-handoff.
-    await write(ensRegistry, 'setOwner', [namehash('reverse'), ownerAddress])
-    // The registry gives a node only to its caller, except from the root or a
-    // TLD. data.eth is neither, so eth-usd.data.eth cannot be handed on: the
-    // deploy key drops it, and data.eth's new owner can take it back.
+    // oracle pointer post-handoff.
+    // The registry assigns a node to someone other than the caller only under
+    // the root or a TLD. data.eth is neither, so the deploy key sets the owner
+    // of eth-usd.data.eth to zero; data.eth's new owner can take it back.
     await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
     await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), ownerAddress])
     await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), ownerAddress])
-    console.log(`  ENS subnodes (reverse, eth-usd.data.eth, data.eth, eth) -> cold`)
+    console.log(`  eth-usd.data.eth -> zero; ENS subnodes (data.eth, eth) -> cold`)
 
     // ENS root last. After this the deployer can't reassign any TLD.
     await write(ensRegistry, 'setOwner', [zeroHash, ownerAddress])
@@ -301,7 +298,7 @@ async function main() {
     ENSRegistry: ensRegistry.address,
     BaseRegistrarImplementation: baseRegistrar.address,
     ReverseRegistrar: zeroAddress,
-    DefaultReverseRegistrar: defaultReverseRegistrar.address,
+    DefaultReverseRegistrar: zeroAddress,
     NameWrapper: zeroAddress, // wrapper-free v3
     MetadataRenderer: metadataRenderer.address,
     SubnameRegistrar: subnameRegistrar.address,

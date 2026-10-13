@@ -252,11 +252,11 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
   // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
-  // and the owner's signed consent, split out of the controller, which trusts it
-  // until `freeze`. The guardian funds registrars on this contract.
+  // and the owner's signature check. Only this contract may call the controller's
+  // sponsored entry points; `freeze` fixes it. The guardian funds registrars here.
   const sponsor = await deploy('SimplexSponsor',
     'simplex/SimplexSponsor.sol/SimplexSponsor.json',
-    [controller.address, baseRegistrar.address])
+    [controller.address])
   await write(controller, 'setSponsor', [sponsor.address])
 
   const dummyGateway = await deploy('DummyGatewayProvider',
@@ -266,8 +266,8 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
     [account.address, ensRegistry.address, dummyGateway.address])
 
   await write(ensRegistry, 'setResolver', [tldNode, publicResolver.address])
-  // The registry hands a node only to its caller, except from the root or a TLD,
-  // so the TLD goes to the registrar from the root.
+  // The registry assigns a node to someone other than the caller only under the
+  // root or a TLD, so the TLD is assigned to the registrar from the root.
   await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), baseRegistrar.address])
 
   await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), account.address])
@@ -301,9 +301,9 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
     // pointer on the deploy key, which is destroyed after the handover. The
     // vendored oracle `.testing` runs has no owner at all.
     if (!isTesting) await write(priceOracle, 'transferOwnership', [ownerAddress])
-    // The registry gives a node only to its caller, except from the root or a
-    // TLD. data.eth is neither, so eth-usd.data.eth cannot be handed on: the
-    // deploy key drops it, and data.eth's new owner can take it back.
+    // The registry assigns a node to someone other than the caller only under
+    // the root or a TLD. data.eth is neither, so the deploy key sets the owner
+    // of eth-usd.data.eth to zero; data.eth's new owner can take it back.
     await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
     await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), ownerAddress])
     await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), ownerAddress])
@@ -395,6 +395,8 @@ async function verifyWiring(publicClient, addresses) {
     () => read(controller, [], ADDR, 'beneficiary'))
   await check('controller sponsor', addresses.SimplexSponsor,
     () => read(controller, [], ADDR, 'sponsor'))
+  await check('sponsor controller', controller,
+    () => read(addresses.SimplexSponsor, [], ADDR, 'controller'))
   await check('controller nftGateEnabled', String(nftGateEnabled),
     () => read(controller, [], [{ type: 'bool' }], 'nftGateEnabled'))
   await check('controller minCharLength', '6',

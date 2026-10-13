@@ -16,7 +16,7 @@ plain-language summary of how SNRC differs from ENS, see
 
 ```
       ┌────────────────────────────┐
-      │ ENSRegistry  (verbatim)    │  owner + resolver of every node
+      │ ENSRegistry  (modified)    │  owner + resolver of every node
       └──────────────┬─────────────┘
                      │
                      ▼
@@ -45,14 +45,16 @@ plain-language summary of how SNRC differs from ENS, see
   2LD NFT; it is also the PublicResolver's nameWrapper slot (subname auth via ownerOf).
 ```
 
-`ENSRegistry`, `Root`, `PublicResolver`, `StringUtils`,
+`Root`, `PublicResolver`, `StringUtils`,
 `ExponentialPremiumPriceOracle`, `UniversalResolver`, and the price-oracle
-interfaces are vendored verbatim from ENS. `StablePriceOracle` is vendored but
+interfaces are vendored verbatim from ENS. `ENSRegistry` is modified: it adds
+`setApprovalForAllWithSig` and makes nobody the owner of a node but the caller,
+except under the root or a TLD. `StablePriceOracle` is vendored but
 modified (SNRC added `price6Letter`, `priceUSD` and `InvalidPriceFeed`); it is what
 `.testing` runs, while `.simplex` uses the new `SimplexPriceOracle`.
 `SimplexController` is custom (UUPS); `BaseRegistrarImplementation` is modified (v3 — ERC721Enumerable + `labelOf`
-label index + `tokenURI`); `MetadataRenderer` (swappable) and `SubnameRegistrar`
-(immutable) are new SNRC contracts. **There is no NameWrapper** — only the
+label index + `tokenURI` + consented transfer); `SimplexSponsor`, `MetadataRenderer`
+(swappable) and `SubnameRegistrar` (immutable) are new SNRC contracts. **There is no NameWrapper** — only the
 `INameWrapper` interface is kept, because verbatim `PublicResolver` imports it
 (deployed with `nameWrapper = SubnameRegistrar`, so subname records authorise via
 `SubnameRegistrar.ownerOf`). **There is no reverse registrar either** — removed in
@@ -94,8 +96,9 @@ User → SimplexController.commit(hash)
        ├─ priceOracle.price(...)               ← unchanged from ENS
        ├─ require(msg.value ≥ totalPrice)      ← unchanged
        ├─ commit-reveal age check              ← unchanged
-       ├─ base.registerWithLabel(label, owner, duration)  ← v3: passes the
-       │      plaintext label so the registrar records labelOf (hash→name)
+       ├─ base.registerWithLabel(label, this, duration)  ← v3: passes the
+       │      plaintext label so the registrar records labelOf (hash→name);
+       │      registers to the owner directly when resolver = 0
        ├─ ens.setRecord(node, this, resolver, 0)     ← if resolver ≠ 0; the owner
        │      arrives with the token below (the registry gives a node only to
        │      its caller)
@@ -141,7 +144,8 @@ SimpleX logo; see `supportedSocialRecordKeys.ts`, `getSocialData.ts`,
 
 There is no NameWrapper. Instead:
 
-- **2LDs are plain ERC-721** on the `BaseRegistrar` and trade directly. The
+- **2LDs are ERC-721** on the `BaseRegistrar`; a transfer completes only when
+  the recipient takes an offered name, so marketplaces cannot settle them. The
   registrar adds `ERC721Enumerable` (trustless "My Names"), a write-once
   `labelOf` index (`registerWithLabel`), and `tokenURI` that delegates to the
   swappable **`MetadataRenderer`**, which builds the JSON + SVG (with the domain
@@ -263,10 +267,13 @@ simplex-namespace-contract/      ← parent repo (this)
     contracts/
       simplex/SimplexController.sol      ← new (UUPS)
       simplex/SimplexControllerProxy.sol ← new (ERC1967 proxy)
+      simplex/SimplexSponsor.sol         ← new (sponsored path, owner signature)
       simplex/MetadataRenderer.sol       ← new (on-chain NFT JSON+SVG)
       simplex/SubnameRegistrar.sol       ← new (subname create + index)
       ethregistrar/BaseRegistrarImplementation.sol ← modified (v3: enumerable,
-                                            labelOf, tokenURI, registerWithLabel)
+                                            labelOf, tokenURI, registerWithLabel,
+                                            consented transfer)
+      registry/ENSRegistry.sol           ← modified (signed approval, owner consent)
       mocks/MockSMPXNFT.sol              ← new
       mocks/Multicall3.sol               ← new (aggregate3 + tryAggregate)
       wrapper/INameWrapper.sol           ← kept (interface only, for PublicResolver)
