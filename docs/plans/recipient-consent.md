@@ -170,8 +170,8 @@ down in favour of a split.
 
 ## 8. What stays open
 
-- `registerReserved` gives a reserved name to any address, for any term of two
-  years or more, without its signature, also after `freeze`, and the admin or the
+- `registerReserved` gives a reserved name to any address, for a term of two to
+  ten years, without its signature, also after `freeze`, and the admin or the
   guardian can reserve any unregistered name at once, by the owner's choice: the
   admin is trusted, and every call is public.
 - Controllers are trusted the same way. A controller may register any available
@@ -256,9 +256,10 @@ down in favour of a split.
 - **#7519 stealth transfers:** the sender's `approveWithSig` emits the
   announcement; accepting is the recipient's `claimWithSig` from the stealth key.
 - **The guardian** funds registrars on `SimplexSponsor`.
-- **ens-app-v3:** its Send flow will revert and needs an offer and claim flow, and
-  so will its manager and role edits that assign the registry node to another
-  address. Not verified: the submodule is not checked out here.
+- **ens-app-v3** (branch `ab/recipient-consent`): Send on a `.simplex`/`.testing`
+  2LD is an offer (`approve`, withdrawable) that the recipient claims from the
+  name's page after reviewing its resolver, records and subnodes; manager editing
+  is gone, since the registry node follows the NFT.
 - **Deploy scripts:** deploy the sponsor and call `setSponsor`; assign the TLD
   with `setSubnodeOwner` from the root; at handover, set the owner of
   `eth-usd.data.eth` to zero (its parent `data.eth` is not a TLD, so it cannot be

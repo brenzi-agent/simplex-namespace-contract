@@ -6,7 +6,7 @@ Three layers.
 |------------------------|----------------------|-----------------------------------------|------------:|
 | Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        | 119 SNRC + upstream ENS suite |
 | Frontend unit          | `ens-app-v3/`        | `pnpm test`                             | varies (ENS upstream) |
-| End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 25 |
+| End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 28 |
 
 ## Solidity unit tests
 
@@ -49,7 +49,7 @@ instead — there are no SNRC-specific frontend unit tests today.
 
 ## End-to-end (Playwright)
 
-**25 tests** in `test/e2e/simplex-flow.spec.ts` in the parent repo. They share one
+**28 tests** in `test/e2e/simplex-flow.spec.ts` in the parent repo. They share one
 Hardhat instance and one Next.js dev server (`./scripts/run-local.sh`).
 
 Each test is written to run individually against a fresh chain. A few mutate

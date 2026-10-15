@@ -406,7 +406,7 @@ Accepted:
   admin key can point it at itself and re-point the registry owner and resolver of
   any held name, also after `freeze`.
 - **`registerReserved` is exempt.** The admin assigns a reserved name to any
-  address, for any term of two years or more, without its signature, also after
+  address, for a term of two to ten years, without its signature, also after
   `freeze`; the admin or the guardian can reserve any unregistered name at once.
   It is an admin call, and public.
 - **Controllers are trusted.** A controller may register any available name

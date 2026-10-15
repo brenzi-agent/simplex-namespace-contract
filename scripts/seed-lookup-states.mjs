@@ -60,8 +60,9 @@ const RENT_PRICES = [0n, 0n, 10000n, 1000n, 100n, 10n].map((usd) => (usd * 10n *
 
 const DAY = 24n * 60n * 60n
 const MIN_DURATION = 730n * DAY
-// against a chain started 900 days ago: 1460d is live, 850d is ~50 days expired with ~40 of grace left
-const LIVE = 1460n * DAY
+// against a chain started 900 days ago: 1095d (the controller's maximum) is live for
+// ~195 more days, 850d is ~50 days expired with ~40 of grace left
+const LIVE = 1095n * DAY
 const IN_GRACE = 850n * DAY
 
 async function register(label, { contactLink, duration = MIN_DURATION } = {}) {

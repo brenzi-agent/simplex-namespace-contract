@@ -507,7 +507,7 @@ After each deployment:
    (across `test/simplex/`) pass alongside the upstream ENS suite.
 3. Bring up the stack and run the parent-repo Playwright e2e suite:
    `./scripts/run-local.sh` then `npx playwright test --project=simplex` — all
-   **25** tests pass (some conditionally skip based on live chain state).
+   **28** tests pass (some conditionally skip based on live chain state).
 4. Manual smoke: search a 6-char name → "Available"; register it; set
    `simplex.contact` and `simplex.channel`; visit the profile and confirm both
    records render as clickable links.
