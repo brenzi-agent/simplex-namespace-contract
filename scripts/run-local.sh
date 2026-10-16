@@ -13,12 +13,15 @@ for PORT in 8545 3000; do
 done
 
 echo "=== Starting Hardhat node ==="
-(cd ens-contracts && npx hardhat --network hardhat node) &
+(cd ens-contracts && exec ./node_modules/.bin/hardhat --network hardhat node) &
 NODE_PID=$!
-sleep 4
+until (echo > /dev/tcp/127.0.0.1/8545) 2>/dev/null; do
+  kill -0 $NODE_PID 2>/dev/null || { echo "ERROR: Hardhat node exited"; exit 1; }
+  sleep 1
+done
 
 echo "=== Deploying .${TLD} contracts ==="
-DEPLOY_OUTPUT=$(SIMPLEX_TLD="$TLD" node scripts/deploy-local.mjs 2>&1)
+DEPLOY_OUTPUT=$(SIMPLEX_TLD="$TLD" node scripts/deploy-local.mjs 2>&1) || true
 echo "$DEPLOY_OUTPUT" | grep -v "^$"
 
 ADDRS=$(echo "$DEPLOY_OUTPUT" | grep "^NEXT_PUBLIC_DEPLOYMENT_ADDRESSES=" | sed "s/^NEXT_PUBLIC_DEPLOYMENT_ADDRESSES=//")

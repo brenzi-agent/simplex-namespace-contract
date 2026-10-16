@@ -34,12 +34,22 @@ cd ens-contracts && pnpm install && cd ..
 cd ens-app-v3 && pnpm install && cd ..
 ```
 
+After pulling into an existing clone, check out the submodule commits the pull
+recorded, then reinstall and recompile:
+
+```bash
+git submodule update --init
+pnpm install
+cd ens-contracts && pnpm install && npx hardhat compile && cd ..
+cd ens-app-v3 && pnpm install && cd ..
+```
+
 ## Compile and test contracts
 
 ```bash
 cd ens-contracts
-npx hardhat compile                   # 166 Solidity files
-npx vitest run                        # 1547 tests (1526 ENS + 21 SimplexController)
+npx hardhat compile                   # required before running locally
+npx vitest run
 ```
 
 ## Run locally
@@ -58,22 +68,28 @@ SIMPLEX_TLD=simplex ./scripts/run-local.sh
 
 Open http://localhost:3000.
 
+The script deploys the contracts in `ens-contracts/artifacts/`, so compile them
+first (see above). It needs ports 8545 and 3000 free; Ctrl-C stops both the node
+and the frontend. If something is still listening on either port, stop it with
+`fuser -k 8545/tcp 3000/tcp` (or `kill $(lsof -t -i :8545 -i :3000)`).
+
 <details>
 <summary>Manual setup (separate terminals)</summary>
 
-**Terminal 1**: Hardhat node
+**Terminal 1**: Hardhat node (chain 1337; plain `npx hardhat node` starts chain 31337, which the frontend does not use)
 
 ```bash
-cd ens-contracts && npx hardhat node
+cd ens-contracts && npx hardhat --network hardhat node
 ```
 
-**Terminal 2**: Deploy + frontend
+**Terminal 2**: Deploy + frontend, with the same TLD in both commands
 
 ```bash
-node scripts/deploy-local.mjs
+SIMPLEX_TLD=testing node scripts/deploy-local.mjs
 # Copy the NEXT_PUBLIC_DEPLOYMENT_ADDRESSES line from the output, then:
-cd ens-app-v3
+cd ens-app-v3 && rm -rf .next
 NEXT_PUBLIC_DEPLOYMENT_ADDRESSES='<paste>' \
+NEXT_PUBLIC_CHAIN_NAME=localhost \
 NEXT_PUBLIC_PROVIDER=http://127.0.0.1:8545 \
 NEXT_PUBLIC_SIMPLEX_TLD=testing \
 pnpm dev
@@ -95,11 +111,20 @@ pnpm dev
    ```
    This is Hardhat account #0 (deployer) — has 10000 ETH and owns NFT #0 (needed for `.testing` registration).
 
+3. For the offer and claim flow, also import account #1 as the recipient:
+   ```
+   0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+   ```
+
+4. Every restart of the stack starts a new chain. Clear MetaMask's activity and
+   nonce data after each one (**Settings → Advanced → Clear activity tab data**),
+   or its transactions fail with nonce errors.
+
 ## What to test
 
 ### Search (homepage)
 
-- Type a name like `myname` in the search bar — it should auto-complete to `myname.testing`
+- Type a name like `myname` in the search bar — it should auto-complete to `myname.testing` (`myname.simplex` on `.simplex`)
 - Search for a 6+ character name → should show as **Available**
 - Search for a 5-character name like `short` → should show as unavailable (min char length is 6)
 
@@ -108,7 +133,7 @@ pnpm dev
 > Ignore the warning `Error syncing data`. It only appears on hardhat local testing
 
 1. Search for an available 6+ char name (e.g., `testname`)
-2. Click to register → should show pricing in ETH (converted from $1/year via oracle)
+2. Click to register → `.testing` is free (gas only); `.simplex` costs $10/year, which the local oracle's $1/ETH makes about 20 ETH for the two-year minimum
 3. **Commit** transaction → confirm in MetaMask
 4. Wait 60 seconds (commit-reveal delay)
 5. **Register** transaction → confirm in MetaMask, pay ETH
@@ -125,6 +150,16 @@ pnpm dev
 2. Edit records → set `simplex.contact` and `simplex.channel` text records
 3. Save → confirm transaction
 4. Reload → records should persist
+
+### Transfer (offer and claim)
+
+1. As the holder (account #0), open the name → **Ownership** → **Send**, enter
+   account #1's address and confirm the offer. Nothing moves yet: the name page
+   shows **Offer pending** with **Withdraw offer**.
+2. Switch MetaMask to account #1, open the name's page → **Review and claim**.
+3. The claim screen lists the name's resolver, records and subnames. Optionally
+   switch on **Clear records**, tick the acknowledgement, then **Claim**.
+4. The name, its registry node and its subnames now belong to account #1.
 
 ### Admin panel
 
