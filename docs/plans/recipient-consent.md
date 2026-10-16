@@ -260,9 +260,16 @@ down in favour of a split.
   withdrawable) that the recipient claims from the name's page after reviewing
   its resolver, records and subnodes. Unlike the clients described in §8, it
   still allows claiming a name with a subnode that only ETH can remove: it lists
-  the subnode with a warning and requires the recipient's acknowledgement. The
-  claim is disabled only when the walk exceeds 100 nodes or a read fails, except
-  a read of a holder-chosen resolver, which is listed with a warning instead. A
+  the subnode with a warning and requires the recipient's acknowledgement. Past
+  100 nodes the walk stops, and the claim needs a second acknowledgement that the
+  subnodes it could not check stay too. The claim is disabled only when a read
+  fails, except a read of a holder-chosen resolver, which is listed with a
+  warning instead. An optional switch adds a second transaction, right after the
+  claim, that clears the records on the resolver the review showed
+  (`clearRecords`); a resolver change front-run into the claim's block is not
+  caught. The claim transaction re-checks the review on every block, and a check
+  still running when the next block arrives finishes instead of restarting, so
+  the claim can rest on a check one block old. A
   name whose label fails the app's label rule (lowercase letters, digits and
   hyphens, no hyphen at either end and no `--` in positions 3–4), such as one
   known only by its labelhash, cannot be offered or claimed in the app, since
