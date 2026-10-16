@@ -288,6 +288,6 @@ simplex-namespace-contract/      ← parent repo (this)
   scripts/
     deploy-local.mjs             ← parameterized by SIMPLEX_TLD env var
     run-local.sh                 ← orchestrates node + deploy + frontend
-  test/e2e/simplex-flow.spec.ts  ← 25 Playwright tests
+  test/e2e/simplex-flow.spec.ts  ← 27 Playwright tests
   docs/                          ← this directory
 ```

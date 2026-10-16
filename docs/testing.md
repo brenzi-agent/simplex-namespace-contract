@@ -6,7 +6,7 @@ Three layers.
 |------------------------|----------------------|-----------------------------------------|------------:|
 | Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        | 119 SNRC + upstream ENS suite |
 | Frontend unit          | `ens-app-v3/`        | `pnpm test`                             | varies (ENS upstream) |
-| End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 28 |
+| End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 27 |
 
 ## Solidity unit tests
 
@@ -45,11 +45,14 @@ What's **not** covered in-contract today:
 
 The ens-app-v3 fork keeps the upstream vitest suite (`pnpm test`) running for the
 parts we didn't touch. Most of our additions are exercised by the e2e suite
-instead — there are no SNRC-specific frontend unit tests today.
+instead; the offer and claim flow has unit tests of its own (`snrcClaimChecks`,
+`snrcOffers`, `useNameOffer`, `useClaimChecks`, `NameOfferBanner`, the
+`OfferName` and `ClaimName` flows, and the `offerName` / `withdrawOffer` /
+`claimName` transactions).
 
 ## End-to-end (Playwright)
 
-**28 tests** in `test/e2e/simplex-flow.spec.ts` in the parent repo. They share one
+**27 tests** in `test/e2e/simplex-flow.spec.ts` in the parent repo. They share one
 Hardhat instance and one Next.js dev server (`./scripts/run-local.sh`).
 
 Each test is written to run individually against a fresh chain. A few mutate
@@ -99,6 +102,8 @@ npx playwright test --grep "search shows name as available"
 | direct nav to /&lt;too-short&gt;.testing/register stays on the page with a disabled "Name too short" button | Too-short guard on the register route — *skips if minChar ≤ 1* |
 | direct nav to /&lt;too-short&gt;.testing (profile) renders the yellow "too short" warning | Too-short guard on the profile route — *skips if minChar ≤ 1* |
 | .testing register page hides pricing tiers and the credit-card payment option | `.testing` register UI hides USD tiers + card payment |
+| journey: name + subname, offered and claimed, then the recipient clears everything | UI: register a name and a subname with records, offer, review and claim (Claim stays disabled until acknowledged), then delete the subname and every record; asserts that no subname and no text, address or contenthash record is left on chain or in the app |
+| the holder can withdraw a pending offer | The name page's Withdraw clears the registrar approval |
 
 ## Running everything
 

@@ -256,10 +256,18 @@ down in favour of a split.
 - **#7519 stealth transfers:** the sender's `approveWithSig` emits the
   announcement; accepting is the recipient's `claimWithSig` from the stealth key.
 - **The guardian** funds registrars on `SimplexSponsor`.
-- **ens-app-v3** (branch `ab/recipient-consent`): Send on a `.simplex`/`.testing`
-  2LD is an offer (`approve`, withdrawable) that the recipient claims from the
-  name's page after reviewing its resolver, records and subnodes; manager editing
-  is gone, since the registry node follows the NFT.
+- **ens-app-v3:** Send on a `.simplex`/`.testing` 2LD is an offer (`approve`,
+  withdrawable) that the recipient claims from the name's page after reviewing
+  its resolver, records and subnodes. Unlike the clients described in §8, it
+  still allows claiming a name with a subnode that only ETH can remove: it lists
+  the subnode with a warning and requires the recipient's acknowledgement. The
+  claim is disabled only when the walk exceeds 100 nodes or a read fails, except
+  a read of a holder-chosen resolver, which is listed with a warning instead. A
+  name whose label fails the app's label rule (lowercase letters, digits and
+  hyphens, no hyphen at either end and no `--` in positions 3–4), such as one
+  known only by its labelhash, cannot be offered or claimed in the app, since
+  the app could not show or manage it. Manager editing is gone, since the
+  registry assigns a node only to the caller or to zero (§6).
 - **Deploy scripts:** deploy the sponsor and call `setSponsor`; assign the TLD
   with `setSubnodeOwner` from the root; at handover, set the owner of
   `eth-usd.data.eth` to zero (its parent `data.eth` is not a TLD, so it cannot be

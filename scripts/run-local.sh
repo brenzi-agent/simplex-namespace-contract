@@ -5,10 +5,12 @@ cd "$(dirname "$0")/.."
 
 TLD="${SIMPLEX_TLD:-testing}"
 
-if (echo > /dev/tcp/127.0.0.1/8545) 2>/dev/null; then
-  echo "ERROR: port 8545 is already in use; stop the process listening there first"
-  exit 1
-fi
+for PORT in 8545 3000; do
+  if (echo > /dev/tcp/127.0.0.1/$PORT) 2>/dev/null; then
+    echo "ERROR: port $PORT is already in use; stop the process listening there first"
+    exit 1
+  fi
+done
 
 echo "=== Starting Hardhat node ==="
 (cd ens-contracts && npx hardhat --network hardhat node) &

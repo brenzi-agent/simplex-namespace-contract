@@ -424,7 +424,9 @@ Accepted:
   `createSubnameWithSig` (after a permissionless `purge` if it is stale) and
   `deleteSubnameWithSig`, but only when its label is known, non-empty and at
   most 63 bytes; otherwise only ETH or a registry operator clears it, so clients
-  refuse to claim a name with such a subnode. A holder who front-runs the claim
+  refuse to claim a name with such a subnode (the dApp instead lists it with a
+  warning and requires an acknowledgement; see
+  `docs/plans/recipient-consent.md` §9). A holder who front-runs the claim
   can still add one. A claim signature is valid for one offer (`offers(tokenId)`
   is in `ClaimName`), so a holder cannot withdraw, keep the signature and submit
   it later. Before signing a claim, clients must check the name's registry

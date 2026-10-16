@@ -14,9 +14,8 @@ import { localhost } from 'viem/chains'
 
 const DEPLOYER_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
 const ACCOUNT1_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
-// The controller's minimum registration term, in seconds.
-const TWO_YEARS = 63072000n
-const TRADEMARK = 2 // SimplexController.Reason.Trademark
+const MIN_REGISTRATION_DURATION = 730n * 86400n
+const REASON_TRADEMARK = 2
 
 const hardhatChain = {
   ...localhost,
@@ -108,11 +107,12 @@ async function completeTransactions(page: any, wallet: any) {
   await expect(modal).toBeHidden({ timeout: 15_000 })
 }
 
-// Every record a resolver holds for `node` right now: each text key and coin type
-// ever set for it (from the resolver's logs), with its current, non-empty value.
+// The text, address and contenthash records a resolver holds for `node` right now:
+// each text key and coin type ever set for it (from the resolver's logs), with its
+// current, non-empty value. These are the record kinds the journey test writes.
 async function currentRecords(pub: any, resolver: `0x${string}`, node: `0x${string}`) {
   const { parseAbi, parseAbiItem } = await import('viem')
-  const logs = async (event: string) =>
+  const logs = (event: string) =>
     pub.getLogs({ address: resolver, event: parseAbiItem(event), args: { node }, fromBlock: 'earliest' })
   const keys = new Set<string>(
     (await logs('event TextChanged(bytes32 indexed node, string indexed indexedKey, string key, string value)')).map(
@@ -144,13 +144,13 @@ async function currentRecords(pub: any, resolver: `0x${string}`, node: `0x${stri
 }
 
 // Add a single record (key=value) via the add-records modal.
-// If `key` matches a predefined option (e.g. simplex.contact, com.twitter), uses it;
+// If `key` matches a predefined option (e.g. com.twitter), uses it;
 // otherwise falls back to the "custom" option.
-// Must be called from the Profile step (registration) or the Edit Profile modal (post-registration).
+// Must be called from a Profile step (registration, new subname) or the Edit Profile modal (post-registration).
 async function addProfileRecord(page: any, key: string, value: string) {
   // The SimpleX link rows (simplex.contact, simplex.channel) are already on the form.
   const linkRow = page.getByTestId(`multi-url-field-${key}-input-0`)
-  if (await linkRow.isVisible({ timeout: 1000 }).catch(() => false)) {
+  if (await linkRow.waitFor({ timeout: 1000 }).then(() => true, () => false)) {
     await linkRow.fill(value)
     await page.waitForTimeout(300)
     return
@@ -210,7 +210,7 @@ async function registerNameOnChain(label: string, withResolver: boolean = false,
   const reg = {
     label,
     owner: account.address,
-    duration: TWO_YEARS,
+    duration: MIN_REGISTRATION_DURATION,
     secret: (`0x${randHex()}`) as `0x${string}`,
     resolver: resolverAddr,
     data: [] as `0x${string}`[],
@@ -220,7 +220,7 @@ async function registerNameOnChain(label: string, withResolver: boolean = false,
   const commitment = await pub.readContract({ address: controller, abi, functionName: 'makeCommitment', args: [reg] })
   await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: controller, abi, functionName: 'commit', args: [commitment] }) })
   await advanceTime(65)
-  const price = await pub.readContract({ address: controller, abi, functionName: 'rentPrice', args: [label, TWO_YEARS] })
+  const price = await pub.readContract({ address: controller, abi, functionName: 'rentPrice', args: [label, MIN_REGISTRATION_DURATION] })
   const value = ((price as any).base + (price as any).premium) * 12n / 10n
   await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: controller, abi, functionName: 'register', args: [reg], value }) })
 }
@@ -562,7 +562,7 @@ test.describe('SimpleX Namespace', () => {
     const linkLocator = page.getByTestId('social-profile-button-simplex.contact')
     await expect(linkLocator).toBeVisible({ timeout: 15_000 })
     // Display text is the friendly label, not the raw URL
-    await expect(linkLocator).toContainText(/SimpleX contact/i)
+    await expect(linkLocator).toContainText('SimpleX Contact')
     // …but the link href points at the actual record value
     await expect(linkLocator).toHaveAttribute('href', contactLink)
   })
@@ -589,7 +589,7 @@ test.describe('SimpleX Namespace', () => {
     const reg = {
       label: `nft${Date.now().toString(36)}`,
       owner: account.address,
-      duration: TWO_YEARS,
+      duration: MIN_REGISTRATION_DURATION,
       secret: ('0x' + 'cc'.repeat(32)) as `0x${string}`,
       resolver: '0x0000000000000000000000000000000000000000' as `0x${string}`,
       data: [] as `0x${string}`[],
@@ -601,7 +601,7 @@ test.describe('SimpleX Namespace', () => {
       hash: await wallet.writeContract({ address: controller, abi, functionName: 'commit', args: [commitment] }),
     })
     await advanceTime(65)
-    const price = await pub.readContract({ address: controller, abi, functionName: 'rentPrice', args: [reg.label, TWO_YEARS] })
+    const price = await pub.readContract({ address: controller, abi, functionName: 'rentPrice', args: [reg.label, MIN_REGISTRATION_DURATION] })
     const value = ((price as any).base + (price as any).premium) * 12n / 10n
 
     // Pre-flight: confirm the gate is actually on. If a previous test disabled it,
@@ -859,7 +859,7 @@ test.describe('SimpleX Namespace', () => {
         address: controller,
         abi: reservedAbi,
         functionName: 'addReservedNames',
-        args: [[label], TRADEMARK],
+        args: [[label], REASON_TRADEMARK],
       }),
     })
 
@@ -969,7 +969,7 @@ test.describe('SimpleX Namespace', () => {
         address: controller,
         abi: reservedAbi,
         functionName: 'addReservedNames',
-        args: [[label], TRADEMARK],
+        args: [[label], REASON_TRADEMARK],
       }),
     })
     expect(
@@ -979,7 +979,7 @@ test.describe('SimpleX Namespace', () => {
         functionName: 'reservedNames',
         args: [labelhash],
       }),
-    ).toBe(TRADEMARK)
+    ).toBe(REASON_TRADEMARK)
 
     // Attempting to register reverts (NameReserved).
     let err: any
@@ -1102,7 +1102,7 @@ test.describe('SimpleX Namespace', () => {
         address: controller,
         abi: reservedAbi,
         functionName: 'addReservedNames',
-        args: [[label], TRADEMARK],
+        args: [[label], REASON_TRADEMARK],
       }),
     })
 
@@ -1204,68 +1204,9 @@ test.describe('SimpleX Namespace', () => {
     await expect(page.locator('text=/Credit card/i')).toHaveCount(0)
   })
 
-  test('a name moves only when its recipient claims it: offer, then claim', async ({ browser }) => {
-    const { createPublicClient, http, parseAbi, keccak256, toBytes, namehash } = await import('viem')
-    const { privateKeyToAccount } = await import('viem/accounts')
-    const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
-    const deps = loadDeployments()
-    const holder = privateKeyToAccount(DEPLOYER_KEY as `0x${string}`).address
-    const recipient = privateKeyToAccount(ACCOUNT1_KEY as `0x${string}`).address
-    const label = `gift${Date.now().toString(36)}`
-    const tokenId = BigInt(keccak256(toBytes(label)))
-    await registerNameOnChain(label, true)
-    const registrarAbi = parseAbi([
-      'function ownerOf(uint256) view returns (address)',
-      'function getApproved(uint256) view returns (address)',
-    ])
-
-    // The holder offers the name from the Ownership tab.
-    const holderPage = await (await browser.newContext()).newPage()
-    const holderWallet = await injectHeadlessWeb3Provider({ page: holderPage, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
-    await holderPage.goto(`/${label}.testing?tab=ownership`)
-    await holderPage.waitForTimeout(2000)
-    await connectWallet(holderPage, holderWallet)
-    await dismissOverlay(holderPage)
-    await holderPage.getByTestId('role-action-offer-name').click({ timeout: 15_000 })
-    await holderPage.getByTestId('send-name-search-input').fill(recipient)
-    await holderPage.locator('[data-testid^="search-result-"]').first().click({ timeout: 15_000 })
-    await holderPage.getByTestId('offer-name-confirm').click()
-    await confirmTransaction(holderPage, holderWallet)
-    await expect
-      .poll(() => pub.readContract({ address: deps.BaseRegistrarImplementation, abi: registrarAbi, functionName: 'getApproved', args: [tokenId] }), { timeout: 15_000 })
-      .toBe(recipient)
-    // Offered, not moved.
-    expect(await pub.readContract({ address: deps.BaseRegistrarImplementation, abi: registrarAbi, functionName: 'ownerOf', args: [tokenId] })).toBe(holder)
-
-    // The recipient reviews what comes with the name and claims it.
-    const recipientPage = await (await browser.newContext()).newPage()
-    const recipientWallet = await injectHeadlessWeb3Provider({ page: recipientPage, privateKeys: [ACCOUNT1_KEY], chains: [hardhatChain] })
-    await recipientPage.goto(`/${label}.testing`)
-    await recipientPage.waitForTimeout(2000)
-    await connectWallet(recipientPage, recipientWallet)
-    await dismissOverlay(recipientPage)
-    await recipientPage.getByTestId('claim-name-button').click({ timeout: 15_000 })
-    await expect(recipientPage.getByTestId('claim-name-view')).toBeVisible({ timeout: 15_000 })
-    await expect(recipientPage.getByTestId('claim-name-confirm')).toBeDisabled()
-    await recipientPage.getByTestId('claim-name-acknowledge').check()
-    await recipientPage.getByTestId('claim-name-confirm').click()
-    await confirmTransaction(recipientPage, recipientWallet)
-    await expect
-      .poll(() => pub.readContract({ address: deps.BaseRegistrarImplementation, abi: registrarAbi, functionName: 'ownerOf', args: [tokenId] }), { timeout: 15_000 })
-      .toBe(recipient)
-    // The registry node followed the token.
-    const registryOwner = await pub.readContract({
-      address: deps.ENSRegistry,
-      abi: parseAbi(['function owner(bytes32) view returns (address)']),
-      functionName: 'owner',
-      args: [namehash(`${label}.testing`)],
-    })
-    expect(registryOwner).toBe(recipient)
-  })
-
   test('journey: name + subname, offered and claimed, then the recipient clears everything', async ({ browser }) => {
     test.setTimeout(10 * 60_000)
-    const { createPublicClient, http, parseAbi, namehash, labelhash, zeroAddress } = await import('viem')
+    const { createPublicClient, http, parseAbi, namehash, keccak256, toBytes, zeroAddress } = await import('viem')
     const { privateKeyToAccount } = await import('viem/accounts')
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
     const deps = loadDeployments()
@@ -1276,24 +1217,24 @@ test.describe('SimpleX Namespace', () => {
     const subname = `mobile.${name}`
     const node = namehash(name)
     const subnode = namehash(subname)
-    const tokenId = BigInt(labelhash(label))
+    const tokenId = BigInt(keccak256(toBytes(label)))
     const nameLink = `https://simplex.chat/contact#/?v=2-7&smp=smp%3A%2F%2Fname-${label}`
     const subLink = `https://simplex.chat/contact#/?v=2-7&smp=smp%3A%2F%2Fsub-${label}`
-    const registrarAbi = parseAbi(['function ownerOf(uint256) view returns (address)'])
-    const subnamesAbi = parseAbi(['function ownerOf(uint256) view returns (address)'])
+    const ownerOfAbi = parseAbi(['function ownerOf(uint256) view returns (address)'])
     const registryAbi = parseAbi([
       'function owner(bytes32) view returns (address)',
       'function resolver(bytes32) view returns (address)',
     ])
     const ownerOf = () =>
-      pub.readContract({ address: deps.BaseRegistrarImplementation, abi: registrarAbi, functionName: 'ownerOf', args: [tokenId] })
+      pub.readContract({ address: deps.BaseRegistrarImplementation, abi: ownerOfAbi, functionName: 'ownerOf', args: [tokenId] })
     const subnameOwner = () =>
-      pub.readContract({ address: deps.SubnameRegistrar, abi: subnamesAbi, functionName: 'ownerOf', args: [BigInt(subnode)] })
+      pub.readContract({ address: deps.SubnameRegistrar, abi: ownerOfAbi, functionName: 'ownerOf', args: [BigInt(subnode)] })
     const registry = (functionName: 'owner' | 'resolver', at: `0x${string}`) =>
       pub.readContract({ address: deps.ENSRegistry, abi: registryAbi, functionName, args: [at] })
 
     // 1. The holder registers the name with a contact link, through the UI.
-    const holderPage = await (await browser.newContext()).newPage()
+    const holderContext = await browser.newContext()
+    const holderPage = await holderContext.newPage()
     await syncBrowserClockToChain(holderPage)
     const holderWallet = await injectHeadlessWeb3Provider({ page: holderPage, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
     await holderPage.goto('/')
@@ -1328,21 +1269,23 @@ test.describe('SimpleX Namespace', () => {
     expect(await ownerOf()).toBe(holder)
 
     // 4. The recipient sees the subname and the record before claiming, and claims.
-    const recipientPage = await (await browser.newContext()).newPage()
+    const recipientContext = await browser.newContext()
+    const recipientPage = await recipientContext.newPage()
     await syncBrowserClockToChain(recipientPage)
     const recipientWallet = await injectHeadlessWeb3Provider({ page: recipientPage, privateKeys: [ACCOUNT1_KEY], chains: [hardhatChain] })
     await recipientPage.goto(`/${name}`)
     await recipientPage.waitForTimeout(2000)
     await connectWallet(recipientPage, recipientWallet)
     await dismissOverlay(recipientPage)
-    await recipientPage.getByTestId('claim-name-button').click({ timeout: 30_000 })
+    await recipientPage.getByRole('button', { name: 'Review and claim' }).click({ timeout: 30_000 })
     await expect(recipientPage.getByTestId('claim-name-subnodes')).toContainText(subname, { timeout: 30_000 })
     await expect(recipientPage.getByTestId('claim-name-records')).toContainText('simplex.contact')
+    await expect(recipientPage.getByTestId('claim-name-confirm')).toBeDisabled()
     await recipientPage.getByTestId('claim-name-acknowledge').check()
     await recipientPage.getByTestId('claim-name-confirm').click()
     await completeTransactions(recipientPage, recipientWallet)
 
-    // 5. The name, its registry node and the subname came across, records intact.
+    // 5. The name, its registry node and the subname now belong to the recipient, records intact.
     await expect.poll(ownerOf, { timeout: 30_000 }).toBe(recipient)
     expect(await registry('owner', node)).toBe(recipient)
     expect(await subnameOwner()).toBe(recipient)
@@ -1369,7 +1312,7 @@ test.describe('SimpleX Namespace', () => {
       await remove.click()
       await recipientPage.waitForTimeout(300)
     }
-    // Every other record has a delete button that takes its row away.
+    // Every other record has a delete button that removes its row.
     for (let i = 0; i < 20; i++) {
       const remove = editor.locator('[data-testid$="-delete-button"]').first()
       if (!(await remove.isVisible().catch(() => false))) break
@@ -1387,13 +1330,15 @@ test.describe('SimpleX Namespace', () => {
     expect(await registry('resolver', subnode)).toBe(zeroAddress)
     expect(await subnameOwner()).toBe(zeroAddress)
 
-    // ... and the app agrees.
+    // ... and the app shows neither.
     await recipientPage.goto(`/${name}?tab=subnames`)
-    await recipientPage.waitForTimeout(5000)
+    await expect(recipientPage.locator('text=No subnames have been added')).toBeVisible({ timeout: 30_000 })
     await expect(recipientPage.getByTestId(`name-item-${subname}`)).toHaveCount(0)
     await recipientPage.goto(`/${name}?tab=records`)
-    await recipientPage.waitForTimeout(5000)
+    await expect(recipientPage.getByTestId('text-amount')).toHaveText(/^0 /, { timeout: 30_000 })
     await expect(recipientPage.locator(`text=${nameLink}`)).toHaveCount(0)
+    await holderContext.close()
+    await recipientContext.close()
   })
 
   test('the holder can withdraw a pending offer', async ({ page }) => {
@@ -1420,7 +1365,7 @@ test.describe('SimpleX Namespace', () => {
     await page.waitForTimeout(2000)
     await connectWallet(page, holderWallet)
     await dismissOverlay(page)
-    await page.getByTestId('withdraw-offer-button').click({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Withdraw offer' }).click({ timeout: 15_000 })
     await confirmTransaction(page, holderWallet)
     await expect
       .poll(() => pub.readContract({ address: registrar, abi: registrarAbi, functionName: 'getApproved', args: [tokenId] }), { timeout: 15_000 })
