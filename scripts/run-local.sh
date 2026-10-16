@@ -31,6 +31,12 @@ if [ -z "$ADDRS" ]; then
   exit 1
 fi
 
+# Hardhat mines only when a transaction arrives, so chain time would stand still
+# after a registration commit; a block every 5 s lets the commitment mature.
+curl -s -X POST -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"evm_setIntervalMining","params":[5000]}' \
+  http://127.0.0.1:8545 > /dev/null
+
 echo ""
 echo "=== Starting frontend ==="
 cd ens-app-v3
