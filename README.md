@@ -118,7 +118,10 @@ pnpm dev
 
 4. Every restart of the stack starts a new chain. Clear MetaMask's activity and
    nonce data after each one (**Settings → Advanced → Clear activity tab data**),
-   or its transactions fail with nonce errors.
+   or its transactions fail with nonce errors. Also delete the dapp's saved
+   registration progress (Chrome DevTools → **Application → Local Storage →
+   http://localhost:3000**, key `registration-status`), or a name you registered
+   before the restart opens on its old "Congratulations" screen.
 
 ## What to test
 
