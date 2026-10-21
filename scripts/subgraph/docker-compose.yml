@@ -1,6 +1,6 @@
 # Local Graph Node stack for indexing the SNRC subgraph against Ethereum
 # mainnet (the .testing TLD's contracts in particular). Spin it up alongside
-# `pnpm dev` in ens-app-v3 to verify "My Names" / activity feeds without
+# `pnpm dev` in testing-app to verify "My Names" / activity feeds without
 # relying on the hosted Graph Network.
 #
 # Usage:
@@ -19,7 +19,7 @@
 #   GraphQL (queries):       http://127.0.0.1:8000/subgraphs/name/graphprotocol/ens
 #   IPFS:                    http://127.0.0.1:5001
 #
-# Point the dApp at this node with NEXT_PUBLIC_SUBGRAPH_URL in ens-app-v3/.env.development.local.
+# Point the dApp at this node with NEXT_PUBLIC_SUBGRAPH_URL in testing-app/.env.development.local.
 
 services:
   graph-node:

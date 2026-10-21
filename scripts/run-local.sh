@@ -39,7 +39,7 @@ curl -s -X POST -H 'content-type: application/json' \
 
 echo ""
 echo "=== Starting frontend ==="
-cd ens-app-v3
+if [ "$TLD" = simplex ]; then cd simplex-app; else cd testing-app; fi
 # Pin the chain to localhost inline: `next dev` otherwise reads
 # NEXT_PUBLIC_CHAIN_NAME=mainnet from .env.development.local and targets mainnet.
 # Inline vars override .env files, and clearing .next forces fresh inlining of

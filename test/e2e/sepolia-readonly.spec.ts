@@ -246,7 +246,7 @@ test.describe('Sepolia SNRC — read-only smoke', () => {
     // Closes the attribute-flow loop: tester EOA wrote
     // PublicResolver.setText(node, 'simplex.contact', OWNED_CONTACT_VALUE)
     // — assert the dApp reads it back and renders it as a social link.
-    // ens-app-v3 maps `simplex.contact` to urlFormatter=value (raw record
+    // testing-app maps `simplex.contact` to urlFormatter=value (raw record
     // value becomes the href), so `dummy123` shows up as the href literal.
     await page.goto(`/${OWNED_NAME}`)
     await page.waitForTimeout(6000)

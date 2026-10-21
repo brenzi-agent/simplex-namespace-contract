@@ -5,7 +5,7 @@ Three layers.
 | Layer                  | Where                | Runner                                  | Count today |
 |------------------------|----------------------|-----------------------------------------|------------:|
 | Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        | 119 SNRC + upstream ENS suite |
-| Frontend unit          | `ens-app-v3/`        | `pnpm test`                             | varies (ENS upstream) |
+| Frontend unit          | `testing-app/`, `simplex-app/` | `pnpm test`                             | varies (ENS upstream) |
 | End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 27 |
 
 ## Solidity unit tests
@@ -43,7 +43,7 @@ What's **not** covered in-contract today:
 
 ## Frontend unit tests
 
-The ens-app-v3 fork keeps the upstream vitest suite (`pnpm test`) running for the
+Both app forks keep the upstream vitest suite (`pnpm test`) running for the
 parts we didn't touch. Most of our additions are exercised by the e2e suite
 instead; the offer and claim flow has unit tests of its own (`snrcClaimChecks`,
 `snrcOffers`, `useNameOffer`, `useClaimChecks`, `NameOfferBanner`, the
@@ -119,7 +119,7 @@ npx playwright test --project=simplex  # in another
 
 ## Manual UI testing
 
-From `ens-app-v3`.
+From `testing-app` (`.testing`) or `simplex-app` (`.simplex`).
 
 ### Against mainnet (`.testing`)
 

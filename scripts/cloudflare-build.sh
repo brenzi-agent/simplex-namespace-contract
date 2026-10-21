@@ -2,7 +2,7 @@
 # Cloudflare Pages build entry-point.
 # Configure in the dashboard:
 #   Build command:        bash scripts/cloudflare-build.sh
-#   Build output dir:     ens-app-v3/out
+#   Build output dir:     testing-app/out
 #   Submodules:           CF_PAGES_SUBMODULES=true (or this script pulls them)
 #
 # Required env vars (set in Cloudflare → Settings → Environment variables):
@@ -19,10 +19,10 @@ set -euo pipefail
 # ====== load committed defaults ======
 # Cloudflare's "Variables and Secrets" panel does not reliably propagate
 # into the build shell on Build System version 3 — when that path fails,
-# fall back to the values committed in `ens-app-v3/.env.production`. Next
+# fall back to the values committed in `testing-app/.env.production`. Next
 # auto-loads that file too, so the inlined client-side values stay in
 # sync with what the bash case statement below reads.
-ENV_FILE="ens-app-v3/.env.production"
+ENV_FILE="testing-app/.env.production"
 if [ -f "$ENV_FILE" ]; then
   # `set -a` exports every assignment from the sourced file. Skip comments
   # and blanks so the read is robust against the file's commentary.
@@ -73,8 +73,8 @@ pnpm install --frozen-lockfile
 )
 
 (
-  cd ens-app-v3
-  # ens-app-v3 pins `packageManager: pnpm@10.23.0` and uses 10 patched
+  cd testing-app
+  # testing-app pins `packageManager: pnpm@10.23.0` and uses 10 patched
   # dependencies. pnpm 10.23 validates patch-file content hashes against the
   # lockfile and rejects --frozen-lockfile if any patch file's hash drifted.
   # Use the lockfile as the resolution source but allow patch hashes to

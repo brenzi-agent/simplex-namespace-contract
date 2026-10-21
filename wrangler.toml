@@ -4,4 +4,4 @@
 # `name` must match the project slug shown in the Cloudflare dashboard
 # (Workers & Pages → project list) — wrangler refuses to deploy without it.
 name = "simplex-namespace-contract"
-pages_build_output_dir = "./ens-app-v3/out"
+pages_build_output_dir = "./testing-app/out"

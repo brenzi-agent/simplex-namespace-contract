@@ -9,7 +9,8 @@ See [`snrc-implementation-plan.md`](./snrc-implementation-plan.md) for the full 
 ```
 simplex-namespace-contract/           ← this repo
   ens-contracts/                      ← submodule: simplex-network/ens-contracts (simplex branch)
-  ens-app-v3/                         ← submodule: simplex-network/ens-app-v3 (simplex branch)
+  testing-app/                        ← submodule: simplex-network/ens-app-v3 (simplex branch), .testing dApp
+  simplex-app/                        ← submodule: simplex-chat/simplex-domains-app-v3 (simplex branch), .simplex dApp
   scripts/                            ← deployment scripts
 ```
 
@@ -31,7 +32,8 @@ Install dependencies:
 ```bash
 pnpm install                          # parent repo (deploy script)
 cd ens-contracts && pnpm install && cd ..
-cd ens-app-v3 && pnpm install && cd ..
+cd testing-app && pnpm install && cd ..
+cd simplex-app && pnpm install && cd ..
 ```
 
 After pulling into an existing clone, check out the submodule commits the pull
@@ -41,7 +43,8 @@ recorded, then reinstall and recompile:
 git submodule update --init
 pnpm install
 cd ens-contracts && pnpm install && npx hardhat compile && cd ..
-cd ens-app-v3 && pnpm install && cd ..
+cd testing-app && pnpm install && cd ..
+cd simplex-app && pnpm install && cd ..
 ```
 
 ## Compile and test contracts
@@ -87,7 +90,7 @@ cd ens-contracts && npx hardhat --network hardhat node
 ```bash
 SIMPLEX_TLD=testing node scripts/deploy-local.mjs
 # Copy the NEXT_PUBLIC_DEPLOYMENT_ADDRESSES line from the output, then:
-cd ens-app-v3 && rm -rf .next
+cd testing-app && rm -rf .next
 NEXT_PUBLIC_DEPLOYMENT_ADDRESSES='<paste>' \
 NEXT_PUBLIC_CHAIN_NAME=localhost \
 NEXT_PUBLIC_PROVIDER=http://127.0.0.1:8545 \

@@ -125,6 +125,8 @@ if (!guardianAddress || guardianAddress.toLowerCase() === ownerAddress.toLowerCa
 const REASONS = { Internal: 1, Trademark: 2, Community: 3 }
 // About 5.2M gas each, well under the per-transaction cap of 16,777,216 (EIP-7825).
 const RESERVE_BATCH = 200
+// The labels users can register: simplex-app src/hooks/useValidate.ts ALLOWED_LABEL_REGEX.
+const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const reservedNamesPath = join(REPO_ROOT, `reserved-names.${tld}.csv`)
 const reservedByReason = loadReservedNames(reservedNamesPath)
 
@@ -164,7 +166,10 @@ function loadReservedNames(path) {
     try { normalized = normalize(name) } catch {}
     if (extra.length || category === undefined) errors.push(`${where}: expected 3 fields`)
     else if (!name || name.includes('.')) errors.push(`${where}: not a single label`)
-    else if (normalized !== name) errors.push(`${where}: not ENS-normalized (users register ${JSON.stringify(normalized)})`)
+    else if (!ALLOWED_LABEL_REGEX.test(name)) {
+      const fix = ALLOWED_LABEL_REGEX.test(normalized ?? '') ? `use ${JSON.stringify(normalized)}` : 'transliterate to a-z, 0-9 and hyphens'
+      errors.push(`${where}: users cannot register this label; ${fix}`)
+    }
     else if (!(category in REASONS)) errors.push(`${where}: category must be one of ${Object.keys(REASONS).join(', ')}`)
     else if (seen.has(name)) errors.push(`${where}: duplicate`)
     else { seen.add(name); byReason.get(REASONS[category]).push(name) }

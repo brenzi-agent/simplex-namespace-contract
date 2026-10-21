@@ -122,7 +122,7 @@ open item on the live `.testing` deploy).
   (override with `SMPXNFT_ADDR`). The real contract is used directly (no mock).
 - **Ephemeral deployer**: a fresh EOA. The script tells you exactly how much ETH
   to top it up with before sending any tx (see the preflight below).
-- The `simplex` branch on both the `ens-contracts` and `ens-app-v3` forks must
+- The `simplex` branch on both the `ens-contracts` and `simplex-domains-app-v3` forks must
   be audit-finalised — the `main...simplex` GitHub diff is the audit surface.
 
 ### Gas strategy at a glance
@@ -187,7 +187,8 @@ The deployer commits `reserved-names.simplex.csv`: a `name,reason,category`
 header, then one label per row, with `category` one of `Internal`, `Trademark`
 or `Community` (only the category goes on chain) and RFC 4180 quoting where a
 reason holds a comma. The script refuses to deploy `.simplex` without it, and
-stops on a duplicate, a dotted or non-normalized label, or an unknown category.
+stops on a duplicate, a dotted label, a label users cannot register (the dApp's
+`ALLOWED_LABEL_REGEX`: a-z, 0-9 and hyphens), or an unknown category.
 The read-back after the deploy checks every label.
 
 ### Resume on interruption
@@ -425,7 +426,7 @@ via `NEXT_PUBLIC_SIMPLEX_TLD` + `NEXT_PUBLIC_CHAIN_NAME`.
 
 ### `.testing` — GitHub Pages (canonical)
 
-Built and deployed by `ens-app-v3/.github/workflows/deploy-pages.yml`, which is
+Built and deployed by `testing-app/.github/workflows/deploy-pages.yml`, which is
 **self-contained in the `ens-app-v3` fork** (`deployments.mainnet.testing.json`
 is checked in beside it). On every push to the fork's `simplex` branch it:
 

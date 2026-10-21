@@ -3,7 +3,7 @@
 	url = https://github.com/simplex-network/ens-contracts.git
 	branch = simplex
 [submodule "ens-app-v3"]
-	path = ens-app-v3
+	path = testing-app
 	url = https://github.com/simplex-network/ens-app-v3.git
 	branch = simplex
 [submodule "ens-subgraph"]
@@ -13,4 +13,8 @@
 [submodule "ens-metadata-service"]
 	path = ens-metadata-service
 	url = https://github.com/simplex-chat/ens-metadata-service.git
+	branch = simplex
+[submodule "simplex-app"]
+	path = simplex-app
+	url = https://github.com/simplex-chat/simplex-domains-app-v3.git
 	branch = simplex

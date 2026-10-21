@@ -278,7 +278,7 @@ simplex-namespace-contract/      ← parent repo (this)
       mocks/Multicall3.sol               ← new (aggregate3 + tryAggregate)
       wrapper/INameWrapper.sol           ← kept (interface only, for PublicResolver)
       …all other contracts verbatim from ENS (NameWrapper removed)
-  ens-app-v3/                    ← submodule (frontend)
+  testing-app/, simplex-app/     ← submodules (.testing / .simplex frontends)
     src/components/SimplexInfoPanel.tsx
     src/hooks/useControllerLimits.ts
     src/hooks/useNftGateStatus.ts

@@ -44,14 +44,14 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: |
             pnpm-lock.yaml
-            ens-app-v3/pnpm-lock.yaml
+            testing-app/pnpm-lock.yaml
             ens-contracts/pnpm-lock.yaml
 
       - name: Install parent + submodule deps
         run: |
           pnpm install --frozen-lockfile
           cd ens-contracts && pnpm install --frozen-lockfile && cd ..
-          cd ens-app-v3 && pnpm install --frozen-lockfile && cd ..
+          cd testing-app && pnpm install --frozen-lockfile && cd ..
 
       - name: Compile contracts (frontend reads ABIs from artifacts/)
         working-directory: ens-contracts
@@ -80,7 +80,7 @@ jobs:
           fi
 
       - name: Build dApp (Sepolia config baked in)
-        working-directory: ens-app-v3
+        working-directory: testing-app
         env:
           NEXT_PUBLIC_CHAIN_NAME: sepolia
           NEXT_PUBLIC_SIMPLEX_TLD: testing
@@ -91,7 +91,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Start dApp in background
-        working-directory: ens-app-v3
+        working-directory: testing-app
         env:
           NEXT_PUBLIC_CHAIN_NAME: sepolia
           NEXT_PUBLIC_SIMPLEX_TLD: testing

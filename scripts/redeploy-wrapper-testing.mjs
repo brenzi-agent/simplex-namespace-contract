@@ -237,7 +237,7 @@ async function main() {
   console.log(`  PublicResolver(${existing.ENSRegistry}, ${addresses.NameWrapper}, ${existing.ETHRegistrarController}, ${existing.ReverseRegistrar})`)
 
   console.log(`\nNext (docs/redeploy-wrapper-testing.md):`)
-  console.log(`  - commit ${addressesPath} AND ${journalPath}; copy the json to ens-app-v3/`)
+  console.log(`  - commit ${addressesPath} AND ${journalPath}; copy the json to testing-app/`)
   console.log(`  - subgraph.yaml: NameWrapper datasource address+startBlock; add a ResolverV2 datasource`)
   console.log(`  - ens-metadata-service: ADDRESS_NAME_WRAPPER=${addresses.NameWrapper}`)
   console.log(`  - tag simplex-mainnet-${tld}-v2`)

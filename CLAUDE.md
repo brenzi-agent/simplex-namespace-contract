@@ -30,7 +30,8 @@ Public forks as git submodules of this repo:
 ```
 simplex-namespace-contract/           ← this repo (parent)
   ens-contracts/                      ← submodule → simplex-network/ens-contracts
-  ens-app-v3/                         ← submodule → simplex-network/ens-app-v3
+  testing-app/                        ← submodule → simplex-network/ens-app-v3 (.testing dApp)
+  simplex-app/                        ← submodule → simplex-chat/simplex-domains-app-v3 (.simplex dApp)
   scripts/                            ← cross-repo deployment helpers
   docs/                               ← project-level docs
   test/                               ← cross-repo test fixtures
@@ -205,7 +206,7 @@ Don't re-derive these. Check here first.
 
 ### Process hygiene
 - Always `pkill -9 -f "hardhat\|next\|playwright"` AND `lsof -ti :8545 :3000 | xargs -r kill -9` before restarting the stack. Background playwright runs from prior turns will silently re-grep the same test you're trying to run now.
-- `pnpm dev` Fast Refresh can get stuck in a reload loop after many code edits in the same session — `rm -rf ens-app-v3/.next` between major restarts.
+- `pnpm dev` Fast Refresh can get stuck in a reload loop after many code edits in the same session — `rm -rf testing-app/.next` (or `simplex-app/.next`) between major restarts.
 - `bash scripts/run-local.sh` must run from `/work/simplex-namespace-contract/` (it doesn't `cd` to repo root).
 
 ### PublicResolver `trustedETHController` parameter
@@ -213,8 +214,8 @@ Don't re-derive these. Check here first.
 - Same applies to `trustedReverseRegistrar`. We pass the ReverseRegistrar address there.
 
 ### Playwright fixture playbook (steal from ens-app-v3)
-- `ens-app-v3/playwright/fixtures/time.ts` already solves the wall-clock vs block-clock issue: `page.clock.install({ time: blockTimestamp })` overrides browser `Date.now()` to match chain time, then `page.clock.runFor(ms)` + `testClient.increaseTime` advance both in lockstep. Use this pattern instead of `await page.waitForTimeout(60000)`.
-- `ens-app-v3/e2e/specs/stateless/registerName.spec.ts` is a 2391-line existing test for the full registration flow. Before writing custom e2e tests from scratch, check whether an adapted ENS spec covers the same flow — that's likely the lower-diff path long-term.
+- `testing-app/playwright/fixtures/time.ts` (same in `simplex-app`) already solves the wall-clock vs block-clock issue: `page.clock.install({ time: blockTimestamp })` overrides browser `Date.now()` to match chain time, then `page.clock.runFor(ms)` + `testClient.increaseTime` advance both in lockstep. Use this pattern instead of `await page.waitForTimeout(60000)`.
+- `testing-app/e2e/specs/stateless/registerName.spec.ts` (same in `simplex-app`) is a 2391-line existing test for the full registration flow. Before writing custom e2e tests from scratch, check whether an adapted ENS spec covers the same flow — that's likely the lower-diff path long-term.
 
 ### Stateful test names
 - Hardhat runs in a single shared session — names registered by one test persist for the rest of the suite. Either use unique per-run name (e.g. `reg${Date.now().toString(36)}`) or reset chain state between tests. Symptom: a test passes when run alone but fails in suite (the previously-registered name is no longer `available`).
