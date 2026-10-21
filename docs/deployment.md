@@ -365,6 +365,11 @@ key. `setPriceOracle` deliberately survives `freeze()`.
   one may use at most 16,777,216 gas (EIP-7825), and the gas estimate passes that
   above about 210 names. `Reason.None` (0) is rejected — it
   is the value meaning *not reserved*, so passing it would silently unreserve.
+  Each label must follow the dApp's label rule (`ALLOWED_LABEL_REGEX`: lowercase a-z, 0-9 and hyphens; transliterate accents and drop apostrophes): the contract hashes any bytes,
+  so `Coinbase` reserves a name nobody can type and leaves `coinbase` open. The
+  admin page checks this; a raw call from a Safe or a block explorer does not.
+  Send reservations privately, never through a public queue — see `docs/security.md`,
+  "Reservations must not be public before they are mined".
   `removeReservedNames(string[])` is owner-only — releasing a reserved name is the
   direction that should be visible before it lands.
 - `setReservationReason(string[],Reason)` — owner **or beneficiary**; reclassifies

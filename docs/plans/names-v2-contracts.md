@@ -485,14 +485,15 @@ on the basis that the guardian is a Safe: compromise requires the multisig thres
 the alternative — letting the slow owner replace the beneficiary — would put the treasury
 back under the key the split exists to keep away from it.
 
-**Closed, not a finding.** *Reserving is front-run-proof.* `addReservedNames` is a single
+**Reservations must not be public before they are mined.** `addReservedNames` is a single
 atomic call with no commit/reveal, while both registration paths must present a commitment
-already aged `minCommitmentAge` (60s in the deployment). An attacker who first learns a
-name from the guardian's pending transaction cannot register it: the reservation mines in
-the next block, long before their commitment matures. A speculative pre-commitment does not
-help either — the reserved check runs at registration time — and if they had targeted the
-name in advance they could have registered it at any earlier moment, so the mempool leak
-adds nothing. Pinned by `TestReservationRace.test.ts`.
+already aged `minCommitmentAge` (60s in the deployment). That protects a reservation only
+if it is mined within about five slots of first becoming visible; one that waits longer in
+the mempool or in the Safe Transaction Service queue is front-run, and the squatter keeps
+the name. A speculative pre-commitment gains nothing: if they had targeted the name in
+advance they could have registered it at any earlier moment. Reservations after launch are
+therefore sent through private orderflow; see `docs/security.md`, "Reservations must not
+be public before they are mined".
 
 **Out of scope.** *The `.testing` proxy needs a migration batch after an in-place upgrade.*
 `.testing` is not being upgraded; it is left as it stands and `.simplex` is a fresh deploy.

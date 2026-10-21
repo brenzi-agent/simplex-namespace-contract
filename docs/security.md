@@ -28,7 +28,7 @@ versus an oversight. Update it when the design or these decisions change.
 | L5 | Low / informational | Accepted | `PublicResolver`'s `nameWrapper` slot is the `SubnameRegistrar` (subname auth via `ownerOf`); the 2LD itself is never wrapped |
 | L6 | Low / informational | Accepted | `maxLabelLength` is freely settable up/down (owner-trusted policy knob) |
 | L7 | Low / informational | Accepted (read-side) | Enumeration / `tokenURI` include expired-but-unburned names; readers must filter by `nameExpires` |
-| L8 | Low / informational | Accepted | `UniversalResolver` deployed with a `DummyGatewayProvider` (CCIP-read unused) |
+| L8 | Low / informational | Accepted | `UniversalResolver` deployed with a `DummyGatewayProvider` (CCIP-read unused; clients must not follow CCIP-Read) |
 | L9 | Low / informational | Accepted (read-side) | A re-registered 2LD's old subname records keep resolving until `purge`d (generation invalidates ownership immediately; record cleanup is lazy) |
 
 No critical or high vulnerability was found **in the contracts** themselves;
@@ -167,8 +167,12 @@ on `BaseRegistrarImplementation`.
 ### L8 — `DummyGatewayProvider` on the `UniversalResolver`
 The `UniversalResolver` is deployed with a dummy CCIP-read gateway provider.
 SNRC resolves on-chain (text records), so no off-chain gateway is relied upon.
-**Accepted** as long as no CCIP-read path is introduced; revisit if off-chain
-resolution is ever added.
+The dummy provider does not stop the UR from re-emitting `OffchainLookup` when a
+name's resolver reverts with one, so a client that follows CCIP-Read fetches
+whatever URL a name holder's resolver names: the holder learns who looked the name
+up, and can serve that reader different records. The `.simplex` dApp therefore
+runs with `ccipRead: false` (pre-launch review round 2, R2-2). **Accepted** as long
+as clients do not follow CCIP-Read; revisit if off-chain resolution is ever added.
 
 ### L9 — Re-registered 2LD's old subname records resolve until purged
 When a 2LD expires and is re-registered, BaseRegistrar calls
@@ -182,7 +186,8 @@ permissionless, batched `purge(parentNode, labelhashes[])` (storage-refund
 incentivised). **Accepted (read-side):** this matches plain ENS (an expired
 name's subnames also linger until cleared); the dApp should `purge` on 2LD
 acquisition. The leak is records-only — ownership/authorisation never transfers
-to the new owner without an explicit `createSubname`.
+to the new owner without an explicit `createSubname`. The dApp does not purge on
+acquisition yet; accepted as is in the pre-launch review (2026-10-21, M5).
 
 ## Assurances (verified properties)
 
@@ -464,6 +469,13 @@ Accepted:
   writing any shadow subnode, so clients enumerate a previously held label's
   subnodes before registering it, as before a claim. These predate recipient
   consent.
+  The pre-launch review (2026-10-21, M4 and M5) found the gap wider than stated
+  and the client mitigations absent, and both were accepted as they are: the
+  re-point to no resolver works after the name has lapsed and even after the
+  next buyer's commit, and the `.simplex` dApp neither clears records nor
+  purges or enumerates a previously held label's subnodes when it registers
+  one, so a buyer who does not clear and purge by hand can inherit the previous
+  holder's records and subnames.
 - **An offer is public before it is accepted.** `Approval`, and the announcement
   when one is sent, name the recipient though nothing has moved. So do
   `ApprovalForAll` on the registry, the registrar and the resolver, and the
@@ -527,9 +539,17 @@ What it now refuses to do:
 - **Run against the wrong chain.** `chainId` is asserted to be 1 before any
   spend, so an `MAINNET_RPC_URL` pointing at a testnet stops the run instead of
   deploying a full stack to the wrong place and journalling it as a success.
-- **Accept a mistyped address.** Every address input is EIP-55 checked, which is
-  the only automatic protection against a transposed character in the variable
-  that ends up owning the namespace.
+- **Accept a mistyped address.** Every address input goes through viem's
+  `getAddress`, which re-checksums rather than rejects a wrong EIP-55 checksum, so
+  a transposed character is not caught. The admin is covered anyway: nothing
+  irreversible goes to `OWNER_ADDRESS` before it has accepted ownership. The
+  guardian is not: run 1 makes `GUARDIAN_ADDRESS` the permanent beneficiary with
+  no proof that anyone can sign for it, and `GUARDIAN_ADDRESS` equal to the deploy
+  key is not refused. A wrong guardian loses registrar funding and the `withdraw`
+  payee until an admin upgrade before `freeze()`; the admin keeps the pause and
+  reservations. Accepted (pre-launch review round 2, R2-1): plan A1's rehearsal
+  transaction and the guardian's first use at GOV3 surface it before any third
+  party holds a name.
 - **Deploy against a dead price feed.** `latestAnswer()` is probed up front; a
   feed returning zero or negative makes every quote revert and the payable path
   unusable from the first block.
@@ -652,12 +672,25 @@ Accepted, and new to this ledger:
   `latestAnswer()` and ignores `updatedAt`, so a frozen but positive feed keeps
   quoting its last price. The recovery is the oracle owner's `setUsdOracle`.
 
-### Closed, not a finding
+### Reservations must not be public before they are mined
 
-*Reserving is front-run-proof.* `addReservedNames` is a single atomic call with
-no commit/reveal, while both registration paths must present a commitment already
-aged `minCommitmentAge` (60 s in the deployment). An attacker who first learns a
-name from the guardian's pending transaction cannot register it — the reservation
-mines in the next block, long before their commitment matures. A pre-aged
-speculative commitment does not help either, since the reserved check runs at
-registration time. Pinned by `test/simplex/TestReservationRace.test.ts`.
+`addReservedNames` is a single atomic call with no commit/reveal, while both
+registration paths must present a commitment already aged `minCommitmentAge` (60 s
+in the deployment). That protects a reservation only if it is mined before a
+commitment made after it first became visible can mature: about five slots. A
+reservation that waits longer in public — an underpriced transaction in the
+mempool, or a guardian Safe proposal waiting in the Safe Transaction Service queue
+for its second signature — tells a squatter which name to take, and the squatter's
+`register` lands first. The reservation then succeeds on a name that is already
+held, and nothing takes the name back. A pre-aged speculative commitment can also
+win the ordering, but gains nothing over registering the guessed label outright.
+`test/simplex/TestReservationRace.test.ts` pins only the case where the
+reservation is mined first.
+
+So reservations after launch are sent privately (pre-launch review round 2, R2-3):
+the guardian Safe's signatures are collected off the Safe Transaction Service and
+the last signer executes through private orderflow (Flashbots Protect or MEV
+Blocker), or a module lets one guardian signer call only `addReservedNames`. If
+neither is available, the guardian first stops the paths a squatter would use —
+`setPublicSalesOpen(false)` and `setRegistrarAllowance(registrar, 0)`, neither of
+which reveals the label — and restores them once the reservation is mined.

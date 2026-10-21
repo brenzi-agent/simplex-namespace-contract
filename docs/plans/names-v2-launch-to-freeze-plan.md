@@ -375,7 +375,7 @@ in brackets.
 
 | Action | Caller | Call |
 |---|---|---|
-| Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `controller.addReservedNames([name])` |
+| Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `controller.addReservedNames([name], reason)`, sent privately (see below) |
 | Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `controller.registerReserved(label, brandAddr, duration)` |
 | Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
 | Cut off a compromised registrar | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, 0)` |
@@ -386,6 +386,10 @@ in brackets.
 | Replace the price oracle wholesale | admin key *(admin Safe, timelock, 7 days)* | `controller.setPriceOracle(newOracle)`; the escape hatch if the oracle itself is defective |
 | Update NFT artwork | admin key *(admin Safe, timelock, 7 days)* | `baseRegistrar.setMetadataRenderer(newRenderer)` |
 | Cancel a scheduled admin action | none *(guardian Safe, 2 sigs)* | `timelock.cancel(id)`; exists only after GOV8 |
+
+Every label passed to `addReservedNames` or `registerReserved` must follow the dApp's label rule (`ALLOWED_LABEL_REGEX`: lowercase a-z, 0-9 and hyphens; transliterate accents and drop apostrophes). The contract hashes whatever bytes it is given, so `Coinbase` or `nestlé` reserves a name nobody can type and leaves `coinbase` and `nestle` open. The admin page enforces the rule; raw calls from a Safe, a timelock or a block explorer do not, so check each label against it first. `reason` is `Internal` (1), `Trademark` (2) or `Community` (3).
+
+A reservation must not sit in public before it is mined: a squatter who sees it can still register the name first. Collect the guardian Safe's signatures off the Safe Transaction Service and let the last signer execute through private orderflow (Flashbots Protect or MEV Blocker). Failing that, first `setPublicSalesOpen(false)` and `setRegistrarAllowance(registrar, 0)`, then reserve, then restore both. See `docs/security.md`, "Reservations must not be public before they are mined".
 
 ### A7. The freeze (GOV9)
 
