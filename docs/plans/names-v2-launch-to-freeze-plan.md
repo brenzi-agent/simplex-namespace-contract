@@ -53,8 +53,10 @@ gas, spends the allowance the guardian gives it, and relays users' signed reques
 
 The admin key and the guardian key are two authorisation tiers, ranked by how much damage a
 compromised key can do. The admin tier can replace the controller's code, and new code can do
-anything the contracts allow, so its reach has no bound. The guardian tier is bounded: halt
-sales, cut a registrar's allowance, redirect revenue, and nothing else. They are separate
+anything the contracts allow, so its reach has no bound. The guardian tier is bounded in kind:
+halt sales, set registrar allowances, redirect revenue, and nothing else. It is not bounded in
+amount: it can give itself any allowance and mint unreserved names with it, an accepted risk
+(`docs/security.md`, V1). They are separate
 keys so that one compromise does not hand over both tiers. The timelock, the Safes and the
 multi-signer rotation are deferred to GOV8, not abandoned.
 
@@ -110,8 +112,9 @@ visible behaviour rather than seven days of notice. GOV8 buys the notice back.
 ## 6. Why it is built this way
 
 **Two keys, split by direction.** The guardian stops things: reserve a name, pause sales, cut
-a registrar's allowance to zero. The admin changes things: release reserved names, hand names
-to brands, fund registrars, open sales.
+a registrar's allowance to zero. It also funds registrars and opens sales (A3, A4), the two
+permissive powers on the fast key. The admin changes things: release reserved names, hand names
+to brands.
 
 Neither key waits for a delay yet, so the split can look like a formality. It is not. It
 keeps the revenue off the upgrade key, so a stolen admin key cannot also take the

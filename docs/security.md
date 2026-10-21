@@ -555,10 +555,13 @@ subname hook, the metadata renderer, the default resolver, the beneficiary, the
 sponsor and its controller, the NFT gate, `minCharLength`, the freeze and sales flags, the subname registrar's
 resolver, every reserved label, the oracle and its feed, and that a six-character name quotes a non-zero price. A journal proves
 each transaction was mined; only the read-back proves the stack is wired the way
-the script intended. It runs while the deploy key still owns everything, and the
-run then prints the `acceptOwnership()` calls the admin must make — until those
-land, `Ownable2Step` leaves the deploy key in control and it must be treated as
-hot.
+the script intended. The first run reads back while the deploy key still owns
+everything, then prints the `acceptOwnership()` calls the admin must make — until
+those land, `Ownable2Step` leaves the deploy key in control and it must be
+treated as hot. The registrar and the registry root, `eth` and `data.eth` take
+effect at once when handed over, so only a second run hands them over, and only
+after reading that the admin owns both `Ownable2Step` contracts; its read-back
+checks that the admin owns everything and nothing is pending.
 
 ### The invariant everything rests on
 
@@ -623,6 +626,13 @@ Accepted, and new to this ledger:
   compromise requires the multisig threshold, and the alternative — letting the
   slow owner replace the beneficiary — would put the treasury back under the key
   the split exists to keep it away from.
+  The same power is unbounded in amount: the guardian can give itself any
+  allowance and mint unreserved names to itself for free, up to ten years each,
+  and renew any name for free. Until GOV8 it is a single hardware wallet, not a
+  Safe, so one compromised device suffices. Accepted for that window as well
+  (pre-launch review, 2026-10-21); before the freeze the admin can stop it with
+  `setSponsor(0)` or rotate the guardian by upgrade, but names already minted
+  stay minted.
 - **V2 — relayed gas is bounded off-chain, not on-chain.** Several sponsored
   entry points take unbounded arguments, and OZ `SignatureChecker` falls through
   to an ERC-1271 `staticcall` when recovery fails. A contract-level cap would be

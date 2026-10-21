@@ -18,17 +18,20 @@
  *      `BUMP_PCT%` and resubmits at the same nonce.
  *   5. Every successful tx appends to a JSONL journal; re-running the
  *      script picks up where it left off.
+ *   6. The first complete run stops before the single-step handovers and
+ *      prints the admin's acceptOwnership calls. Running it again after the
+ *      admin has accepted hands over the registrar and the registry root.
  *
  * Required env vars:
  *   DEPLOYER_KEY       hex private key (0x...) of the ephemeral deployer
  *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real)
  *   MAX_BASE_FEE_GWEI  cap on per-gas price (e.g. "0.078")
+ *   OWNER_ADDRESS      admin key; must differ from the deployer
  *
  * Optional env vars:
  *   SIMPLEX_TLD        'testing' (default) | 'simplex'
  *   ETHUSD_FEED        Chainlink AggregatorV3 (default: mainnet feed)
  *   SMPXNFT_ADDR       SMPXNFT contract  (default: 0x3AF6D9Ee…7291)
- *   OWNER_ADDRESS      cold owner (default: simplexchat.eth)
  *   BUMP_AFTER_HOURS   stall threshold before cap bump (default: 24)
  *   BUMP_PCT           cap multiplier on stall (default: 20)
  *   ABSOLUTE_MAX_BASE_FEE_GWEI  ceiling the bumps stop at (default: 4× MAX_BASE_FEE_GWEI)
@@ -102,7 +105,17 @@ function requireAddress(label, value) {
 }
 const chainlinkEthUsd = requireAddress('ETHUSD_FEED', process.env.ETHUSD_FEED || '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419')
 const smpxNftAddr = requireAddress('SMPXNFT_ADDR', process.env.SMPXNFT_ADDR || '0x3AF6D9Ee862376A8DFC0a78847Eb20A153557291')
-const ownerAddress = requireAddress('OWNER_ADDRESS', process.env.OWNER_ADDRESS || '0xDa064C4567fAD2c9Da7b6DD08b5C2B2607960340')
+const ownerAddress = process.env.OWNER_ADDRESS
+  ? requireAddress('OWNER_ADDRESS', process.env.OWNER_ADDRESS)
+  : undefined
+if (!ownerAddress) {
+  console.error(
+    'OWNER_ADDRESS must be set to the admin key.\n' +
+      '  It receives the registrar and the registry root for good, so no default\n' +
+      '  may pick the key for the operator.',
+  )
+  process.exit(1)
+}
 // The guardian holds the restrictive, no-delay powers: setRegistrarAllowance (the
 // money kill switch), setPublicSalesOpen (the pause), addReservedNames, and it is
 // `withdraw`'s payee. It must differ from the admin owner — that separation is the
@@ -206,6 +219,10 @@ const absoluteMaxBaseFeeWei = process.env.ABSOLUTE_MAX_BASE_FEE_GWEI
   : undefined
 
 const account = privateKeyToAccount(deployerKey)
+if (ownerAddress.toLowerCase() === account.address.toLowerCase()) {
+  console.error('OWNER_ADDRESS must differ from the deploy key, which is destroyed after the handover.')
+  process.exit(1)
+}
 const addressesPath = join(REPO_ROOT, `deployments.mainnet.${tld}.json`)
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${tld}.journal.jsonl`)
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${tld}.attempts.log`)
@@ -223,7 +240,7 @@ function loadArtifact(path) {
  *
  * Returns the addresses object suitable for deployments.mainnet.${tld}.json.
  */
-async function runDeploySequence({ deploy: deployRaw, write }) {
+async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
   const tldNode = namehash(tld)
 
   const deploy = async (name, artifactPath, args = []) => {
@@ -363,13 +380,18 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
   // of the admin key from the first block. Skipping it leaves `withdraw` reverting.
   await write(controller, 'setBeneficiary', [guardianAddress])
 
-  if (ownerAddress.toLowerCase() !== account.address.toLowerCase()) {
+  // Ownable2Step only proposes the admin, and a wrong proposal can be replaced.
+  // SimplexPriceOracle carries its own Ownable2Step owner, separate from the
+  // controller's. Forgetting it would leave the whole price curve and the feed
+  // pointer on the deploy key, which is destroyed after the handover. The
+  // vendored oracle `.testing` runs has no owner at all.
+  await write(controller, 'transferOwnership', [ownerAddress])
+  if (!isTesting) await write(priceOracle, 'transferOwnership', [ownerAddress])
+
+  // The rest takes effect at once and for good, so it waits until the admin has
+  // proven it can sign by accepting both proposals (launch plan A2).
+  if (await adminAccepted([controller, ...(isTesting ? [] : [priceOracle])])) {
     await write(baseRegistrar, 'transferOwnership', [ownerAddress])
-    // SimplexPriceOracle carries its own Ownable2Step owner, separate from the
-    // controller's. Forgetting it would leave the whole price curve and the feed
-    // pointer on the deploy key, which is destroyed after the handover. The
-    // vendored oracle `.testing` runs has no owner at all.
-    if (!isTesting) await write(priceOracle, 'transferOwnership', [ownerAddress])
     // The registry assigns a node to someone other than the caller only under
     // the root or a TLD. data.eth is neither, so the deploy key sets the owner
     // of eth-usd.data.eth to zero; data.eth's new owner can take it back.
@@ -377,7 +399,6 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
     await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), ownerAddress])
     await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), ownerAddress])
     await write(ensRegistry, 'setOwner', [zeroHash, ownerAddress])
-    await write(controller, 'transferOwnership', [ownerAddress])
   }
 
   return {
@@ -418,11 +439,14 @@ async function runDeploySequence({ deploy: deployRaw, write }) {
   }
 }
 
+// keccak256('eip1967.proxy.implementation') - 1
+const ERC1967_IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
+
 /// L29: the journal proves each transaction was mined, not that the stack is
 /// wired the way the script intended — a mis-ordered or silently-reverted step
 /// leaves a deployment that looks complete and is not. Read the important state
 /// back off-chain and fail loudly while the deploy key can still fix it.
-async function verifyWiring(publicClient, addresses) {
+async function verifyWiring(publicClient, addresses, handedOver) {
   console.log(`\n--- Post-deploy read-back ---`)
   const failures = []
   const check = async (what, expected, read) => {
@@ -531,21 +555,39 @@ async function verifyWiring(publicClient, addresses) {
       await check(`oracle price at ${labelLength} char(s)`, String(priceCentsPerYear),
         () => read(oracle, U256, U256, 'priceCentsPerYear', [labelLength]))
     }
-    // Ownable2Step: after the handover the deploy key still owns it and the cold
-    // owner is only pending, exactly as for the controller. If no handover ran
-    // (deployer is the cold owner) there is nothing pending.
-    const handedOver = ownerAddress.toLowerCase() !== account.address.toLowerCase()
-    await check(
-      handedOver
-        ? 'oracle pendingOwner is the cold owner (awaiting acceptOwnership)'
-        : 'oracle owner is the deployer (no handover configured)',
-      handedOver ? ownerAddress : account.address,
-      () => read(oracle, [], ADDR, handedOver ? 'pendingOwner' : 'owner'))
+  }
+
+  await check('eth-usd.data.eth resolves to the ETH/USD feed', chainlinkEthUsd,
+    () => read(addresses.PublicResolver, [{ type: 'bytes32' }], ADDR, 'addr', [namehash('eth-usd.data.eth')]))
+  await check('controller implementation (ERC-1967 slot)', addresses.SimplexControllerImpl,
+    async () => getAddress(`0x${(await publicClient.getStorageAt({ address: controller, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`))
+
+  // Ownership. Until the admin accepts, the deploy key holds everything and the
+  // admin is only proposed on the two Ownable2Step contracts; after the handover
+  // the admin holds everything and nothing is pending.
+  const holder = handedOver ? ownerAddress : account.address
+  await check('registrar owner', holder, () => read(registrar, [], ADDR, 'owner'))
+  for (const name of ['', 'eth', 'data.eth']) {
+    await check(`registry owner of ${name || 'the root'}`, holder,
+      () => read(registry, [{ type: 'bytes32' }], ADDR, 'owner', [namehash(name)]))
+  }
+  await check('registry owner of eth-usd.data.eth', handedOver ? zeroAddress : account.address,
+    () => read(registry, [{ type: 'bytes32' }], ADDR, 'owner', [namehash('eth-usd.data.eth')]))
+  for (const [what, at] of [['controller', controller], ['oracle', addresses.SimplexPriceOracle]]) {
+    if (!at) continue
+    const owner = await read(at, [], ADDR, 'owner').catch(() => undefined)
+    // Before the second run the admin may already have accepted this one.
+    const accepted = handedOver || owner?.toLowerCase() === ownerAddress.toLowerCase()
+    await check(`${what} owner`, accepted ? ownerAddress : account.address, async () => owner)
+    await check(`${what} pendingOwner`, accepted ? zeroAddress : ownerAddress,
+      () => read(at, [], ADDR, 'pendingOwner'))
   }
 
   if (failures.length) {
     console.error(`\n  ${failures.length} read-back check(s) FAILED: ${failures.join(', ')}`)
-    console.error(`  The deploy key still owns everything — fix the wiring before handing over.`)
+    console.error(handedOver
+      ? `  The handover is done: only the admin ${ownerAddress} can fix this now.`
+      : `  The deploy key still holds every role — fix the wiring before the admin accepts.`)
     process.exitCode = 1
   } else {
     console.log(`  all read-back checks passed`)
@@ -631,9 +673,12 @@ async function main() {
     })
     const dry = createDryRunRunner({ forkUrl: activeFork.url, forkChainId: activeFork.chainId, account })
     console.log(`\n--- Dry-run on fork ---`)
+    // The deploy key sends the single-step handovers itself, so the fork can
+    // price them without the admin.
     await runDeploySequence({
       deploy: dry.deploy,
       write: dry.write,
+      adminAccepted: async () => true,
     })
     dryTotals = dry.totals()
     console.log(`Dry-run captured ${dryTotals.perStep.length} steps, ${dryTotals.totalGas.toLocaleString()} gas total`)
@@ -687,9 +732,23 @@ async function main() {
     journalPath, attemptsLogPath, absoluteMaxBaseFeeWei,
   })
 
+  let handedOver = false
+  const awaitingAcceptance = new Set()
   const addresses = await runDeploySequence({
     deploy: real.deploy,
     write: real.write,
+    adminAccepted: async (contracts) => {
+      for (const { address } of contracts) {
+        const owner = await publicClient.readContract({
+          address,
+          abi: [{ type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' }],
+          functionName: 'owner',
+        })
+        if (owner.toLowerCase() !== ownerAddress.toLowerCase()) awaitingAcceptance.add(address.toLowerCase())
+      }
+      handedOver = awaitingAcceptance.size === 0
+      return handedOver
+    },
   })
 
   console.log(`\nDeployer remaining balance: ${(Number(await publicClient.getBalance({ address: account.address })) / 1e18).toFixed(6)} ETH`)
@@ -708,17 +767,23 @@ async function main() {
   writeFileSync(verificationPath, JSON.stringify(verificationMeta, null, 2))
   console.log(`Wrote ${verificationPath}`)
 
-  await verifyWiring(publicClient, addresses)
+  await verifyWiring(publicClient, addresses, handedOver)
 
-  console.log(`\n--- Handover still outstanding ---`)
-  console.log(`  Ownership was transferred with Ownable2Step, so the admin does NOT hold these`)
-  console.log(`  contracts until it accepts. From ${ownerAddress}, call:`)
-  for (const c of ['Root', 'ETHRegistrarController', 'SimplexPriceOracle']) {
-    if (addresses[c] && addresses[c] !== zeroAddress) {
-      console.log(`    acceptOwnership()   on ${c}  ${addresses[c]}`)
+  if (handedOver) {
+    console.log(`\n--- Handover complete ---`)
+    console.log(`  ${ownerAddress} owns every contract and the registry root, eth and data.eth.`)
+  } else {
+    console.log(`\n--- Handover waits for the admin ---`)
+    console.log(`  Nothing irreversible has been handed over yet. From ${ownerAddress}, call:`)
+    for (const c of ['ETHRegistrarController', 'SimplexPriceOracle']) {
+      if (awaitingAcceptance.has(addresses[c]?.toLowerCase())) {
+        console.log(`    acceptOwnership()   on ${c}  ${addresses[c]}`)
+      }
     }
+    console.log(`  Then run this command again: it checks both owners and hands over the registrar`)
+    console.log(`  and the registry root, eth and data.eth, which take effect at once.`)
+    console.log(`  Until then the deploy key ${account.address} controls everything — treat it as hot.`)
   }
-  console.log(`  Until then the deploy key ${account.address} still controls them — treat it as hot.`)
   console.log(`  Guardian ${guardianAddress} is already the beneficiary and needs no acceptance.`)
 
   console.log(`\nCommit ${addressesPath} AND ${journalPath} AND ${verificationPath} to the repo.`)

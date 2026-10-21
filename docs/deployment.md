@@ -42,7 +42,7 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
 | Local one-shot (`.testing`)   | `./scripts/run-local.sh`                             |
 | Local one-shot (`.simplex`)   | `SIMPLEX_TLD=simplex ./scripts/run-local.sh`         |
 | Deploy to mainnet             | `DEPLOYER_KEY=… MAINNET_RPC_URL=… MAX_BASE_FEE_GWEI=… SIMPLEX_TLD=… node scripts/deploy-mainnet.mjs` |
-| Cold owner                    | `OWNER_ADDRESS` env (defaults to the simplexchat.eth cold key) |
+| Admin owner                   | `OWNER_ADDRESS` env (required; must differ from the deployer) |
 | Verify on Etherscan           | `ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=… node scripts/verify-etherscan.mjs` |
 | Addresses output (local)      | stdout + `deployments.local.json`                    |
 | Addresses output (mainnet)    | `deployments.mainnet.${tld}.json` + `.journal.jsonl` + `.attempts.log` (**deployer must commit JSON + journal**) |
@@ -106,13 +106,13 @@ total-spend cap, and a journal-backed resume mechanism for partial failures.
 
 `DEPLOYER_KEY` is **ephemeral** — it holds only gas, signs the deploy
 transactions, briefly owns every `Ownable` contract so the script can wire
-things up, and is handed off at the end of the run. `OWNER_ADDRESS` defaults to
-**`0xDa064C4567fAD2c9Da7b6DD08b5C2B2607960340`** (the EOA that owns
-`simplexchat.eth`, held in cold storage); override it to hand off to a SAFE
-instead. The `SimplexController` uses `Ownable2Step`, so the cold owner must
-submit `acceptOwnership()` after the run to finish the handover. Until then the
-deployer EOA retains controller admin + UUPS-upgrade authority (this is the
-open item on the live `.testing` deploy).
+things up, and is handed off in two runs. `OWNER_ADDRESS`, the admin key, is
+required and must differ from the deploy key. The first run proposes it on the
+two `Ownable2Step` contracts, the `SimplexController` and the price oracle, and
+stops. Once the admin has submitted `acceptOwnership()` on both, the same command
+run again hands over the registrar and the registry root, `eth` and `data.eth`,
+which take effect at once. Until then the deployer EOA retains controller admin +
+UUPS-upgrade authority (this is the open item on the live `.testing` deploy).
 
 ### Pre-flight
 
@@ -153,7 +153,8 @@ DEPLOYER_KEY=0x…                    # fresh ephemeral EOA
 MAINNET_RPC_URL=https://…           # your RPC (used for fork + real)
 MAX_BASE_FEE_GWEI=0.078             # cap; a tx only lands when base ≤ this
 SIMPLEX_TLD=simplex                 # 'testing' is already deployed
-OWNER_ADDRESS=0x…                   # cold owner (optional override)
+OWNER_ADDRESS=0x…                   # admin key (required, ≠ deployer)
+GUARDIAN_ADDRESS=0x…                # guardian key (required, ≠ OWNER_ADDRESS)
 BUMP_AFTER_HOURS=24                 # stall threshold (optional)
 BUMP_PCT=20                         # bump on stall (optional)
 node scripts/deploy-mainnet.mjs
@@ -176,12 +177,17 @@ Pass `CONFIRM=yes` to skip the prompt. The dry run is read-only against mainnet
    plus `simplex` and `simplex-chat`, in batches of 200, sets the metadata renderer, caps
    `maxLabelLength` at 63, and registers `eth-usd.data.eth` → the Chainlink feed
    so the frontend's `useEthPrice` resolves on chain.
-3. Hands ownership of every persistent role to `OWNER_ADDRESS`; the ENS-root
-   transfer is the last write, after which the deployer can't reassign any TLD
-   or contract role (except that it still holds the controller until the cold
-   owner accepts). `eth-usd.data.eth` is left with owner zero rather than handed
+3. Makes the guardian the beneficiary, proposes `OWNER_ADDRESS` as owner of the
+   controller and the price oracle (`Ownable2Step`), reads the stack back, and
+   stops. Nothing irreversible has happened yet: a wrong proposal can be replaced.
+4. Run again after the admin has accepted both proposals (see
+   [Completing the ownership handover](#completing-the-ownership-handover)), it
+   checks both owners and only then hands over the registrar and the registry
+   root, `eth` and `data.eth`, after which the deployer can't reassign any TLD or
+   contract role. `eth-usd.data.eth` is left with owner zero rather than handed
    over: the registry assigns a node to someone other than the caller only under
-   the root or a TLD, and the owner of `data.eth` can take it back.
+   the root or a TLD, and the owner of `data.eth` can take it back. A second
+   read-back checks that the admin owns everything and nothing is pending.
 
 The deployer commits `reserved-names.simplex.csv`: a `name,reason,category`
 header, then one label per row, with `category` one of `Internal`, `Trademark`
@@ -230,29 +236,35 @@ tag `simplex-mainnet-testing-v3`).
 
 ## Post-deploy operations
 
-All of these are `onlyOwner` calls on the `SimplexController` proxy (the cold
-owner once the handover is complete; the deployer EOA until then).
+All of these are `onlyOwner` calls on the `SimplexController` proxy (the admin
+once the handover is complete; the deployer EOA until then).
 
 ### Completing the ownership handover
 
-From a wallet controlling `OWNER_ADDRESS`, submit at the proxy address (stored as
-`ETHRegistrarController` in the addresses file):
+From a wallet controlling `OWNER_ADDRESS`, submit `acceptOwnership()` at the
+controller proxy (stored as `ETHRegistrarController` in the addresses file) and
+at the price oracle (`SimplexPriceOracle`; `.testing`'s oracle has no owner).
+Then run `deploy-mainnet.mjs` again with the same env vars: it reads both owners
+and makes the single-step handovers only if both are `OWNER_ADDRESS`, so the
+admin has proven it can sign before anything irreversible is sent.
 
-```
-SimplexController.acceptOwnership()
-```
-
-Confirm:
+Confirm after the second run:
 
 ```sh
 cast call <PROXY> "owner()(address)" --rpc-url $MAINNET_RPC_URL
-# → 0xDa064C4567fAD2c9Da7b6DD08b5C2B2607960340 (the cold owner)
+# → OWNER_ADDRESS
 cast call <PROXY> "pendingOwner()(address)" --rpc-url $MAINNET_RPC_URL
 # → 0x0000000000000000000000000000000000000000
 ```
 
-Until the cold owner accepts, the ephemeral deployer EOA still has admin — discard
-the deployer key only after `acceptOwnership` lands. **On the live `.testing`
+If the first run proposed the wrong address, nothing irreversible was sent, but
+re-running with a corrected `OWNER_ADDRESS` stops on the journal's call digest.
+Propose the right address by hand (`transferOwnership` from the deploy key on
+both contracts) and, once it has accepted, make the single-step handovers by hand
+in the order the script uses.
+
+Until the admin accepts, the ephemeral deployer EOA still has admin — discard
+the deployer key only after the second run's read-back passes. **On the live `.testing`
 deploy this step has not yet run**, so the deployer EOA still holds admin +
 UUPS-upgrade authority (security review finding H1).
 
@@ -491,7 +503,8 @@ are deployed.
 | `MAINNET_RPC_URL`   | JSON-RPC URL (used for the fork dry-run + real send) |
 | `MAX_BASE_FEE_GWEI` | Per-gas cap; a tx only lands when base ≤ this        |
 | `SIMPLEX_TLD`       | `testing` (default) or `simplex`                     |
-| `OWNER_ADDRESS`     | Final cold owner; defaults to the simplexchat.eth key |
+| `OWNER_ADDRESS`     | Admin key; required, must differ from the deployer   |
+| `GUARDIAN_ADDRESS`  | Guardian key (beneficiary); required, ≠ `OWNER_ADDRESS` |
 | `ETHUSD_FEED`       | Override the Chainlink ETH/USD feed                  |
 | `SMPXNFT_ADDR`      | Override the SMPXNFT gate contract                   |
 | `ETHERSCAN_API_KEY` | Etherscan v2 multi-chain key (verify script)         |
