@@ -7,6 +7,7 @@ Three layers.
 | Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        | 119 SNRC + upstream ENS suite |
 | Frontend unit          | `testing-app/`, `simplex-app/` | `pnpm test`                             | varies (ENS upstream) |
 | End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 27 |
+| End-to-end `.simplex`  | parent repo          | `npx playwright test --project=simplex-tld` | 12 |
 
 ## Solidity unit tests
 
@@ -105,6 +106,15 @@ npx playwright test --grep "search shows name as available"
 | journey: name + subname, offered and claimed, then the recipient clears everything | UI: register a name and a subname with records, offer, review and claim (Claim stays disabled until acknowledged), then delete the subname and every record; asserts that no subname and no text, address or contenthash record is left on chain or in the app |
 | the holder can withdraw a pending offer | The name page's Withdraw clears the registrar approval |
 
+### `.simplex`
+
+**12 tests** in `test/e2e/simplex-tld-flow.spec.ts`, against a stack started with
+`SIMPLEX_TLD=simplex ./scripts/run-local.sh`: the `.simplex` search suffix and
+minimum, the USD tier on the register page, paid registration (the controller
+keeps exactly the quoted price), records at registration, no NFT gate, reserved
+names, the admin page refusing labels users cannot register, My Names, the
+too-short guard, and the offer, claim and withdraw flows.
+
 ## Running everything
 
 ```bash
@@ -115,6 +125,9 @@ cd ens-contracts && npx vitest run
 cd ..
 ./scripts/run-local.sh                 # in one terminal
 npx playwright test --project=simplex  # in another
+
+SIMPLEX_TLD=simplex ./scripts/run-local.sh  # .simplex stack, in one terminal
+npx playwright test --project=simplex-tld   # in another
 ```
 
 ## Manual UI testing

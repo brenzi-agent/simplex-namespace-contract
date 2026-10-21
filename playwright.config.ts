@@ -13,6 +13,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // .simplex TLD flows. Requires the stack started with
+      // `SIMPLEX_TLD=simplex ./scripts/run-local.sh`.
+      name: 'simplex-tld',
+      testMatch: 'simplex-tld-flow.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       // Read-only smoke tests against the live Sepolia deployment. Selected
       // by `npx playwright test --project=sepolia`. Requires the dApp to be
       // built+served with NEXT_PUBLIC_CHAIN_NAME=sepolia + the matching
