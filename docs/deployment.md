@@ -365,6 +365,10 @@ key. `setPriceOracle` deliberately survives `freeze()`.
   one may use at most 16,777,216 gas (EIP-7825), and the gas estimate passes that
   above about 210 names. `Reason.None` (0) is rejected — it
   is the value meaning *not reserved*, so passing it would silently unreserve.
+  A reserved name cannot be renewed, so a held name reserved during a dispute
+  expires, and after its grace period only `registerReserved` can assign it.
+  Check that a label is unregistered before reserving it, unless the hold is
+  deliberate: reserving a held name by mistake blocks its holder's renewal.
   Each label must follow the dApp's label rule (`ALLOWED_LABEL_REGEX`: lowercase a-z, 0-9 and hyphens; transliterate accents and drop apostrophes): the contract hashes any bytes,
   so `Coinbase` reserves a name nobody can type and leaves `coinbase` open. The
   admin page checks this; a raw call from a Safe or a block explorer does not.
@@ -384,6 +388,9 @@ key. `setPriceOracle` deliberately survives `freeze()`.
 - `registerReserved(string,address,uint256)` — owner-only; bypasses the gates and
   the commit/reveal. Sets `defaultResolver` on the node and transfers the token,
   so a brand's name resolves immediately without the brand ever holding ETH.
+  Releases the reservation, so the brand renews like any holder; if the brand
+  lets it lapse, anyone can register it after its grace period unless it is
+  reserved again.
 - `setDefaultResolver(address)` — the resolver `registerReserved` points names at.
 - `setPublicSalesOpen(bool)` — owner **or beneficiary**; gates the payable
   `register()` only. The credited path, `registerReserved` and both renew paths

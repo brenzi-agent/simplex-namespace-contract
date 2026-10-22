@@ -54,9 +54,9 @@ gas, spends the allowance the guardian gives it, and relays users' signed reques
 The admin key and the guardian key are two authorisation tiers, ranked by how much damage a
 compromised key can do. The admin tier can replace the controller's code, and new code can do
 anything the contracts allow, so its reach has no bound. The guardian tier is bounded in kind:
-halt sales, set registrar allowances, redirect revenue, and nothing else. It is not bounded in
-amount: it can give itself any allowance and mint unreserved names with it, an accepted risk
-(`docs/security.md`, V1). They are separate
+halt sales, set registrar allowances, redirect revenue, reserve names (which also stops their
+renewal), and nothing else. It is not bounded in amount: it can give itself any allowance and
+mint unreserved names with it, an accepted risk (`docs/security.md`, V1). They are separate
 keys so that one compromise does not hand over both tiers. The timelock, the Safes and the
 multi-signer rotation are deferred to GOV8, not abandoned.
 
@@ -100,14 +100,16 @@ After GOV9 no key can change the controller's code either, so no key can write r
 name it does not own. That matters because the controller is `trustedETHController` on the
 resolver, and a hostile upgrade would abuse exactly that authority.
 
-One indirect path stays open. The admin can price renewals out of reach and collect names as
-they lapse, either by pointing `setPriceOracle` at a hostile oracle or by calling
-`priceOracle.setPrices` with a punishing curve. The second adds nothing, since an arbitrary
-oracle can already do anything a curve change can. Before GOV8 there is no warning: the
-change takes effect when signed. What limits the damage is slow and public. Every name keeps
-its remaining term plus 90 days of grace, and renewal is permissionless throughout, so anyone
-can renew anyone's name at the old price as soon as the change is noticed. That is months of
-visible behaviour rather than seven days of notice. GOV8 buys the notice back.
+Two indirect paths stay open. Reserving a held name stops its renewal, and after its grace
+period `registerReserved` assigns it, which is how disputes are settled (A6). The admin can
+also price renewals out of reach and collect names as they lapse, either by pointing
+`setPriceOracle` at a hostile oracle or by calling `priceOracle.setPrices` with a punishing
+curve. The second adds nothing, since an arbitrary oracle can already do anything a curve
+change can. Before GOV8 there is no warning: the change takes effect when signed. What limits
+the damage is slow and public. Every name keeps its remaining term plus 90 days of grace, and
+renewal of an unreserved name is permissionless throughout, so anyone can renew anyone's name
+at the old price as soon as the change is noticed. That is months of visible behaviour rather
+than seven days of notice. GOV8 buys the notice back.
 
 ## 6. Why it is built this way
 
@@ -207,7 +209,10 @@ migration controller or the holders' signatures.
 2. Snapshot at a stated block: owner, expiry, records, subnames.
 3. Deploy the new registrar and controller. `addReservedNames` for the whole set, then
    `registerReserved` each name to its snapshot owner for its remaining term, writing the
-   records in the same call.
+   records in the same call. `registerReserved` releases each reservation, so afterwards
+   reserve again every name that was under dispute; a disputed name past its expiry stays
+   reserved and is not re-minted, since `registerReserved` would give it a fresh term of at
+   least two years.
 4. Re-snapshot and apply the difference, because transfers do not stop when sales do.
 5. Point the TLD at the new contracts, ship the client release, announce the old addresses as
    dead.
@@ -376,7 +381,9 @@ in brackets.
 | Action | Caller | Call |
 |---|---|---|
 | Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `controller.addReservedNames([name], reason)`, sent privately (see below) |
-| Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `controller.registerReserved(label, brandAddr, duration)` |
+| Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `controller.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
+| Hold a disputed name | guardian key *(guardian Safe, 2 sigs)* | `controller.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
+| Keep a lapsing brand name protected | guardian key *(guardian Safe, 2 sigs)* | for a name handed out by `registerReserved` and not renewed: `controller.addReservedNames([name], reason)` before its grace period ends, sent privately |
 | Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
 | Cut off a compromised registrar | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, 0)` |
 | Pause payable sales | guardian key *(guardian Safe, 2 sigs)* | `controller.setPublicSalesOpen(false)` |

@@ -117,7 +117,7 @@ sequenceDiagram
     SR->>R: owner(parentNode) == caller ?  (_controller — the live 2LD holder)
     R-->>SR: Alice — authorised
     SR->>R: setSubnodeRecord(parentNode, labelhash("mobile"),<br/>owner = SubnameRegistrar, resolver = PublicResolver, ttl = 0)
-    note over SR: parentOf[node] = parentNode,<br/>generationAt[node] = generation[2LD],<br/>index += labelhash, labelOf[labelhash] = "mobile" (atomic)
+    note over SR: parentOf[node] = parentNode,<br/>generationAt[node] = generation[parentNode],<br/>index += labelhash, labelOf[labelhash] = "mobile" (atomic)
     note over U,R: the subnode is owned by the registrar#59; its EFFECTIVE owner is<br/>the live 2LD NFT holder (ownerOf) — soulbound to the token
 ```
 
@@ -136,7 +136,8 @@ be sold or assigned to a third party, and the previous holder loses them (and th
 mint new ones) the instant the token moves. The depth-ready walk-up means subnames of
 subnames work the same way (single-level in the UI for now). Because the index is
 reconstructible by re-creating subnames, the contract is immutable yet replaceable: a fixed
-redeploy is re-approved and re-created, no data migration. No payment, gate, or expiry
+redeploy is re-approved and re-created, no data migration, though holders of names registered
+before it can create subnames only after their next renewal. No payment, gate, or expiry
 applies to subnames; a bumped `generation` (after 2LD re-registration) retires them — flow 7.
 
 _vs ENS:_ ENS lets a parent set a subname to any owner, uses the full NameWrapper

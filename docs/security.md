@@ -99,7 +99,11 @@ only because of two properties that an auditor must re-verify on any change:
 **Accepted** as the deliberate design (a minimal, single-purpose stand-in for the
 NameWrapper). Users can revoke at any time with
 `setApprovalForAll(subnameRegistrar, false)`. A `SubnameRegistrar` redeploy
-requires users to re-approve the new address and re-create subnames.
+requires users to re-approve the new address and re-create subnames. A redeploy
+also has no expiry for names registered before it became `BaseRegistrar`'s
+subname hook, and nothing can supply one, so their holders cannot create
+subnames until they renew: do not replace or unset the hook on a live TLD
+without a way to backfill expiries.
 
 **names-v2 extension.** `ENSRegistry.setApprovalForAllWithSig` makes this grant
 obtainable by signature as well as by transaction, so a user with no ETH can make
@@ -258,10 +262,11 @@ above as "the cold owner."
   owner's `PublicResolver` records intact (`purge`/`_clear` zero the registry
   resolver pointer, not resolver storage). Mitigation: the dApp should
   `clearRecords(node)` alongside `createSubname`, and on 2LD acquisition.
-- **N3** — `deleteSubname` on a middle node zeroes it but leaves descendants with
-  a dangling `parentOf`; their records keep resolving and `purge` skips them while
-  their generation still matches. Mitigation: delete leaf-first in the dApp, or
-  accept as self-inflicted within a single owner.
+- **N3 — FIXED (R3-2).** `deleteSubname` on a middle node left descendants that
+  `purge` skipped while their generation still matched. A subname now has an
+  owner only while its whole chain up to the 2LD is intact, so they have none,
+  `purge` removes them, and re-creating the middle node does not restore them;
+  their records resolve until purged.
 - **N4 — FIXED (names-v2).** `register()` used to call the reverse registrars when
   the reverse bits were set, but both are `address(0)` on mainnet, so such a call
   reverted after the 60 s commit was already spent. The recommended mitigation
@@ -316,8 +321,8 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `SimplexSponsor.setRegistrarAllowance(registrar, attoUSD)` | the controller's beneficiary only | Replaces, not adds. Zeroing it is the kill switch for a compromised registrar and must take one transaction. |
 | `setBeneficiary(address)` | owner while unset, beneficiary thereafter | Set before the ownership handover, so revenue is independent of the deploy key from the first block. |
 | `setPublicSalesOpen(bool)` | owner **or** beneficiary | Restrictive direction on the fast key: an exploit in the payable path accrues harm per block. Dies at `freeze()`. |
-| `addReservedNames(string[])` | owner **or** beneficiary | Also fast, and for a sharper reason: a scheduled reservation would tell a squatter which name is valuable and how long it stays unprotected. |
-| `removeReservedNames`, `registerReserved`, `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. |
+| `addReservedNames(string[])` | owner **or** beneficiary | Also fast, and for a sharper reason: a scheduled reservation would tell a squatter which name is valuable and how long it stays unprotected. Reserving a held name also stops its renewal, so after expiry and grace only `registerReserved` can assign it. |
+| `removeReservedNames`, `registerReserved`, `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. `registerReserved` also releases the reservation, so the holder can renew. |
 | `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Dies at `freeze()`. |
 | `freeze()` | owner only | One-way. Makes the implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed or no sponsor is set, so a mis-ordered freeze cannot shut the payable or the sponsored path forever. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
@@ -332,13 +337,16 @@ end issuance, and the plan should not be read as saying it does:
 - the guardian can still fund a registrar (`setRegistrarAllowance`, on the
   sponsor) and that registrar can still mint names through `registerWithCredit`,
   each to itself or to an owner who signed for it;
-- the owner can still `addReservedNames` and `registerReserved`.
+- the owner can still `addReservedNames` and `registerReserved`;
+- the owner or the guardian can stop the renewal of a held name by reserving it,
+  and once its grace period ends only `registerReserved` can assign it.
 
-That is deliberate — brand reservation and outreach have to continue for the
-life of the namespace, which is why the owner is never renounced. The guarantee
-a freeze gives is narrower and worth stating exactly: **no key can change the
-code, and no key can take a name that someone already holds.** Names that are
-unregistered remain issuable by the two governance keys forever.
+That is deliberate — brand reservation, outreach and disputes have to continue
+for the life of the namespace, which is why the owner is never renounced. The
+guarantee a freeze gives is narrower and worth stating exactly: **no key can
+change the code, and no key can take a name from its holder before its
+registration expires.** Names that are unregistered remain issuable by the two
+governance keys forever.
 
 ### Bounds that are the registrar's job, not the contract's
 
@@ -383,8 +391,13 @@ So the requirement lands on the buyer, and on whatever surfaces a name for sale:
   only the ones it created, so completeness needs `NewOwner` logs on the registry
   filtered by the 2LD node, not `getChildren`.
 - **After buying, overwrite anything unexpected.** One `setSubnodeOwner` per
-  label; no cooperation from the seller is needed.
-- A subname's records survive the overwrite, so re-point or clear them too.
+  label; no cooperation from the seller is needed. Overwriting a subname the
+  registrar tracks takes it out of the registrar: every subname under it then
+  has no owner for good, anyone can `purge` their records, and creating it again
+  does not restore them.
+- A subname's records survive the overwrite, so re-point or clear them too, or
+  call `createSubname`/`createSubnameWithSig` on the node, which clears them.
+  That clears the node only: nodes under it need the same, from the top down.
 
 ### Recipient consent
 
@@ -414,7 +427,8 @@ Accepted:
   any held name, also after `freeze`.
 - **`registerReserved` is exempt.** The admin assigns a reserved name to any
   address, for a term of two to ten years, without its signature, also after
-  `freeze`; the admin or the guardian can reserve any unregistered name at once.
+  `freeze`, and releases the reservation; the admin or the guardian can reserve
+  any name at once, and a reserved name cannot be renewed.
   It is an admin call, and public.
 - **Controllers are trusted.** A controller may register any available name
   directly to any address and transfer a name it holds, was offered or operates
@@ -430,7 +444,9 @@ Accepted:
   be taken over without ETH by `setApprovalForAllWithSig(SubnameRegistrar)`,
   `createSubnameWithSig` (after a permissionless `purge` if it is stale) and
   `deleteSubnameWithSig`, but only when its label is known, non-empty and at
-  most 63 bytes; otherwise only ETH or a registry operator clears it, so clients
+  most 63 bytes; otherwise only ETH or a registry operator clears it (and under
+  a tracked subname only by taking that subname out of the registrar, which
+  costs its whole subtree), so clients
   refuse to claim a name with such a subnode (the dApp instead lists it with a
   warning and requires an acknowledgement; see
   `docs/plans/recipient-consent.md` §9). A holder who front-runs the claim
@@ -478,6 +494,17 @@ Accepted:
   purges or enumerates a previously held label's subnodes when it registers
   one, so a buyer who does not clear and purge by hand can inherit the previous
   holder's records and subnames.
+  Round 3 (R3-2) closed the part that went beyond this: a former holder could
+  create subnames under a subname they had pulled out of the registrar, and
+  the registrar credited those to the next holder. `SubnameRegistrar` now
+  gives a subname an owner only while its whole chain up to the 2LD is intact,
+  gives no node outside that chain a controller, and clears a node's records
+  when `createSubname` is called on a node it does not own, so leftovers no
+  longer show as the buyer's subnames, and `createSubnameWithSig` clears one
+  without ETH. That clears the node only: nodes under it need the same, from
+  the top down, and a stale node the registrar owns must be purged first.
+  Leftover registry nodes still resolve for clients that do not check
+  `ownerOf`.
 - **An offer is public before it is accepted.** `Approval`, and the announcement
   when one is sent, name the recipient though nothing has moved. So do
   `ApprovalForAll` on the registry, the registrar and the resolver, and the
@@ -614,7 +641,10 @@ to**:
 - **Revived subnames.** The same leak one level down: re-creating a label left
   behind by a previous 2LD owner resurfaced their records. Creating over a
   generation-dead subname is now refused outright — `purge` first — and both
-  `purge` and `deleteSubname` retire the records they drop.
+  `purge` and `deleteSubname` retire the records they drop. Nodes the registrar
+  does not own (left in the registry, or pulled out of the registrar) have their
+  records cleared when a subname is created over them (pre-launch review round
+  3, R3-2).
 - **Expired 2LDs kept their subtree.** Registry ownership of a 2LD survives
   expiry, so its former holder retained subname authority indefinitely. The
   registrar now mirrors each registration's expiry (`onExpiryChanged`) and gates
@@ -644,7 +674,13 @@ Accepted, and new to this ledger:
 - **V1 — a compromised guardian is unrecoverable after the freeze.** Only the
   beneficiary may rotate itself, and the post-freeze upgrade escape is closed, so
   a compromised guardian permanently holds `withdraw` and `setRegistrarAllowance`.
-  Names are untouched. Accepted on the basis that the guardian is a Safe:
+  No name can be taken from its holder before it expires, but the guardian can
+  reserve held names, which stops their renewal, and reserve them again whenever
+  the admin releases them. The admin's recovery is to release and renew each
+  such name in one atomic timelock batch, every term, or to add a
+  `BaseRegistrar` controller that renews regardless of reservations
+  (`addController` survives the freeze). Accepted on the basis that the guardian
+  is a Safe:
   compromise requires the multisig threshold, and the alternative — letting the
   slow owner replace the beneficiary — would put the treasury back under the key
   the split exists to keep it away from.
@@ -663,13 +699,17 @@ Accepted, and new to this ledger:
   can judge abuse, so it must pre-flight simulate every relayed transaction and
   refuse above a gas threshold, and validate payload sizes before submitting.
   This is a security property carried by the service, not the contracts.
-- **V3 — hostile pricing is the one path from a retained key to a held name.**
+- **V3 — hostile pricing is the one path from a retained key to a held name
+  that is not reserved.**
   `setPriceOracle` survives the freeze by necessity: the Chainlink feed is
   `immutable` inside the oracle, so freezing pricing would let a retired feed end
   registration and renewal forever. The cost is that an admin could price
   renewals out of reach and take names as they lapse. It is the slowest and
   loudest attack available — public for the timelock delay, then each name's
   remaining term plus 90 days of grace, with renewal permissionless throughout.
+  The other path is reservation: a reserved name cannot be renewed, and after
+  its grace period `registerReserved` assigns it (see "What `freeze()` does not
+  stop").
 - **V4 — `SimplexPriceOracle` does not check feed staleness.** It reads
   `latestAnswer()` and ignores `updatedAt`, so a frozen but positive feed keeps
   quoting its last price. The recovery is the oracle owner's `setUsdOracle`.
@@ -684,7 +724,8 @@ reservation that waits longer in public — an underpriced transaction in the
 mempool, or a guardian Safe proposal waiting in the Safe Transaction Service queue
 for its second signature — tells a squatter which name to take, and the squatter's
 `register` lands first. The reservation then succeeds on a name that is already
-held, and nothing takes the name back. A pre-aged speculative commitment can also
+held, and nothing takes the name back before it expires: the reservation stops
+only its renewal. A pre-aged speculative commitment can also
 win the ordering, but gains nothing over registering the guessed label outright.
 `test/simplex/TestReservationRace.test.ts` pins only the case where the
 reservation is mined first.

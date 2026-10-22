@@ -172,8 +172,8 @@ down in favour of a split.
 
 - `registerReserved` gives a reserved name to any address, for a term of two to
   ten years, without its signature, also after `freeze`, and the admin or the
-  guardian can reserve any unregistered name at once, by the owner's choice: the
-  admin is trusted, and every call is public.
+  guardian can reserve any name at once, which stops a held name's renewal, by
+  the owner's choice: the admin is trusted, and every call is public.
 - Controllers are trusted the same way. A controller may register any available
   name directly to any address and transfer a name it holds, was offered or
   operates for to anyone, and `addController` survives `freeze` as the repair

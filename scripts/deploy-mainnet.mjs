@@ -512,8 +512,19 @@ async function verifyWiring(publicClient, addresses, handedOver) {
       args: [labelhash(name)],
     })),
   })
-  const unreserved = reserved.filter((r, i) => reasons[i].result !== r.reason)
-  console.log(`  ${unreserved.length ? '✗' : '✓'} reserved names read back: ${reserved.length - unreserved.length} of ${reserved.length}`)
+  const released = reserved.filter((r, i) => reasons[i].result === 0)
+  const expiries = await publicClient.multicall({
+    batchSize: 65_536,
+    contracts: released.map(({ name }) => ({
+      address: registrar,
+      abi: [{ type: 'function', name: 'nameExpires', inputs: [{ type: 'uint256' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' }],
+      functionName: 'nameExpires',
+      args: [BigInt(labelhash(name))],
+    })),
+  })
+  const handedOut = new Set(released.filter((r, i) => expiries[i].result > 0n))
+  const unreserved = reserved.filter((r, i) => reasons[i].result !== r.reason && !handedOut.has(r))
+  console.log(`  ${unreserved.length ? '✗' : '✓'} reserved names read back: ${reserved.length - unreserved.length - handedOut.size} of ${reserved.length}, ${handedOut.size} handed out`)
   if (unreserved.length) {
     failures.push(`reserved names (${unreserved.slice(0, 5).map((r) => r.name).join(', ')}${unreserved.length > 5 ? ', …' : ''})`)
   }

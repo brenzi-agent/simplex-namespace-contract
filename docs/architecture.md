@@ -219,7 +219,7 @@ ETH/USD). On mainnet the oracle points at the live Chainlink ETH/USD feed.
 | `disableNftGate()`               | one-way (true → false)                      |
 | `addReservedNames(string[])`     | bulk; up to 200 names per tx                |
 | `removeReservedNames(string[])`  | bulk; ~1000 names per tx                    |
-| `registerReserved(string,address,uint256)` | bypasses gates                    |
+| `registerReserved(string,address,uint256)` | bypasses gates; releases the reservation |
 | `setPriceOracle(IPriceOracleUSD)` | survives `freeze()`                        |
 
 `SimplexPriceOracle` has its own `Ownable2Step` owner, held by the same admin key

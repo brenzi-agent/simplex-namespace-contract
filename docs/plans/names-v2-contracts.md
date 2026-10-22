@@ -123,7 +123,8 @@ still one address, so the layout is unchanged.
 
 The payable `register()` reverts with `PublicSalesClosed` while `publicSalesOpen` is
 false. `registerWithCredit`, `registerReserved` and both renew paths are exempt: the
-credited path is how the investor window is served, and renewal must never be blocked.
+credited path is how the investor window is served, and renewal must never be blocked by a
+pause.
 
 The body of `register()` from the availability check to the `NameRegistered` emit moves
 into a private `_registerCore(Registration calldata) returns (uint256 expires)`.
@@ -418,10 +419,10 @@ with no recovery: the Chainlink feed is `immutable` inside the oracle, so a reti
 would end registration and renewal forever. A live sales switch is a censorship risk with
 no recovery either, since a permanently paused payable path could never be reopened. So the
 freeze locks the switch and leaves the oracle alone. The residual risk — an owner pricing
-renewals out of reach so names lapse — is the only path by which any retained key reaches a
-name someone already owns, and it needs the change to stay public through the timelock and
-then through every name's remaining term plus 90 days of grace, with renewal permissionless
-the whole time.
+renewals out of reach so names lapse — is, besides reserving the name (below), the only path
+by which any retained key reaches a name someone already owns, and it needs the change to
+stay public through the timelock and then through every name's remaining term plus 90 days
+of grace, with renewal permissionless the whole time unless the name is reserved.
 
 **Powers are split by how fast their harm accrues, not by contract.** A power sits on the
 untimelocked guardian key only when the harm it answers outruns a timelock delay. Zeroing
@@ -436,9 +437,17 @@ never acquire anything; the permissive direction stays behind the timelock. So
 `setPublicSalesOpen` and `addReservedNames` are callable by the owner or the beneficiary,
 while `removeReservedNames` and `registerReserved` are owner-only. Reserving in particular
 cannot be timelocked: a scheduled `addReservedNames` announces which name is valuable and
-how long it stays unprotected, which invites the squatting it exists to prevent. It is also
-harmless in the wrong hands — it acquires nothing, does not affect a registered name, and
-`renew` never consults the reserved list, so a holder cannot be squeezed by it.
+how long it stays unprotected, which invites the squatting it exists to prevent. It acquires
+nothing, but it does stop renewal: `renew` reverts for a reserved name, so a held name that
+is reserved expires, and after its grace period only `registerReserved` can assign it. That
+is how a dispute is handled. `registerReserved` releases the reservation, so a brand renews
+like any holder, and if it lets the name lapse, anyone can register it after its grace period
+unless it is reserved again. When a competing claim arises, the guardian reserves the name
+again, and the admin settles it with `removeReservedNames` executed before the grace period
+ends (the holder keeps it) or, after the grace period, `registerReserved` to whoever the
+ruling names. The hold takes effect at the name's current expiry, which its holder may have
+pushed up to three years out, or ten through a sponsored renewal. A reservation made in error
+can be undone with `removeReservedNames` until the name's grace period ends.
 
 **The beneficiary is permanent and independent of the owner.** `setBeneficiary` is
 callable by the owner only while the beneficiary is unset, so setting it before the
@@ -479,21 +488,26 @@ full-year grant on a one-day renewal, and a nonce stall. `freeze()` now enforces
 
 **Accepted.** *A compromised guardian is unrecoverable after the freeze.* Only the
 beneficiary may rotate itself, and the post-freeze upgrade escape is closed, so a
-compromised guardian permanently holds `withdraw` and `setRegistrarAllowance`. Names are
-untouched — `require(available(id))` in the immutable registrar holds even here. Accepted
+compromised guardian permanently holds `withdraw` and `setRegistrarAllowance`. No name can
+be taken from its holder before it expires — `require(available(id))` in the immutable
+registrar holds even here — but the guardian can reserve held names, which stops their
+renewal, and reserve them again whenever the admin releases them. The admin's recovery is to
+release and renew each such name in one atomic timelock batch, every term, or to add a
+`BaseRegistrar` controller that renews regardless of reservations (`addController` survives
+the freeze). Accepted
 on the basis that the guardian is a Safe: compromise requires the multisig threshold, and
 the alternative — letting the slow owner replace the beneficiary — would put the treasury
 back under the key the split exists to keep away from it.
 
 **Reservations must not be public before they are mined.** `addReservedNames` is a single
 atomic call with no commit/reveal, while both registration paths must present a commitment
-already aged `minCommitmentAge` (60s in the deployment). That protects a reservation only
-if it is mined within about five slots of first becoming visible; one that waits longer in
-the mempool or in the Safe Transaction Service queue is front-run, and the squatter keeps
-the name. A speculative pre-commitment gains nothing: if they had targeted the name in
-advance they could have registered it at any earlier moment. Reservations after launch are
-therefore sent through private orderflow; see `docs/security.md`, "Reservations must not
-be public before they are mined".
+already aged `minCommitmentAge` (60s in the deployment). That protects a reservation only if
+it is mined within about five slots of first becoming visible; one that waits longer in the
+mempool or in the Safe Transaction Service queue is front-run, and the squatter keeps the
+name for its term: a late reservation stops only its renewal. A speculative pre-commitment
+gains nothing: if they had targeted the name in advance they could have registered it at any
+earlier moment. Reservations after launch are therefore sent through private orderflow; see
+`docs/security.md`, "Reservations must not be public before they are mined".
 
 **Out of scope.** *The `.testing` proxy needs a migration batch after an in-place upgrade.*
 `.testing` is not being upgraded; it is left as it stands and `.simplex` is a fresh deploy.
@@ -725,7 +739,9 @@ New files under `ens-contracts/test/simplex/`, following the existing fixture id
 - `TestRegisterReserved.test.ts` — a brand receives the token, the registry node and a
   working resolver, and can then have records relayed; unreserved names, short durations
   and a guardian caller are refused; a name someone already holds cannot be taken; and the
-  no-default-resolver degradation is pinned.
+  no-default-resolver degradation is pinned. `registerReserved` releases the reservation so
+  the brand can renew; a disputed name reserved again cannot be renewed on either path, can
+  be renewed once released, and after its grace period goes to the claimant.
 - `TestClearRecordsWithSig.test.ts` — type-hash pinning, every prior
   record reads empty, wrong signer, replay, expiry, refusal at zero credits.
 - `TestSubnameRelayedEdit.test.ts` — the 2LD holder signs an edit for a subname and it
