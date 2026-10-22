@@ -171,8 +171,10 @@ The dummy provider does not stop the UR from re-emitting `OffchainLookup` when a
 name's resolver reverts with one, so a client that follows CCIP-Read fetches
 whatever URL a name holder's resolver names: the holder learns who looked the name
 up, and can serve that reader different records. The `.simplex` dApp therefore
-runs with `ccipRead: false` (pre-launch review round 2, R2-2). **Accepted** as long
-as clients do not follow CCIP-Read; revisit if off-chain resolution is ever added.
+refuses every CCIP-Read request: its client's `ccipRead.request` always rejects,
+which also covers ensjs's multicall decoder, a path that ignores `ccipRead: false`
+(pre-launch review rounds 2 and 3, R2-2 and R3-1). **Accepted** as long as clients
+do not follow CCIP-Read; revisit if off-chain resolution is ever added.
 
 ### L9 — Re-registered 2LD's old subname records resolve until purged
 When a 2LD expires and is re-registered, BaseRegistrar calls
