@@ -8,9 +8,11 @@
  *
  *   SimplexController.upgradeTo(<new impl address>)
  *
- * at the proxy address. The proxy keeps its state (commitments, reserved
- * names, NFT gate flag, ownership) but starts dispatching calls to the
- * new logic.
+ * at the proxy address. The proxy keeps its state (commitments, NFT gate
+ * flag, ownership) but starts dispatching calls to the new logic. A proxy
+ * from before `SimplexNamePolicy` keeps its reserved names only in an
+ * unused slot, and registration and renewal revert until the owner calls
+ * `setNamePolicy` with a policy that lists them.
  *
  * Required env vars:
  *   DEPLOYER_KEY    - hex private key of the (ephemeral) deployer EOA

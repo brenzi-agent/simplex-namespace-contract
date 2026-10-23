@@ -169,6 +169,17 @@ async function main() {
   await write(baseRegistrar, 'addController', [controller.address])
   console.log(`Controller wired up`)
 
+  const namePolicyImpl = await deploy('SimplexNamePolicyImpl',
+    'simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
+    [controller.address, baseRegistrar.address])
+  const namePolicyProxy = await deploy('SimplexNamePolicyProxy',
+    'simplex/SimplexNamePolicyProxy.sol/SimplexNamePolicyProxy.json',
+    [namePolicyImpl.address, '0x'])
+  const namePolicy = { address: namePolicyProxy.address, abi: namePolicyImpl.abi }
+  await write(baseRegistrar, 'addController', [namePolicy.address])
+  await write(controller, 'setNamePolicy', [namePolicy.address])
+  await write(baseRegistrar, 'setNamePolicy', [namePolicy.address])
+
   // On-chain NFT metadata: deploy the renderer and point the registrar's tokenURI at it.
   const metadataRenderer = await deploy('MetadataRenderer',
     'simplex/MetadataRenderer.sol/MetadataRenderer.json',
@@ -180,11 +191,11 @@ async function main() {
 
   // Genesis reserved-names list — these labels cannot be registered by the public.
   // Extend as needed before deploying to testnet / mainnet. Bulk in one tx.
-  // SimplexController.Reason — the on-chain enum. Append-only once names are
+  // SimplexNamePolicy.Reason — the on-chain enum. Append-only once names are
   // reserved, so these integers are fixed by the contract, not by this script.
   const REASON_INTERNAL = 1
   const reservedAtDeploy = ['simplex', 'simplex-chat']
-  await write(controller, 'addReservedNames', [reservedAtDeploy, REASON_INTERNAL])
+  await write(namePolicy, 'addReservedNames', [reservedAtDeploy, REASON_INTERNAL])
   for (const label of reservedAtDeploy) {
     console.log(`Reserved: ${label}.${tld}`)
   }
@@ -230,6 +241,7 @@ async function main() {
     PublicResolver: publicResolver.address,
     ETHRegistrarController: controller.address,
     SimplexSponsor: sponsor.address,
+    SimplexNamePolicy: namePolicy.address,
     [tld === 'testing' ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     DummyOracle: dummyOracle.address,

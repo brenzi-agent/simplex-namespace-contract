@@ -1,12 +1,13 @@
 # Deployment
 
 SNRC is **one deployment per TLD**, each an independent ENS-shaped stack. Only
-`SimplexController` is behind a proxy (ERC-1967 / UUPS); every other contract is
-immutable. There is **no NameWrapper** (v3 is wrapper-free); the stack adds
-`MetadataRenderer` and `SubnameRegistrar`, and `PublicResolver` is deployed with
-its `nameWrapper` slot pointed at the `SubnameRegistrar` (subname records
-authorise via `SubnameRegistrar.ownerOf`). For the canonical contract-by-contract
-deploy order see `CLAUDE.md` → "Deployment order" and `scripts/deploy-*.mjs`.
+`SimplexController` and `SimplexNamePolicy` are behind a proxy (ERC-1967 /
+UUPS); every other contract is immutable. There is **no NameWrapper** (v3 is
+wrapper-free); the stack adds `MetadataRenderer` and `SubnameRegistrar`, and
+`PublicResolver` is deployed with its `nameWrapper` slot pointed at the
+`SubnameRegistrar` (subname records authorise via `SubnameRegistrar.ownerOf`).
+For the canonical contract-by-contract deploy order see `CLAUDE.md` →
+"Deployment order" and `scripts/deploy-*.mjs`.
 
 Active targets: **local Hardhat** and **Ethereum mainnet**. (Sepolia is retired —
 the historical playbook lives in [`legacy/sepolia-deployment.md`](./legacy/sepolia-deployment.md).)
@@ -170,13 +171,18 @@ Pass `CONFIRM=yes` to skip the prompt. The dry run is read-only against mainnet
 1. Deploys the full wrapper-free stack: `ENSRegistry`, `BaseRegistrarImplementation`
    (v3), the price oracle (`SimplexPriceOracle` for `.simplex`,
    `ExponentialPremiumPriceOracle` for `.testing`),
-   `SimplexController` + UUPS proxy, `SimplexSponsor`, `SubnameRegistrar`,
-   `PublicResolver`, `MetadataRenderer`, `UniversalResolver`.
-2. Wires the controller into the `BaseRegistrar` and the sponsor into the
-   controller (`setSponsor`), reserves every label in `reserved-names.<tld>.csv`
-   plus `simplex` and `simplex-chat`, in batches of 200, sets the metadata renderer, caps
-   `maxLabelLength` at 63, and registers `eth-usd.data.eth` → the Chainlink feed
-   so the frontend's `useEthPrice` resolves on chain.
+   `SimplexController` + UUPS proxy, `SimplexSponsor`, `SimplexNamePolicy` + UUPS
+   proxy, `SubnameRegistrar`, `PublicResolver`, `MetadataRenderer`,
+   `UniversalResolver`.
+2. Wires the controller and the name policy into the `BaseRegistrar` (both are
+   registrar controllers), points the controller at the policy
+   (`setNamePolicy`), wires the sponsor into the controller (`setSponsor`),
+   reserves every label in `reserved-names.<tld>.csv` plus `simplex` and
+   `simplex-chat` on the policy, in batches of 200, sets the metadata renderer,
+   caps `maxLabelLength` at 63, and registers `eth-usd.data.eth` → the Chainlink feed
+   so the frontend's `useEthPrice` resolves on chain. Sets the bona fide terms
+   from `bona-fide-terms.<tld>.md`, lists the names in `bona-fide-names.<tld>.csv`,
+   and points the registrar at the policy (`setNamePolicy`).
 3. Makes the guardian the beneficiary, proposes `OWNER_ADDRESS` as owner of the
    controller and the price oracle (`Ownable2Step`), reads the stack back, and
    stops. Nothing irreversible has happened yet: a wrong proposal can be replaced.
@@ -196,6 +202,14 @@ reason holds a comma. The script refuses to deploy `.simplex` without it, and
 stops on a duplicate, a dotted label, a label users cannot register (the dApp's
 `ALLOWED_LABEL_REGEX`: a-z, 0-9 and hyphens), or an unknown category.
 The read-back after the deploy checks every label.
+
+Bona fide community names are optional. `bona-fide-terms.<tld>.md` holds the
+terms text: its keccak256 is set on chain, and `BONA_FIDE_TERMS_URI` must be the
+URI at which the same text is published. `bona-fide-names.<tld>.csv` has a
+`name,community` header (only the name goes on chain) and the same label rule.
+The script exits with an error when names are listed without a terms file: a
+listed name cannot be registered while no terms are set. The read-back checks
+both pointers, the terms hash and every listed name.
 
 ### Resume on interruption
 
@@ -359,34 +373,39 @@ key. `setPriceOracle` deliberately survives `freeze()`.
   registration gate. Once called, the dApp's gate UI clears automatically (it
   reads `nftGateEnabled` on-chain).
 - `setMinCharLength(uint8)` — monotonic decrease only (6 → 5 → 4 → 3).
-- `addReservedNames(string[],Reason)` — owner **or beneficiary**, so a name under
-  threat can be reserved immediately rather than at the timelock's pace. Bulk, one
-  reason for the batch; about 26k gas per name, so batch at most 200 per transaction:
-  one may use at most 16,777,216 gas (EIP-7825), and the gas estimate passes that
-  above about 210 names. `Reason.None` (0) is rejected — it
-  is the value meaning *not reserved*, so passing it would silently unreserve.
-  A reserved name cannot be renewed, so a held name reserved during a dispute
-  expires, and after its grace period only `registerReserved` can assign it.
-  Check that a label is unregistered before reserving it, unless the hold is
-  deliberate: reserving a held name by mistake blocks its holder's renewal.
-  Each label must follow the dApp's label rule (`ALLOWED_LABEL_REGEX`: lowercase a-z, 0-9 and hyphens; transliterate accents and drop apostrophes): the contract hashes any bytes,
-  so `Coinbase` reserves a name nobody can type and leaves `coinbase` open. The
-  admin page checks this; a raw call from a Safe or a block explorer does not.
-  Send reservations privately, never through a public queue — see `docs/security.md`,
+- `SimplexNamePolicy.addReservedNames(string[],Reason)` — owner **or
+  beneficiary**, so a name under threat can be reserved immediately rather than
+  at the timelock's pace. Bulk, one reason for the batch; about 26k gas per
+  name, so batch at most 200 per transaction: one may use at most 16,777,216 gas
+  (EIP-7825), and the gas estimate passes that above about 210 names.
+  `Reason.None` (0) is rejected — it is the value meaning *not reserved*, so
+  passing it would silently unreserve. A reserved name cannot be renewed, so a
+  held name reserved during a dispute expires, and after its grace period only
+  `registerReserved` can assign it. Check that a label is unregistered before
+  reserving it, unless the hold is deliberate: reserving a held name by mistake
+  blocks its holder's renewal. Each label must follow the dApp's label rule
+  (`ALLOWED_LABEL_REGEX`: lowercase a-z, 0-9 and hyphens; transliterate accents
+  and drop apostrophes): the contract hashes any bytes, so `Coinbase` reserves a
+  name nobody can type and leaves `coinbase` open. The admin page checks this; a
+  raw call from a Safe or a block explorer does not. Send reservations
+  privately, never through a public queue — see `docs/security.md`,
   "Reservations must not be public before they are mined".
-  `removeReservedNames(string[])` is owner-only — releasing a reserved name is the
-  direction that should be visible before it lands.
-- `setReservationReason(string[],Reason)` — owner **or beneficiary**; reclassifies
-  names that are already reserved. Use this rather than removing and re-adding,
-  which would leave the name registrable for the gap between the two transactions.
-  Reverts for a name that is not reserved: it is not a second way to reserve.
+  `SimplexNamePolicy.removeReservedNames(string[])` is owner-only — releasing a
+  reserved name is the direction that should be visible before it lands.
+- `SimplexNamePolicy.setReservationReason(string[],Reason)` — owner **or
+  beneficiary**; reclassifies names that are already reserved. Use this rather
+  than removing and re-adding, which would leave the name registrable for the
+  gap between the two transactions. Reverts for a name that is not reserved: it
+  is not a second way to reserve.
 - `Reason` is an on-chain enum — `None(0)`, `Internal(1)`, `Trademark(2)`,
   `Community(3)`. The wording a
   user sees is client-side, so new phrasing needs no upgrade. The integers are
   **append-only** once names are reserved against them: reordering silently
   relabels every existing reservation and nothing on chain can detect it.
-- `registerReserved(string,address,uint256)` — owner-only; bypasses the gates and
-  the commit/reveal. Sets `defaultResolver` on the node and transfers the token,
+- `SimplexNamePolicy.registerReserved(string,address,uint256)` — owner-only;
+  bypasses the gates and the commit/reveal. The policy is a registrar controller:
+  it registers the name to itself, retires the records a former default resolver
+  still holds for it, sets `defaultResolver` on the node and transfers the token,
   so a brand's name resolves immediately without the brand ever holding ETH.
   Releases the reservation, so the brand renews like any holder; if the brand
   lets it lapse, anyone can register it after its grace period unless it is
@@ -405,9 +424,35 @@ key. `setPriceOracle` deliberately survives `freeze()`.
 - `setSponsor(address)` — owner-only, refused after `freeze()`. Sets the
   `SimplexSponsor`, the only caller of `registerSponsored` / `renewSponsored`; the
   deploy scripts set it.
-- `freeze()` — owner-only, one-way. Makes the implementation and the sponsor
-  permanent and seals the sales switch. Refuses while sales are closed or while no sponsor is set. There is no `setTreasury`;
+- `freeze()` — owner-only, one-way. Makes the implementation, the name policy's
+  implementation and the sponsor permanent and seals the sales switch. Refuses
+  while sales are closed or while no sponsor is set. There is no `setTreasury`;
   `withdraw()` is permissionless and pays `beneficiary`.
+- `SimplexNamePolicy` reads its keys from the controller: `owner()` and
+  `beneficiary()`.
+  - `addBonaFideNames(string[])` — owner **or beneficiary**. Skips, with
+    `BonaFideNameSkipped`, any name that is registered or in its grace period.
+    Send it privately, like a reservation. About 28k gas per name (5.7M per
+    batch of 200).
+  - `removeBonaFideNames(string[])` and `setTerms(bytes32 termsHash, string
+    termsURI)` — owner-only. After `setTerms`, an acceptance not yet used at
+    registration or claim must be made again under the new terms; existing
+    holders are not asked to accept them.
+  - `setNamePolicy(address)` on the controller and on the registrar —
+    owner-only, and they survive `freeze()`. Each reverts unless the address is
+    a contract whose `controller()` (or `registrar()`) returns the contract
+    being set; the registrar's also accepts zero, which turns the transfer check
+    off, while the controller's refuses it, so the reserved list always applies.
+    The controller's also reverts for the policy's implementation; the
+    registrar's accepts it, and every holder transfer then reverts until the
+    pointer is corrected.
+    A new policy contract starts empty: reserve names on it before pointing the
+    controller at it. It also cannot list a held name as bona fide until the
+    name is free again.
+  - `upgradeTo(address)` on the policy proxy (UUPS) — the controller's owner,
+    until the controller is frozen. Keeps both lists, the acceptances and the
+    nonces. The new implementation must be built for the same controller and
+    registrar, or the upgrade reverts `ImplementationMismatch`.
 
 ### Registering a registrar service
 
@@ -520,6 +565,7 @@ are deployed.
 | `ETHUSD_FEED`       | Override the Chainlink ETH/USD feed                  |
 | `SMPXNFT_ADDR`      | Override the SMPXNFT gate contract                   |
 | `ETHERSCAN_API_KEY` | Etherscan v2 multi-chain key (verify script)         |
+| `BONA_FIDE_TERMS_URI` | Where the bona fide terms text is published; required when `bona-fide-terms.<tld>.md` exists |
 | `BUMP_AFTER_HOURS` / `BUMP_PCT` / `FORK_PORT` / `CONFIRM` | Gas-strategy tuning (see the script header) |
 
 ---

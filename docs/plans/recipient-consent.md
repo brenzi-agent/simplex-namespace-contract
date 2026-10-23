@@ -51,9 +51,9 @@ and the sponsor 5,763.
 
 ## 3. Every path that assigned an owner
 
-- **Minting:** `register`, `registerWithCredit` and `registerReserved` on the
-  controller, through `BaseRegistrar._register`, which mints and sets the
-  registry node.
+- **Minting:** `register` and `registerWithCredit` on the controller, and
+  `registerReserved` on the name policy, through `BaseRegistrar._register`, which
+  mints and sets the registry node.
 - **Moving the NFT:** `transferFrom`, both `safeTransferFrom` overloads, and
   `transferWithSig`.
 - **Registry only:** `reclaim(id, x)`, `ENSRegistry.setOwner` / `setRecord` on a

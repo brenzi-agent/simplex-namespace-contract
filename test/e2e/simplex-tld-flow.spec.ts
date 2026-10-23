@@ -431,7 +431,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     const label = `rsv${Date.now().toString(36)}`
     await pub.waitForTransactionReceipt({
       hash: await adminWallet.writeContract({
-        address: loadDeployments().ETHRegistrarController,
+        address: loadDeployments().SimplexNamePolicy,
         abi: parseAbi(['function addReservedNames(string[], uint8) external']),
         functionName: 'addReservedNames',
         args: [[label], REASON_TRADEMARK],
@@ -494,7 +494,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await wallet.authorize(Web3RequestKind.SendTransaction)
     await expect(page.locator('text=addReservedNames confirmed')).toBeVisible({ timeout: 15_000 })
     const reason = await pub.readContract({
-      address: loadDeployments().ETHRegistrarController,
+      address: loadDeployments().SimplexNamePolicy,
       abi: parseAbi(['function reservedNames(bytes32) view returns (uint8)']),
       functionName: 'reservedNames',
       args: [keccak256(toBytes(label))],

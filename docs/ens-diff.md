@@ -52,6 +52,7 @@ short list of "names this long or shorter cost this much" steps, both replaceabl
 by one owner call. The contract refuses any change that would make a shorter name
 cheaper than a longer one.
 
-**Almost nothing can change after launch.** Only one contract — the registration
-controller — is upgradeable, and that power is meant to move to a cold owner and
-eventually be renounced. Everything else is fixed once deployed.
+**Almost nothing can change after launch.** Only two contracts — the registration
+controller and the name policy that holds the reserved and bona fide names — are
+upgradeable, and that power is meant to move to a cold owner and eventually be
+renounced. Everything else is fixed once deployed.

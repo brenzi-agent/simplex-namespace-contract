@@ -284,7 +284,7 @@ expiries change the set.
 Without a subgraph, the source of truth is the chain. Two quick checks:
 
 - **Was a name reserved?** Read `reservedNames(keccak256("label"))` on the
-  controller — returns `true` if reserved.
+  `SimplexNamePolicy` — returns the reason, `0` if not reserved.
 - **Who owns a name?** Read `ownerOf(uint256(keccak256("label")))` on the
   BaseRegistrar — reverts if the name is unregistered or expired.
 

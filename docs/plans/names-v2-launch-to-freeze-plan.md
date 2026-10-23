@@ -28,7 +28,7 @@ hot wallet.
 | GOV6 | The investor window opens. Hard deadline for the handover, because names now start belonging to third parties. |
 | GOV7 | Public sales open. |
 | GOV8 | Hardening: the hardware wallets are replaced by multi-signature Safes, and admin actions start taking seven days instead of taking effect at once. No fixed date. |
-| GOV9 | The freeze: `Root.lock` ends the ability to replace the deployment, and `controller.freeze()` ends the ability to upgrade the controller's code. No fixed date, and never before GOV8. |
+| GOV9 | The freeze: `Root.lock` ends the ability to replace the deployment, and `controller.freeze()` ends the ability to upgrade the controller's and the name policy's code. No fixed date, and never before GOV8. |
 
 GOV1 to GOV7 are dated and binding. GOV8 and GOV9 are not: both wait until the namespace is
 big enough to be worth the work they cost.
@@ -65,10 +65,10 @@ multi-signer rotation are deferred to GOV8, not abandoned.
 | Key | GOV2 until GOV9 | After GOV9 |
 |---|---|---|
 | Deploy key | nothing | nothing |
-| Admin key | upgrade the controller; `setSponsor`; `removeReservedNames`; `registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
-| Guardian key | `addReservedNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
-| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | same |
-| Anyone | `commit`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
+| Admin key | upgrade the controller and the name policy; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeBonaFideNames`; `namePolicy.setTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
+| Guardian key | `namePolicy.addReservedNames`; `namePolicy.addBonaFideNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
+| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderBonaFideCommunityTermsWithSig`, `acceptBonaFideCommunityTermsForClaimWithSig` | same |
+| Anyone | `commit`; `commitUnderBonaFideCommunityTerms`; `acceptBonaFideCommunityTermsForClaim`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
 
 Until GOV8 every call in this table takes effect when it is signed. After GOV8 the admin's
 calls wait seven days and the guardian's stay immediate.
@@ -207,12 +207,12 @@ migration controller or the holders' signatures.
 1. `setPublicSalesOpen(false)`, guardian, immediate. The set of names stops growing. This is
    what the switch is really for.
 2. Snapshot at a stated block: owner, expiry, records, subnames.
-3. Deploy the new registrar and controller. `addReservedNames` for the whole set, then
-   `registerReserved` each name to its snapshot owner for its remaining term, writing the
-   records in the same call. `registerReserved` releases each reservation, so afterwards
-   reserve again every name that was under dispute; a disputed name past its expiry stays
-   reserved and is not re-minted, since `registerReserved` would give it a fresh term of at
-   least two years.
+3. Deploy the new registrar, controller and name policy. `addReservedNames` for the whole
+   set, then `registerReserved` each name to its snapshot owner for its remaining term,
+   writing the records in the same call. `registerReserved` releases each reservation, so
+   afterwards reserve again every name that was under dispute; a disputed name past its
+   expiry stays reserved and is not re-minted, since `registerReserved` would give it a fresh
+   term of at least two years.
 4. Re-snapshot and apply the difference, because transfers do not stop when sales do.
 5. Point the TLD at the new contracts, ship the client release, announce the old addresses as
    dead.
@@ -239,13 +239,18 @@ Caller: **deploy key**, alone.
 
 1. Deploy `ENSRegistry`, `Root`, `BaseRegistrarImplementation`, `SimplexPriceOracle`,
    `SimplexController` implementation and proxy, `SimplexSponsor(controllerProxy)`,
+   `SimplexNamePolicy(controllerProxy, baseRegistrar)` implementation and proxy,
    `SubnameRegistrar`, `SimplexResolver`, `MetadataRenderer`, `UniversalResolver`.
 2. `Root.setController(deployKey, true)`; `Root.setSubnodeOwner(labelhash("simplex"), baseRegistrar)`.
-3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.setMetadataRenderer(renderer)`;
+3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.addController(namePolicy)`;
+   `controller.setNamePolicy(namePolicy)`; `baseRegistrar.setMetadataRenderer(renderer)`;
    `baseRegistrar.setMaxLabelLength(63)`; `baseRegistrar.setSubnameHook(subnameRegistrar)`.
 4. `subnameRegistrar.setResolver(simplexResolver)`.
 5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`.
-6. `controller.addReservedNames([...])` for the roughly 3000 names chosen in advance, in
+   `namePolicy.setTerms(keccak256(text), uri)` when a terms file exists;
+   `namePolicy.addBonaFideNames([...])` in batches of 200;
+   `baseRegistrar.setNamePolicy(namePolicy)`.
+6. `namePolicy.addReservedNames([...])` for the roughly 3000 names chosen in advance, in
    batches of 200. Measured cost is 25.8k gas per name: 5.2M per batch, 77M in total,
    single-digit dollars at the base fee we expect. Run it at a low base fee;
    `deploy-mainnet.mjs` supports that through `MAX_BASE_FEE_GWEI`.
@@ -380,10 +385,12 @@ in brackets.
 
 | Action | Caller | Call |
 |---|---|---|
-| Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `controller.addReservedNames([name], reason)`, sent privately (see below) |
-| Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `controller.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
-| Hold a disputed name | guardian key *(guardian Safe, 2 sigs)* | `controller.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
-| Keep a lapsing brand name protected | guardian key *(guardian Safe, 2 sigs)* | for a name handed out by `registerReserved` and not renewed: `controller.addReservedNames([name], reason)` before its grace period ends, sent privately |
+| Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addReservedNames([name], reason)`, sent privately (see below) |
+| Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `namePolicy.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
+| List bona fide community names | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addBonaFideNames([names])`, sent privately; names that are registered or in grace are skipped (`BonaFideNameSkipped`) |
+| Publish new bona fide terms | admin key *(admin Safe, timelock, 7 days)* | `namePolicy.setTerms(keccak256(text), uri)`. After `setTerms`, an acceptance not yet used at registration or claim must be made again under the new terms; existing holders are not asked to accept them. |
+| Hold a disputed name | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
+| Keep a lapsing brand name protected | guardian key *(guardian Safe, 2 sigs)* | for a name handed out by `registerReserved` and not renewed: `namePolicy.addReservedNames([name], reason)` before its grace period ends, sent privately |
 | Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
 | Cut off a compromised registrar | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, 0)` |
 | Pause payable sales | guardian key *(guardian Safe, 2 sigs)* | `controller.setPublicSalesOpen(false)` |
@@ -420,8 +427,10 @@ If any of them fails, wait. There is no date to move.
 the guardian Safe sets it true first, and this is the last moment it can. Also read
 `controller.sponsor()` and confirm that its code is the verified `SimplexSponsor` and its
 `controller()` is this controller: the freeze fixes the sponsor, and `freeze()` reverts only
-while none is set. Then execute both operations in order. The executor role is open, so anyone
-can submit them.
+while none is set. Read the name policy's ERC-1967 implementation slot and confirm that it
+holds the audited `SimplexNamePolicy`: the policy's upgrades end at the freeze only because
+that implementation checks `controller.frozen()`. Then execute both operations in order. The
+executor role is open, so anyone can submit them.
 
 The contract enforces this ordering: `freeze()` reverts with `PublicSalesClosed` while sales
 are closed. The race is real. The pause belongs to the guardian and is immediate, the freeze
@@ -433,7 +442,8 @@ Verify: `root.locked(labelhash("simplex")) == true`; `controller.frozen() == tru
 `upgradeTo`, `upgradeToAndCall`, `setPublicSalesOpen` and `setSponsor` all revert; simulated
 `setPriceOracle` still succeeds; the oracle's own `setPrices`, `setUsdOracle` and
 `setPremium` still succeed, because the freeze belongs to the controller and the oracle is a
-separate contract; `owner()` is still the timelock and not `address(0)` on both.
+separate contract; `owner()` is still the timelock and not `address(0)` on both. A simulated
+`namePolicy.upgradeTo` reverts `Frozen`.
 
 Then confirm live: a sponsored registration, a relayed record edit, a signed offer and claim,
 `registerReserved`, and `withdraw()` paying the guardian Safe, which is the beneficiary by

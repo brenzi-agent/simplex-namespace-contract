@@ -57,7 +57,7 @@ instead; the offer and claim flow has unit tests of its own (`snrcClaimChecks`,
 Hardhat instance and one Next.js dev server (`./scripts/run-local.sh`).
 
 Each test is written to run individually against a fresh chain. A few mutate
-controller state (admin lowering `minCharLength`, `disableNftGate`,
+controller and policy state (admin lowering `minCharLength`, `disableNftGate`,
 `addReservedNames`/`removeReservedNames`) and are placed late in the file so
 earlier tests see a clean state. Seven tests **adapt to the current chain state**:
 they read `minCharLength` / `nftGateEnabled` first and either parametrise or

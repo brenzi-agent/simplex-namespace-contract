@@ -474,6 +474,48 @@ logic living in two places is where a divergence bug hides. `SimplexController` 
 heavily customised fork, not verbatim ENS, so keeping `register` byte-identical in the
 `main...simplex` diff buys less than the duplication costs.
 
+**Bona fide community names live in their own contract.** A listed name can be registered
+by anyone, without the consortium, but only by accepting written terms: the name is used in
+the best interest of the community it names. `SimplexNamePolicy` holds the list, the
+keccak256 of the current terms text and the acceptances; the controller and the registrar
+each call it once. It is separate because the controller had too little bytecode left: the
+same logic inside it came out 708 B over the limit.
+
+- *A holder must have had the chance to accept.* Listing skips any name that is registered
+  or in its grace period, and every holder accepts: the registrant at commit, keyed by the
+  commitment hash so the label stays hidden until the reveal, and a recipient for the
+  holder's specific offer before claiming. Controller transfers and `registerReserved` are exempt;
+  a name reassigned that way gets the terms through an off-chain agreement.
+- *Acceptances are keyed by the acceptor.* Anyone can commit, so an acceptance keyed by the
+  commitment alone could be front-run with the same hash and block the owner. A claim
+  acceptance is also keyed by the holder: the offer number advances only on `approve`, so
+  after a re-registration or an operator transfer it alone would match an old acceptance.
+- *An acceptance includes the terms hash.* `commitUnderBonaFideCommunityTerms` and
+  `acceptBonaFideCommunityTermsForClaim` take the terms hash they accept and revert on any
+  other, so even a direct contract call records exactly which terms the holder accepted;
+  `BonaFideTermsAccepted(name, holder, termsHash)` is emitted at registration and at claim.
+- *Enforcement reuses the reservation.* A name whose holder breaches the terms is reserved,
+  which stops its renewal; after its grace period `registerReserved` assigns it.
+
+**The reserved names moved into the same contract, and it became upgradeable.** The bona
+fide hooks left the controller 315 B under the size limit. Moving the reserved list,
+`addReservedNames`, `setReservationReason`, `removeReservedNames` and `registerReserved` into
+`SimplexNamePolicy` frees about 2.9 KB and puts every rule about who may hold a name in one
+place.
+
+- *One call per registration.* The controller's existing call to the policy now also
+  refuses a reserved name, so `NameReserved` is raised after the commitment checks rather
+  than first. `available()` and renewal ask the policy directly.
+- *`registerReserved` mints from the policy.* The policy is a registrar controller: it
+  registers the name to itself, retires a former default resolver's records as the node's
+  owner, sets the default resolver and transfers the token.
+- *The controller always has a policy.* Its setter refuses zero, so the reserved list
+  always applies; the registrar's pointer may be zero, which turns the transfer check off.
+- *Upgrades keep the lists.* The policy sits behind a UUPS proxy. Upgrades need the
+  controller's owner, end when the controller is frozen, and refuse an implementation
+  built for another controller or registrar. A new policy contract would start empty, so
+  an upgrade, not a replacement, is how the policy changes.
+
 ## 5b. Adversarial review outcomes
 
 An adversarial review by three expert personas, a completeness critic and independent
@@ -736,6 +778,27 @@ New files under `ens-contracts/test/simplex/`, following the existing fixture id
 - `TestReservationRace.test.ts` — a squatter who commits on seeing the reservation cannot
   land in time; a matured speculative commitment is refused just the same; an immature
   commitment is refused on both registration paths; `registerReserved` needs no commitment.
+- `TestBonaFideTerms.test.ts` — listing by the owner or guardian skips names that are
+  registered or in grace; a listed name cannot be registered without accepting, on either
+  path; accepting at commit, directly or signed, registers it and emits the acceptance;
+  another acceptor's acceptance neither counts nor blocks the owner; new terms require a new
+  acceptance; a listed name cannot be claimed without the recipient's acceptance for the
+  holder's offer, on any path, and not with an acceptance made for an earlier holder;
+  controller transfers and `registerReserved` are exempt; a name removed from the list
+  registers without acceptance, an unset registrar pointer turns the transfer check off,
+  and each `setNamePolicy` reverts for a contract bound to another controller or
+  registrar.
+- `TestNamePolicy.test.ts` — removing a name from one list, or `registerReserved`, leaves it
+  on the other; only the controller's owner upgrades the policy, never once the
+  controller is frozen, and never to an implementation built for another controller or
+  registrar; an upgrade keeps both lists, the terms and pending acceptances;
+  `registerReserved` mints from the policy on the resolver path and the bare path,
+  retiring a former default resolver's records, and stops working once the policy is no
+  longer a registrar controller; `available()` and renewal follow the current policy's
+  reserved list; the controller's `setNamePolicy` reverts for zero and for a policy built
+  for another controller; the implementation reverts every write made to it directly, the
+  controller's `setNamePolicy` reverts for it, and a registrar pointed at it reverts every
+  claim.
 - `TestRegisterReserved.test.ts` — a brand receives the token, the registry node and a
   working resolver, and can then have records relayed; unreserved names, short durations
   and a guardian caller are refused; a name someone already holds cannot be taken; and the

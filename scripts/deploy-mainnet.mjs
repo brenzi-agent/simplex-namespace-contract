@@ -38,8 +38,12 @@
  *   FORK_PORT          local port for the dry-run fork (default: 18545 — picked
  *                      to avoid Reth/Geth's stock 8545/8546 ports)
  *   CONFIRM=yes        skip the interactive confirmation prompt
+ *   BONA_FIDE_TERMS_URI  where the bona fide terms text is published; required
+ *                      when bona-fide-terms.${tld}.md exists
  *
  * Reads reserved-names.${tld}.csv (name,reason,category), required for .simplex.
+ * Reads bona-fide-terms.${tld}.md (the terms text; its keccak256 goes on chain)
+ * and bona-fide-names.${tld}.csv (name,community), both optional; names require terms.
  *
  * Files written next to the addresses file:
  *   deployments.mainnet.${tld}.json            ← final addresses (on success)
@@ -49,7 +53,7 @@
  * Commit the addresses file AND the journal to the repo.
  * See docs/deployment.md → Mainnet.
  */
-import { createPublicClient, createWalletClient, encodeFunctionData, getAddress, http, labelhash, namehash, parseGwei, parseEther, zeroHash, zeroAddress } from 'viem'
+import { createPublicClient, createWalletClient, encodeFunctionData, getAddress, http, keccak256, labelhash, namehash, parseGwei, parseEther, zeroHash, zeroAddress } from 'viem'
 import { mainnet } from 'viem/chains'
 import { normalize } from 'viem/ens'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -133,7 +137,7 @@ if (!guardianAddress || guardianAddress.toLowerCase() === ownerAddress.toLowerCa
   process.exit(1)
 }
 
-// SimplexController.Reason — the on-chain enum. Append-only once names are
+// SimplexNamePolicy.Reason — the on-chain enum. Append-only once names are
 // reserved, so these integers are fixed by the contract, not by this script.
 const REASONS = { Internal: 1, Trademark: 2, Community: 3 }
 // About 5.2M gas each, well under the per-transaction cap of 16,777,216 (EIP-7825).
@@ -142,6 +146,12 @@ const RESERVE_BATCH = 200
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const reservedNamesPath = join(REPO_ROOT, `reserved-names.${tld}.csv`)
 const reservedByReason = loadReservedNames(reservedNamesPath)
+const bonaFideTerms = loadBonaFideTerms(join(REPO_ROOT, `bona-fide-terms.${tld}.md`))
+const bonaFideNames = loadBonaFideNames(join(REPO_ROOT, `bona-fide-names.${tld}.csv`))
+if (bonaFideNames.length && !bonaFideTerms) {
+  console.error(`bona-fide-terms.${tld}.md is missing: a listed name cannot be registered while no terms are set`)
+  process.exit(1)
+}
 
 /// RFC 4180: a quoted field may hold commas, line breaks and doubled quotes.
 function parseCsv(text) {
@@ -197,6 +207,44 @@ function loadReservedNames(path) {
   const own = ['simplex', 'simplex-chat'].filter((name) => !seen.has(name))
   byReason.get(REASONS.Internal).unshift(...own)
   return byReason
+}
+
+function loadBonaFideTerms(path) {
+  if (!existsSync(path)) return undefined
+  const uri = process.env.BONA_FIDE_TERMS_URI
+  if (!uri) {
+    console.error(`${path} exists, so BONA_FIDE_TERMS_URI is required: where the same text is published`)
+    process.exit(1)
+  }
+  return { hash: keccak256(readFileSync(path)), uri }
+}
+
+/// `name,community` rows. Only the name goes on chain.
+function loadBonaFideNames(path) {
+  const [header, ...rows] = existsSync(path) ? parseCsv(readFileSync(path, 'utf8')) : []
+  const errors = []
+  if (header && header.join(',') !== 'name,community') {
+    errors.push(`header must be "name,community", got "${header.join(',')}"`)
+  }
+  const seen = new Set()
+  rows.forEach(([name, community, ...extra], i) => {
+    const where = `row ${i + 2} (${JSON.stringify(name)})`
+    let normalized
+    try { normalized = normalize(name) } catch {}
+    if (extra.length || community === undefined) errors.push(`${where}: expected 2 fields`)
+    else if (!name || name.includes('.')) errors.push(`${where}: not a single label`)
+    else if (!ALLOWED_LABEL_REGEX.test(name)) {
+      const fix = ALLOWED_LABEL_REGEX.test(normalized ?? '') ? `use ${JSON.stringify(normalized)}` : 'transliterate to a-z, 0-9 and hyphens'
+      errors.push(`${where}: users cannot register this label; ${fix}`)
+    }
+    else if (seen.has(name)) errors.push(`${where}: duplicate`)
+    else seen.add(name)
+  })
+  if (errors.length) {
+    console.error(`${path}:\n  ${errors.join('\n  ')}`)
+    process.exit(1)
+  }
+  return [...seen]
 }
 
 const bumpAfterMs = (parseFloat(process.env.BUMP_AFTER_HOURS) || (DEFAULTS.BUMP_AFTER_MS / 3600000)) * 3600 * 1000
@@ -307,9 +355,19 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
 
   await write(baseRegistrar, 'addController', [controller.address])
 
+  const namePolicyImpl = await deploy('SimplexNamePolicyImpl',
+    'simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
+    [controller.address, baseRegistrar.address])
+  const namePolicyProxy = await deploy('SimplexNamePolicyProxy',
+    'simplex/SimplexNamePolicyProxy.sol/SimplexNamePolicyProxy.json',
+    [namePolicyImpl.address, '0x'])
+  const namePolicy = { address: namePolicyProxy.address, abi: namePolicyImpl.abi }
+  await write(baseRegistrar, 'addController', [namePolicy.address])
+  await write(controller, 'setNamePolicy', [namePolicy.address])
+
   for (const [reason, names] of reservedByReason) {
     for (let i = 0; i < names.length; i += RESERVE_BATCH) {
-      await write(controller, 'addReservedNames', [names.slice(i, i + RESERVE_BATCH), reason])
+      await write(namePolicy, 'addReservedNames', [names.slice(i, i + RESERVE_BATCH), reason])
     }
   }
 
@@ -344,6 +402,12 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
     'simplex/SimplexSponsor.sol/SimplexSponsor.json',
     [controller.address])
   await write(controller, 'setSponsor', [sponsor.address])
+
+  if (bonaFideTerms) await write(namePolicy, 'setTerms', [bonaFideTerms.hash, bonaFideTerms.uri])
+  for (let i = 0; i < bonaFideNames.length; i += RESERVE_BATCH) {
+    await write(namePolicy, 'addBonaFideNames', [bonaFideNames.slice(i, i + RESERVE_BATCH)])
+  }
+  await write(baseRegistrar, 'setNamePolicy', [namePolicy.address])
 
   const dummyGateway = await deploy('DummyGatewayProvider',
     'mocks/DummyGatewayProvider.sol/DummyGatewayProvider.json')
@@ -416,6 +480,8 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
     // verification can target both impl + proxy.
     SimplexControllerImpl: controllerImpl.address,
     SimplexSponsor: sponsor.address,
+    SimplexNamePolicy: namePolicy.address,
+    SimplexNamePolicyImpl: namePolicyImpl.address,
     [isTesting ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     // 3rd constructor arg of UniversalResolver — kept so verification
@@ -490,6 +556,14 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     () => read(controller, [], ADDR, 'sponsor'))
   await check('sponsor controller', controller,
     () => read(addresses.SimplexSponsor, [], ADDR, 'controller'))
+  await check('controller namePolicy', addresses.SimplexNamePolicy,
+    () => read(controller, [], ADDR, 'namePolicy'))
+  await check('registrar namePolicy', addresses.SimplexNamePolicy,
+    () => read(registrar, [], ADDR, 'namePolicy'))
+  await check('name policy is a controller on the registrar', 'true',
+    () => read(registrar, ADDR, [{ type: 'bool' }], 'controllers', [addresses.SimplexNamePolicy]))
+  await check('bona fide terms hash', bonaFideTerms?.hash ?? zeroHash,
+    () => read(addresses.SimplexNamePolicy, [], [{ type: 'bytes32' }], 'termsHash'))
   await check('controller nftGateEnabled', String(nftGateEnabled),
     () => read(controller, [], [{ type: 'bool' }], 'nftGateEnabled'))
   await check('controller minCharLength', '6',
@@ -506,7 +580,7 @@ async function verifyWiring(publicClient, addresses, handedOver) {
   const reasons = await publicClient.multicall({
     batchSize: 65_536,
     contracts: reserved.map(({ name }) => ({
-      address: controller,
+      address: addresses.SimplexNamePolicy,
       abi: [{ type: 'function', name: 'reservedNames', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint8' }], stateMutability: 'view' }],
       functionName: 'reservedNames',
       args: [labelhash(name)],
@@ -527,6 +601,20 @@ async function verifyWiring(publicClient, addresses, handedOver) {
   console.log(`  ${unreserved.length ? '✗' : '✓'} reserved names read back: ${reserved.length - unreserved.length - handedOut.size} of ${reserved.length}, ${handedOut.size} handed out`)
   if (unreserved.length) {
     failures.push(`reserved names (${unreserved.slice(0, 5).map((r) => r.name).join(', ')}${unreserved.length > 5 ? ', …' : ''})`)
+  }
+  const listed = await publicClient.multicall({
+    batchSize: 65_536,
+    contracts: bonaFideNames.map((name) => ({
+      address: addresses.SimplexNamePolicy,
+      abi: [{ type: 'function', name: 'bonaFideNames', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'bool' }], stateMutability: 'view' }],
+      functionName: 'bonaFideNames',
+      args: [labelhash(name)],
+    })),
+  })
+  const unlisted = bonaFideNames.filter((name, i) => listed[i].result !== true)
+  console.log(`  ${unlisted.length ? '✗' : '✓'} bona fide names read back: ${bonaFideNames.length - unlisted.length} of ${bonaFideNames.length}`)
+  if (unlisted.length) {
+    failures.push(`bona fide names (${unlisted.slice(0, 5).join(', ')}${unlisted.length > 5 ? ', …' : ''})`)
   }
   // A six-character name must quote the cheapest rung. `.testing` is priced at
   // zero on purpose, so only a paid TLD can assert non-zero — for that one, zero
@@ -572,6 +660,8 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     () => read(addresses.PublicResolver, [{ type: 'bytes32' }], ADDR, 'addr', [namehash('eth-usd.data.eth')]))
   await check('controller implementation (ERC-1967 slot)', addresses.SimplexControllerImpl,
     async () => getAddress(`0x${(await publicClient.getStorageAt({ address: controller, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`))
+  await check('name policy implementation (ERC-1967 slot)', addresses.SimplexNamePolicyImpl,
+    async () => getAddress(`0x${(await publicClient.getStorageAt({ address: addresses.SimplexNamePolicy, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`))
 
   // Ownership. Until the admin accepts, the deploy key holds everything and the
   // admin is only proposed on the two Ownable2Step contracts; after the handover

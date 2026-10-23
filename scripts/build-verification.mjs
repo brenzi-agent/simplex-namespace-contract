@@ -182,6 +182,22 @@ export function assembleVerification({
         [addresses.ETHRegistrarController],
       ),
     },
+    SimplexNamePolicyImpl: {
+      address: addresses.SimplexNamePolicyImpl,
+      artifact: 'contracts/simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
+      constructorArgs: encodeAbiParameters(
+        [{ type: 'address' }, { type: 'address' }],
+        [addresses.ETHRegistrarController, addresses.BaseRegistrarImplementation],
+      ),
+    },
+    SimplexNamePolicyProxy: {
+      address: addresses.SimplexNamePolicy,
+      artifact: 'contracts/simplex/SimplexNamePolicyProxy.sol/SimplexNamePolicyProxy.json',
+      constructorArgs: encodeAbiParameters(
+        [{ type: 'address' }, { type: 'bytes' }],
+        [addresses.SimplexNamePolicyImpl, '0x'],
+      ),
+    },
     // The deployment resolver is SimplexResolver (PublicResolver + signed record
     // writes). It is recorded under the `PublicResolver` key for dApp
     // compatibility, but it is a different artifact and different bytecode.

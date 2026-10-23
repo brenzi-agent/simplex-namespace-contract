@@ -851,12 +851,12 @@ test.describe('SimpleX Namespace', () => {
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
     const adminAccount = privateKeyToAccount(DEPLOYER_KEY as `0x${string}`)
     const adminWallet = createWalletClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545'), account: adminAccount })
-    const controller = loadDeployments().ETHRegistrarController
+    const namePolicy = loadDeployments().SimplexNamePolicy
     const reservedAbi = parseAbi(['function addReservedNames(string[], uint8) external'])
     const label = `rsv${Date.now().toString(36)}`
     await pub.waitForTransactionReceipt({
       hash: await adminWallet.writeContract({
-        address: controller,
+        address: namePolicy,
         abi: reservedAbi,
         functionName: 'addReservedNames',
         args: [[label], REASON_TRADEMARK],
@@ -952,7 +952,7 @@ test.describe('SimpleX Namespace', () => {
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
     const adminAccount = privateKeyToAccount(DEPLOYER_KEY as `0x${string}`)
     const adminWallet = createWalletClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545'), account: adminAccount })
-    const controller = loadDeployments().ETHRegistrarController
+    const namePolicy = loadDeployments().SimplexNamePolicy
 
     const reservedAbi = parseAbi([
       'function reservedNames(bytes32) view returns (uint8)',
@@ -966,7 +966,7 @@ test.describe('SimpleX Namespace', () => {
     // Reserve the label as admin, then assert it's marked reserved on-chain.
     await pub.waitForTransactionReceipt({
       hash: await adminWallet.writeContract({
-        address: controller,
+        address: namePolicy,
         abi: reservedAbi,
         functionName: 'addReservedNames',
         args: [[label], REASON_TRADEMARK],
@@ -974,7 +974,7 @@ test.describe('SimpleX Namespace', () => {
     })
     expect(
       await pub.readContract({
-        address: controller,
+        address: namePolicy,
         abi: reservedAbi,
         functionName: 'reservedNames',
         args: [labelhash],
@@ -995,7 +995,7 @@ test.describe('SimpleX Namespace', () => {
     // Admin unreserves.
     await pub.waitForTransactionReceipt({
       hash: await adminWallet.writeContract({
-        address: controller,
+        address: namePolicy,
         abi: reservedAbi,
         functionName: 'removeReservedNames',
         args: [[label]],
@@ -1003,7 +1003,7 @@ test.describe('SimpleX Namespace', () => {
     })
     expect(
       await pub.readContract({
-        address: controller,
+        address: namePolicy,
         abi: reservedAbi,
         functionName: 'reservedNames',
         args: [labelhash],
@@ -1094,12 +1094,12 @@ test.describe('SimpleX Namespace', () => {
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
     const adminAccount = privateKeyToAccount(DEPLOYER_KEY as `0x${string}`)
     const adminWallet = createWalletClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545'), account: adminAccount })
-    const controller = loadDeployments().ETHRegistrarController
+    const namePolicy = loadDeployments().SimplexNamePolicy
     const reservedAbi = parseAbi(['function addReservedNames(string[], uint8) external'])
     const label = `resv${Date.now().toString(36)}`
     await pub.waitForTransactionReceipt({
       hash: await adminWallet.writeContract({
-        address: controller,
+        address: namePolicy,
         abi: reservedAbi,
         functionName: 'addReservedNames',
         args: [[label], REASON_TRADEMARK],

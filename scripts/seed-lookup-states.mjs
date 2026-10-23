@@ -33,10 +33,12 @@ const account = wallet.account
 const OWNER = account.address
 
 const controllerAbi = abiOf('simplex/SimplexController.sol/SimplexController.json')
+const namePolicyAbi = abiOf('simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json')
 const resolverAbi = abiOf('simplex/SimplexResolver.sol/SimplexResolver.json')
 const nftAbi = abiOf('mocks/MockSMPXNFT.sol/MockSMPXNFT.json')
 
 const controller = addrs.ETHRegistrarController
+const namePolicy = addrs.SimplexNamePolicy
 const resolver = addrs.PublicResolver
 const nft = addrs.MockSMPXNFT
 
@@ -110,7 +112,7 @@ async function main() {
 
   // held back by the registry: Community is the only reason the lookup names
   const REASON_COMMUNITY = 3
-  await send(controller, controllerAbi, 'addReservedNames', [['privacy'], REASON_COMMUNITY])
+  await send(namePolicy, namePolicyAbi, 'addReservedNames', [['privacy'], REASON_COMMUNITY])
   console.log(`reserved privacy.${tld} (community)`)
 
   const now = Math.floor(Date.now() / 1000)
