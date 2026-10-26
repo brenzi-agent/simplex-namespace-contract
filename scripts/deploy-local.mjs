@@ -202,8 +202,8 @@ async function main() {
 
   if (tld === 'simplex') {
     const terms = readFileSync(join(__dirname, '..', 'simplex-app', 'public', 'bona-fide-terms.simplex.md'))
-    const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
     await write(namePolicy, 'setTerms', [keccak256(terms), 'http://localhost:3000/bona-fide-terms.simplex.md'])
+    const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
     await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
     console.log(`Bona fide terms set; listed: ${bonaFideAtDeploy.join(', ')}`)
   }

@@ -202,6 +202,7 @@ async function registerNameOnChain(label: string, withResolver: boolean = false,
     'function makeCommitment((string label, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, uint8 reverseRecord, bytes32 referrer)) external pure returns (bytes32)',
     'function commit(bytes32) external',
     'function rentPrice(string,uint256) external view returns ((uint256 base, uint256 premium))',
+    'function commitUnderBonaFideCommunityTerms(bytes32, bytes32) external',
   ])
   const randHex = () =>
     Array.from({ length: 32 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('')
@@ -217,7 +218,7 @@ async function registerNameOnChain(label: string, withResolver: boolean = false,
   }
   const commitment = await pub.readContract({ address: controller, abi, functionName: 'makeCommitment', args: [reg] })
   await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: controller, abi, functionName: 'commit', args: [commitment] }) })
-  if (termsHash) await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: deps.SimplexNamePolicy, abi: parseAbi(['function commitUnderBonaFideCommunityTerms(bytes32, bytes32)']), functionName: 'commitUnderBonaFideCommunityTerms', args: [commitment, termsHash] }) })
+  if (termsHash) await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: deps.SimplexNamePolicy, abi, functionName: 'commitUnderBonaFideCommunityTerms', args: [commitment, termsHash] }) })
   await advanceTime(65)
   const price = await pub.readContract({ address: controller, abi, functionName: 'rentPrice', args: [label, MIN_REGISTRATION_DURATION] })
   const value = ((price as any).base + (price as any).premium) * 12n / 10n
@@ -786,7 +787,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     const accepted = await pub.getLogs({
       address: deps.SimplexNamePolicy,
       event: parseAbiItem('event BonaFideTermsAccepted(string name, address indexed holder, bytes32 termsHash)'),
-      fromBlock: 0n,
+      fromBlock: 'earliest',
     })
     expect(accepted.map(({ args }) => [args.name, args.holder, args.termsHash])).toContainEqual([label, holder, await readTermsHash()])
   })
@@ -878,6 +879,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await dismissOverlay(page)
     await expect(page.locator('text=You are the owner')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('admin-bundled-terms-hash')).toContainText(await readTermsHash(), { timeout: 15_000 })
+    await expect(page.getByTestId('admin-bundled-terms-text')).toContainText('Bona fide community name terms')
 
     const label = `community${Date.now().toString(36)}`
     await page.getByLabel('List name(s)', { exact: true }).fill(label)
