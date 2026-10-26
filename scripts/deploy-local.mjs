@@ -6,9 +6,9 @@
  * Requires: ens-contracts compiled (npx hardhat compile)
  * Outputs NEXT_PUBLIC_DEPLOYMENT_ADDRESSES JSON for the frontend.
  */
-import { createPublicClient, createWalletClient, encodeFunctionData, http, labelhash, namehash, zeroHash, zeroAddress } from 'viem'
+import { createPublicClient, createWalletClient, encodeFunctionData, http, keccak256, labelhash, namehash, zeroHash, zeroAddress } from 'viem'
 import { localhost } from 'viem/chains'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import {
@@ -198,6 +198,15 @@ async function main() {
   await write(namePolicy, 'addReservedNames', [reservedAtDeploy, REASON_INTERNAL])
   for (const label of reservedAtDeploy) {
     console.log(`Reserved: ${label}.${tld}`)
+  }
+
+  const termsFile = `bona-fide-terms.${tld}.md`
+  const termsPath = join(__dirname, '..', 'simplex-app', 'public', termsFile)
+  if (existsSync(termsPath)) {
+    const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
+    await write(namePolicy, 'setTerms', [keccak256(readFileSync(termsPath)), `http://localhost:3000/${termsFile}`])
+    await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
+    console.log(`Bona fide terms: ${termsFile}; listed: ${bonaFideAtDeploy.join(', ')}`)
   }
 
   // UniversalResolver (needed by the frontend for name lookups)
