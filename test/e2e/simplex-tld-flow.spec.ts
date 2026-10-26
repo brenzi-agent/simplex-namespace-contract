@@ -247,6 +247,7 @@ async function registerNameOnUI(
 ) {
   await openRegistrationOnUI(page, uniqueName)
   await commitNameOnUI(page, wallet, recordsToSet)
+  await waitOutCommitmentOnUI(page)
   await finishRegistrationOnUI(page, wallet)
 }
 
@@ -300,10 +301,13 @@ async function commitNameOnUI(page: any, wallet: any, recordsToSet?: Array<{ key
   await expect(page.getByTestId('countdown-circle')).toBeVisible({ timeout: 10_000 })
 }
 
-async function finishRegistrationOnUI(page: any, wallet: any) {
+async function waitOutCommitmentOnUI(page: any) {
   await advanceTime(70)
   await syncBrowserClockToChain(page, 70)
   await page.clock.runFor(1000)
+}
+
+async function finishRegistrationOnUI(page: any, wallet: any) {
   await page.waitForTimeout(1000)
 
   await expect(page.getByTestId('finish-button')).toBeEnabled({ timeout: 30_000 })
@@ -775,6 +779,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(page.getByTestId('next-button')).toContainText(/Accept the terms/)
     await page.getByTestId('bona-fide-terms-accept').check()
     await commitNameOnUI(page, wallet)
+    await waitOutCommitmentOnUI(page)
     await finishRegistrationOnUI(page, wallet)
 
     const owner = await pub.readContract({
@@ -803,8 +808,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await commitNameOnUI(page, wallet)
 
     await writeAsDeployer(loadDeployments().SimplexNamePolicy, 'function addBonaFideNames(string[])', [[label]])
-    await advanceTime(70)
-    await syncBrowserClockToChain(page, 70)
+    await waitOutCommitmentOnUI(page)
     await page.reload()
     await page.waitForTimeout(3000)
     await dismissOverlay(page)
@@ -817,7 +821,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await finishRegistrationOnUI(page, wallet)
   })
 
-  test('the terms prompt returns after a register refused for terms changed since the commit', async ({ page }) => {
+  test('the terms prompt returns when the terms change after Finish was opened and closed', async ({ page }) => {
     const { keccak256, toBytes } = await import('viem')
     const deps = loadDeployments()
     const termsHash = await readTermsHash()
@@ -831,9 +835,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await openRegistrationOnUI(page, label)
     await page.getByTestId('bona-fide-terms-accept').check({ timeout: 15_000 })
     await commitNameOnUI(page, wallet)
-    await advanceTime(70)
-    await syncBrowserClockToChain(page, 70)
-    await page.clock.runFor(1000)
+    await waitOutCommitmentOnUI(page)
     await page.getByTestId('finish-button').click({ timeout: 30_000 })
     await page.getByTestId('close-icon').click({ timeout: 15_000 })
 
@@ -842,7 +844,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
       await page.reload()
       await page.waitForTimeout(3000)
       await dismissOverlay(page)
-      await expect(page.getByTestId('bona-fide-terms')).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByTestId('bona-fide-terms-mismatch')).toBeVisible({ timeout: 30_000 })
       await expect(page.getByTestId('finish-button')).toBeDisabled()
     } finally {
       await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(bytes32, string)', [termsHash, 'http://localhost:3000/bona-fide-terms.simplex.md'])
@@ -910,7 +912,8 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await page.waitForTimeout(5000)
     await dismissOverlay(page)
     await expect(page.locator('text=You are the owner')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('admin-bundled-terms-hash')).toContainText(await readTermsHash(), { timeout: 15_000 })
+    const bundledTerms = readFileSync(join(process.cwd(), 'simplex-app', 'public', 'bona-fide-terms.simplex.md'))
+    await expect(page.getByTestId('admin-bundled-terms-hash')).toContainText(keccak256(bundledTerms), { timeout: 15_000 })
     await expect(page.getByTestId('admin-bundled-terms-text')).toContainText('Bona fide community name terms')
 
     const label = `community${Date.now().toString(36)}`

@@ -115,9 +115,9 @@ keeps exactly the quoted price), records at registration, no NFT gate, reserved
 names, the admin page refusing labels users cannot register, My Names, the
 too-short guard, and the offer, claim and withdraw flows.
 Bona fide names: the terms are accepted before a listed name is committed,
-after its commit when it was listed later or its terms changed, and before it
-is claimed; the admin page lists one and shows the bundled terms. A held name
-cannot be extended once reserved.
+after its commit when it was listed later, and before it is claimed; the terms
+prompt returns when the terms change after the commit; the admin page lists one
+and shows the bundled terms. A held name cannot be extended once reserved.
 
 ## Running everything
 
