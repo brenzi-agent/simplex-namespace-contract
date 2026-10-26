@@ -817,6 +817,38 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await finishRegistrationOnUI(page, wallet)
   })
 
+  test('the terms prompt returns after a register refused for terms changed since the commit', async ({ page }) => {
+    const { keccak256, toBytes } = await import('viem')
+    const deps = loadDeployments()
+    const termsHash = await readTermsHash()
+    const label = `bonafide${Date.now().toString(36)}`
+    await writeAsDeployer(deps.SimplexNamePolicy, 'function addBonaFideNames(string[])', [[label]])
+    await syncBrowserClockToChain(page)
+    const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
+    await page.goto('/')
+    await page.waitForTimeout(2000)
+    await connectWallet(page, wallet)
+    await openRegistrationOnUI(page, label)
+    await page.getByTestId('bona-fide-terms-accept').check({ timeout: 15_000 })
+    await commitNameOnUI(page, wallet)
+    await advanceTime(70)
+    await syncBrowserClockToChain(page, 70)
+    await page.clock.runFor(1000)
+    await page.getByTestId('finish-button').click({ timeout: 30_000 })
+    await page.getByTestId('close-icon').click({ timeout: 15_000 })
+
+    try {
+      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(bytes32, string)', [keccak256(toBytes('new terms')), 'https://terms.example/v2'])
+      await page.reload()
+      await page.waitForTimeout(3000)
+      await dismissOverlay(page)
+      await expect(page.getByTestId('bona-fide-terms')).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByTestId('finish-button')).toBeDisabled()
+    } finally {
+      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(bytes32, string)', [termsHash, 'http://localhost:3000/bona-fide-terms.simplex.md'])
+    }
+  })
+
   test('a bona fide name can be claimed only after the recipient accepts its terms', async ({ page }) => {
     const { createPublicClient, http, keccak256, parseAbi, toBytes } = await import('viem')
     const { privateKeyToAccount } = await import('viem/accounts')
@@ -853,7 +885,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
 
   test('a held name, once reserved, cannot be extended', async ({ page }) => {
     const label = `held${Date.now().toString(36)}`
-    await registerNameOnChain(label, true)
+    await registerNameOnChain(label)
     await writeAsDeployer(loadDeployments().SimplexNamePolicy, 'function addReservedNames(string[], uint8)', [[label], REASON_TRADEMARK])
 
     await syncBrowserClockToChain(page)
