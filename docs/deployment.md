@@ -82,6 +82,9 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
    - `eth-usd.data.eth` resolver record → `DummyOracle` (the frontend's
      `useEthPrice` resolves this ENS name on chain)
    - Two reserved labels by default: `simplex`, `simplex-chat`
+   - On `.simplex`, the bona fide terms of
+     `simplex-app/public/bona-fide-terms.simplex.md` and the sample bona fide
+     names `bonafidename`, `bonafideclaim`
    - Addresses persisted to `deployments.local.json` and printed as a JSON line
      prefixed with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES=`.
 3. Starts the Next.js dev server with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES`,

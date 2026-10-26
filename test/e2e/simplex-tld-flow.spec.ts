@@ -336,7 +336,11 @@ async function writeAsDeployer(address: `0x${string}`, signature: string, args: 
 async function readTermsHash() {
   const { createPublicClient, http, parseAbi } = await import('viem')
   const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
-  return pub.readContract({ address: loadDeployments().SimplexNamePolicy, abi: parseAbi(['function termsHash() view returns (bytes32)']), functionName: 'termsHash' })
+  return pub.readContract({
+    address: loadDeployments().SimplexNamePolicy,
+    abi: parseAbi(['function termsHash() view returns (bytes32)']),
+    functionName: 'termsHash',
+  })
 }
 
 test.describe('SimpleX Namespace (.simplex)', () => {
@@ -772,7 +776,12 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await commitNameOnUI(page, wallet)
     await finishRegistrationOnUI(page, wallet)
 
-    const owner = await pub.readContract({ address: deps.BaseRegistrarImplementation, abi: parseAbi(['function ownerOf(uint256) view returns (address)']), functionName: 'ownerOf', args: [BigInt(keccak256(toBytes(label)))] })
+    const owner = await pub.readContract({
+      address: deps.BaseRegistrarImplementation,
+      abi: parseAbi(['function ownerOf(uint256) view returns (address)']),
+      functionName: 'ownerOf',
+      args: [BigInt(keccak256(toBytes(label)))],
+    })
     expect(owner).toBe(holder)
     const accepted = await pub.getLogs({
       address: deps.SimplexNamePolicy,
@@ -831,7 +840,14 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await page.getByTestId('bona-fide-terms-accept').check()
     await page.getByTestId('claim-name-confirm').click()
     await completeTransactions(page, wallet)
-    await expect.poll(() => pub.readContract({ address: deps.BaseRegistrarImplementation, abi: parseAbi(['function ownerOf(uint256) view returns (address)']), functionName: 'ownerOf', args: [tokenId] }), { timeout: 30_000 }).toBe(recipient)
+    const ownerOf = () =>
+      pub.readContract({
+        address: deps.BaseRegistrarImplementation,
+        abi: parseAbi(['function ownerOf(uint256) view returns (address)']),
+        functionName: 'ownerOf',
+        args: [tokenId],
+      })
+    await expect.poll(ownerOf, { timeout: 30_000 }).toBe(recipient)
   })
 
   test('a held name, once reserved, cannot be extended', async ({ page }) => {
@@ -868,7 +884,12 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await page.getByTestId('admin-list-bona-fide').click()
     await wallet.authorize(Web3RequestKind.SendTransaction)
     await expect(page.locator('text=addBonaFideNames confirmed')).toBeVisible({ timeout: 15_000 })
-    const listed = await pub.readContract({ address: loadDeployments().SimplexNamePolicy, abi: parseAbi(['function bonaFideNames(bytes32) view returns (bool)']), functionName: 'bonaFideNames', args: [keccak256(toBytes(label))] })
+    const listed = await pub.readContract({
+      address: loadDeployments().SimplexNamePolicy,
+      abi: parseAbi(['function bonaFideNames(bytes32) view returns (bool)']),
+      functionName: 'bonaFideNames',
+      args: [keccak256(toBytes(label))],
+    })
     expect(listed).toBe(true)
   })
 })
