@@ -446,7 +446,7 @@ unless it is reserved again. When a competing claim arises, the guardian reserve
 again, and the admin settles it with `removeReservedNames` executed before the grace period
 ends (the holder keeps it) or, after the grace period, `registerReserved` to whoever the
 ruling names. The hold takes effect at the name's current expiry, which its holder may have
-pushed up to three years out, or ten through a sponsored renewal. A reservation made in error
+pushed up to three years out, or eleven through a sponsored renewal. A reservation made in error
 can be undone with `removeReservedNames` until the name's grace period ends.
 
 **The beneficiary is permanent and independent of the owner.** `setBeneficiary` is

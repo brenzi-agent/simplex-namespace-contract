@@ -8,7 +8,7 @@
  */
 import { createPublicClient, createWalletClient, encodeFunctionData, http, keccak256, labelhash, namehash, zeroHash, zeroAddress } from 'viem'
 import { localhost } from 'viem/chains'
-import { existsSync, readFileSync } from 'fs'
+import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import {
@@ -200,13 +200,12 @@ async function main() {
     console.log(`Reserved: ${label}.${tld}`)
   }
 
-  const termsFile = `bona-fide-terms.${tld}.md`
-  const termsPath = join(__dirname, '..', 'simplex-app', 'public', termsFile)
-  if (existsSync(termsPath)) {
+  if (tld === 'simplex') {
+    const terms = readFileSync(join(__dirname, '..', 'simplex-app', 'public', 'bona-fide-terms.simplex.md'))
     const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
-    await write(namePolicy, 'setTerms', [keccak256(readFileSync(termsPath)), `http://localhost:3000/${termsFile}`])
+    await write(namePolicy, 'setTerms', [keccak256(terms), 'http://localhost:3000/bona-fide-terms.simplex.md'])
     await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
-    console.log(`Bona fide terms: ${termsFile}; listed: ${bonaFideAtDeploy.join(', ')}`)
+    console.log(`Bona fide terms set; listed: ${bonaFideAtDeploy.join(', ')}`)
   }
 
   // UniversalResolver (needed by the frontend for name lookups)
