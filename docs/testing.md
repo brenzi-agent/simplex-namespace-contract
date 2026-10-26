@@ -116,7 +116,7 @@ names, the admin page refusing labels users cannot register, My Names, the
 too-short guard, and the offer, claim and withdraw flows.
 Bona fide names: the terms are accepted before a listed name is committed,
 after its commit when it was listed later, and before it is claimed; the admin
-page lists one and shows the bundled terms; a held name cannot be extended once
+page lists one and shows the bundled terms. A held name cannot be extended once
 reserved.
 
 ## Running everything
