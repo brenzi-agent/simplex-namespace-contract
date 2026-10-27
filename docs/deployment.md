@@ -82,6 +82,8 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
    - `eth-usd.data.eth` resolver record → `DummyOracle` (the frontend's
      `useEthPrice` resolves this ENS name on chain)
    - Two reserved labels by default: `simplex`, `simplex-chat`
+   - On `.simplex`, the bona fide terms of `bona-fide-terms.simplex.md` and the
+     sample bona fide names `bonafidename`, `bonafideclaim`
    - Addresses persisted to `deployments.local.json` and printed as a JSON line
      prefixed with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES=`.
 3. Starts the Next.js dev server with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES`,
@@ -204,9 +206,10 @@ stops on a duplicate, a dotted label, a label users cannot register (the dApp's
 The read-back after the deploy checks every label.
 
 Bona fide community names are optional. `bona-fide-terms.<tld>.md` holds the
-terms text: its keccak256 is set on chain, and `BONA_FIDE_TERMS_URI` must be the
-URI at which the same text is published. `bona-fide-names.<tld>.csv` has a
-`name,community` header (only the name goes on chain) and the same label rule.
+terms text, the only copy: the policy keeps it on chain as `termsText`, with its
+keccak256 as `termsHash`, and every app reads it from there.
+`bona-fide-names.<tld>.csv` has a `name,community` header (only the name goes
+on chain) and the same label rule.
 The script exits with an error when names are listed without a terms file: a
 listed name cannot be registered while no terms are set. The read-back checks
 both pointers, the terms hash and every listed name.
@@ -434,8 +437,7 @@ key. `setPriceOracle` deliberately survives `freeze()`.
     `BonaFideNameSkipped`, any name that is registered or in its grace period.
     Send it privately, like a reservation. About 28k gas per name (5.7M per
     batch of 200).
-  - `removeBonaFideNames(string[])` and `setTerms(bytes32 termsHash, string
-    termsURI)` — owner-only. After `setTerms`, an acceptance not yet used at
+  - `removeBonaFideNames(string[])` and `setTerms(string text)` — owner-only. After `setTerms`, an acceptance not yet used at
     registration or claim must be made again under the new terms; existing
     holders are not asked to accept them.
   - `setNamePolicy(address)` on the controller and on the registrar —
@@ -565,7 +567,6 @@ are deployed.
 | `ETHUSD_FEED`       | Override the Chainlink ETH/USD feed                  |
 | `SMPXNFT_ADDR`      | Override the SMPXNFT gate contract                   |
 | `ETHERSCAN_API_KEY` | Etherscan v2 multi-chain key (verify script)         |
-| `BONA_FIDE_TERMS_URI` | Where the bona fide terms text is published; required when `bona-fide-terms.<tld>.md` exists |
 | `BUMP_AFTER_HOURS` / `BUMP_PCT` / `FORK_PORT` / `CONFIRM` | Gas-strategy tuning (see the script header) |
 
 ---

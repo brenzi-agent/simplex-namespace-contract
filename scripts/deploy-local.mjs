@@ -200,6 +200,14 @@ async function main() {
     console.log(`Reserved: ${label}.${tld}`)
   }
 
+  if (tld === 'simplex') {
+    const terms = readFileSync(join(__dirname, '..', 'bona-fide-terms.simplex.md'), 'utf8')
+    await write(namePolicy, 'setTerms', [terms])
+    const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
+    await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
+    console.log(`Bona fide terms set; listed: ${bonaFideAtDeploy.join(', ')}`)
+  }
+
   // UniversalResolver (needed by the frontend for name lookups)
   const dummyGateway = await deploy('DummyGatewayProvider',
     'mocks/DummyGatewayProvider.sol/DummyGatewayProvider.json')

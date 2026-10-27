@@ -38,11 +38,9 @@
  *   FORK_PORT          local port for the dry-run fork (default: 18545 — picked
  *                      to avoid Reth/Geth's stock 8545/8546 ports)
  *   CONFIRM=yes        skip the interactive confirmation prompt
- *   BONA_FIDE_TERMS_URI  where the bona fide terms text is published; required
- *                      when bona-fide-terms.${tld}.md exists
  *
  * Reads reserved-names.${tld}.csv (name,reason,category), required for .simplex.
- * Reads bona-fide-terms.${tld}.md (the terms text; its keccak256 goes on chain)
+ * Reads bona-fide-terms.${tld}.md (the terms text, which goes on chain, hashed to termsHash)
  * and bona-fide-names.${tld}.csv (name,community), both optional; names require terms.
  *
  * Files written next to the addresses file:
@@ -53,7 +51,7 @@
  * Commit the addresses file AND the journal to the repo.
  * See docs/deployment.md → Mainnet.
  */
-import { createPublicClient, createWalletClient, encodeFunctionData, getAddress, http, keccak256, labelhash, namehash, parseGwei, parseEther, zeroHash, zeroAddress } from 'viem'
+import { createPublicClient, createWalletClient, encodeFunctionData, getAddress, http, keccak256, labelhash, namehash, parseGwei, parseEther, toBytes, zeroHash, zeroAddress } from 'viem'
 import { mainnet } from 'viem/chains'
 import { normalize } from 'viem/ens'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -211,12 +209,8 @@ function loadReservedNames(path) {
 
 function loadBonaFideTerms(path) {
   if (!existsSync(path)) return undefined
-  const uri = process.env.BONA_FIDE_TERMS_URI
-  if (!uri) {
-    console.error(`${path} exists, so BONA_FIDE_TERMS_URI is required: where the same text is published`)
-    process.exit(1)
-  }
-  return { hash: keccak256(readFileSync(path)), uri }
+  const text = readFileSync(path, 'utf8')
+  return { hash: keccak256(toBytes(text)), text }
 }
 
 /// `name,community` rows. Only the name goes on chain.
@@ -403,7 +397,7 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
     [controller.address])
   await write(controller, 'setSponsor', [sponsor.address])
 
-  if (bonaFideTerms) await write(namePolicy, 'setTerms', [bonaFideTerms.hash, bonaFideTerms.uri])
+  if (bonaFideTerms) await write(namePolicy, 'setTerms', [bonaFideTerms.text])
   for (let i = 0; i < bonaFideNames.length; i += RESERVE_BATCH) {
     await write(namePolicy, 'addBonaFideNames', [bonaFideNames.slice(i, i + RESERVE_BATCH)])
   }
@@ -564,6 +558,11 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     () => read(registrar, ADDR, [{ type: 'bool' }], 'controllers', [addresses.SimplexNamePolicy]))
   await check('bona fide terms hash', bonaFideTerms?.hash ?? zeroHash,
     () => read(addresses.SimplexNamePolicy, [], [{ type: 'bytes32' }], 'termsHash'))
+  await check('bona fide terms text, by its keccak256', bonaFideTerms?.hash ?? 'empty',
+    async () => {
+      const text = await read(addresses.SimplexNamePolicy, [], [{ type: 'string' }], 'termsText')
+      return text ? keccak256(toBytes(text)) : 'empty'
+    })
   await check('controller nftGateEnabled', String(nftGateEnabled),
     () => read(controller, [], [{ type: 'bool' }], 'nftGateEnabled'))
   await check('controller minCharLength', '6',
