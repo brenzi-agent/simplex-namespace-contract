@@ -821,10 +821,8 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await finishRegistrationOnUI(page, wallet)
   })
 
-  test('the terms prompt returns when the terms change after Finish was opened and closed', async ({ page }) => {
-    const { keccak256, toBytes } = await import('viem')
+  test('the terms prompt returns with the new terms when they change after Finish was opened and closed', async ({ page }) => {
     const deps = loadDeployments()
-    const termsHash = await readTermsHash()
     const label = `bonafide${Date.now().toString(36)}`
     await writeAsDeployer(deps.SimplexNamePolicy, 'function addBonaFideNames(string[])', [[label]])
     await syncBrowserClockToChain(page)
@@ -840,14 +838,15 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await page.getByTestId('close-icon').click({ timeout: 15_000 })
 
     try {
-      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(bytes32, string)', [keccak256(toBytes('new terms')), 'https://terms.example/v2'])
+      const newTerms = `new bona fide terms for ${label}`
+      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(string)', [newTerms])
       await page.reload()
       await page.waitForTimeout(3000)
       await dismissOverlay(page)
-      await expect(page.getByTestId('bona-fide-terms-mismatch')).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByTestId('bona-fide-terms-text')).toHaveText(newTerms, { timeout: 30_000 })
       await expect(page.getByTestId('finish-button')).toBeDisabled()
     } finally {
-      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(bytes32, string)', [termsHash, 'http://localhost:3000/bona-fide-terms.simplex.md'])
+      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(string)', [readFileSync(join(process.cwd(), 'bona-fide-terms.simplex.md'), 'utf8')])
     }
   })
 
@@ -901,7 +900,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(page.getByTestId('extend-names-confirm')).toBeDisabled()
   })
 
-  test('admin page lists a bona fide name and shows the terms bundled with this app', async ({ page }) => {
+  test('admin page lists a bona fide name and shows the terms kept on chain', async ({ page }) => {
     const { createPublicClient, http, keccak256, parseAbi, toBytes } = await import('viem')
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
     const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
@@ -912,9 +911,9 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await page.waitForTimeout(5000)
     await dismissOverlay(page)
     await expect(page.locator('text=You are the owner')).toBeVisible({ timeout: 15_000 })
-    const bundledTerms = readFileSync(join(process.cwd(), 'simplex-app', 'public', 'bona-fide-terms.simplex.md'))
-    await expect(page.getByTestId('admin-bundled-terms-hash')).toContainText(keccak256(bundledTerms), { timeout: 15_000 })
-    await expect(page.getByTestId('admin-bundled-terms-text')).toContainText('Bona fide community name terms')
+    const terms = readFileSync(join(process.cwd(), 'bona-fide-terms.simplex.md'))
+    await expect(page.getByTestId('admin-terms-hash')).toContainText(keccak256(terms), { timeout: 15_000 })
+    await expect(page.getByTestId('admin-terms-text')).toContainText('Bona fide community name terms')
 
     const label = `community${Date.now().toString(36)}`
     await page.getByLabel('List name(s)', { exact: true }).fill(label)

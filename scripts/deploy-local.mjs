@@ -6,7 +6,7 @@
  * Requires: ens-contracts compiled (npx hardhat compile)
  * Outputs NEXT_PUBLIC_DEPLOYMENT_ADDRESSES JSON for the frontend.
  */
-import { createPublicClient, createWalletClient, encodeFunctionData, http, keccak256, labelhash, namehash, zeroHash, zeroAddress } from 'viem'
+import { createPublicClient, createWalletClient, encodeFunctionData, http, labelhash, namehash, zeroHash, zeroAddress } from 'viem'
 import { localhost } from 'viem/chains'
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
@@ -201,8 +201,8 @@ async function main() {
   }
 
   if (tld === 'simplex') {
-    const terms = readFileSync(join(__dirname, '..', 'simplex-app', 'public', 'bona-fide-terms.simplex.md'))
-    await write(namePolicy, 'setTerms', [keccak256(terms), 'http://localhost:3000/bona-fide-terms.simplex.md'])
+    const terms = readFileSync(join(__dirname, '..', 'bona-fide-terms.simplex.md'), 'utf8')
+    await write(namePolicy, 'setTerms', [terms])
     const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
     await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
     console.log(`Bona fide terms set; listed: ${bonaFideAtDeploy.join(', ')}`)
