@@ -913,7 +913,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(page.locator('text=You are the owner')).toBeVisible({ timeout: 15_000 })
     const terms = readFileSync(join(process.cwd(), 'bona-fide-terms.simplex.md'))
     await expect(page.getByTestId('admin-terms-hash')).toContainText(keccak256(terms), { timeout: 15_000 })
-    await expect(page.getByTestId('admin-terms-text')).toContainText('Bona fide community name terms')
+    await expect(page.getByTestId('admin-terms-text')).toContainText(terms.toString().split('\n')[0].replace(/^# /, ''))
 
     const label = `community${Date.now().toString(36)}`
     await page.getByLabel('List name(s)', { exact: true }).fill(label)
