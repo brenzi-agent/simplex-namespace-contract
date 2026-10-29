@@ -777,6 +777,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(page.getByTestId('bona-fide-terms-text')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('next-button')).toBeDisabled()
     await expect(page.getByTestId('next-button')).toContainText(/Accept the terms/)
+    await expect(page.getByTestId('plus-minus-control-plus')).toBeDisabled()
     await page.getByTestId('bona-fide-terms-accept').check()
     await commitNameOnUI(page, wallet)
     await waitOutCommitmentOnUI(page)
@@ -927,5 +928,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
       args: [keccak256(toBytes(label))],
     })
     expect(listed).toBe(true)
+    await page.getByLabel('Label', { exact: true }).fill(label)
+    await expect(page.getByText('730–1095 days')).toBeVisible({ timeout: 15_000 })
   })
 })
