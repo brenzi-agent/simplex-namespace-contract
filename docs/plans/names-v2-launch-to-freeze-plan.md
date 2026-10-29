@@ -65,10 +65,10 @@ multi-signer rotation are deferred to GOV8, not abandoned.
 | Key | GOV2 until GOV9 | After GOV9 |
 |---|---|---|
 | Deploy key | nothing | nothing |
-| Admin key | upgrade the controller and the name policy; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeBonaFideNames`; `namePolicy.setTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
-| Guardian key | `namePolicy.addReservedNames`; `namePolicy.addBonaFideNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
-| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderBonaFideCommunityTermsWithSig`, `acceptBonaFideCommunityTermsForClaimWithSig` | same |
-| Anyone | `commit`; `commitUnderBonaFideCommunityTerms`; `acceptBonaFideCommunityTermsForClaim`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
+| Admin key | upgrade the controller and the name policy; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
+| Guardian key | `namePolicy.addReservedNames`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
+| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderCommunityTermsWithSig`, `acceptCommunityTermsForClaimWithSig` | same |
+| Anyone | `commit`; `commitUnderCommunityTerms`; `acceptCommunityTermsForClaim`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
 
 Until GOV8 every call in this table takes effect when it is signed. After GOV8 the admin's
 calls wait seven days and the guardian's stay immediate.
@@ -248,7 +248,7 @@ Caller: **deploy key**, alone.
 4. `subnameRegistrar.setResolver(simplexResolver)`.
 5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`.
    `namePolicy.setTerms(keccak256(text), uri)` when a terms file exists;
-   `namePolicy.addBonaFideNames([...])` in batches of 200;
+   `namePolicy.addCommunityNames([...])` in batches of 200;
    `baseRegistrar.setNamePolicy(namePolicy)`.
 6. `namePolicy.addReservedNames([...])` for the roughly 3000 names chosen in advance, in
    batches of 200. Measured cost is 25.8k gas per name: 5.2M per batch, 77M in total,
@@ -387,8 +387,8 @@ in brackets.
 |---|---|---|
 | Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addReservedNames([name], reason)`, sent privately (see below) |
 | Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `namePolicy.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
-| List bona fide community names | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addBonaFideNames([names])`, sent privately; names that are registered or in grace are skipped (`BonaFideNameSkipped`) |
-| Publish new bona fide terms | admin key *(admin Safe, timelock, 7 days)* | `namePolicy.setTerms(keccak256(text), uri)`. After `setTerms`, an acceptance not yet used at registration or claim must be made again under the new terms; existing holders are not asked to accept them. |
+| List community names | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addCommunityNames([names])`, sent privately; names that are registered or in grace are skipped (`CommunityNameSkipped`) |
+| Publish new community terms | admin key *(admin Safe, timelock, 7 days)* | `namePolicy.setTerms(keccak256(text), uri)`. After `setTerms`, an acceptance not yet used at registration or claim must be made again under the new terms; existing holders are not asked to accept them. |
 | Hold a disputed name | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
 | Keep a lapsing brand name protected | guardian key *(guardian Safe, 2 sigs)* | for a name handed out by `registerReserved` and not renewed: `namePolicy.addReservedNames([name], reason)` before its grace period ends, sent privately |
 | Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |

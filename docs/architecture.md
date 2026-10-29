@@ -38,7 +38,7 @@ plain-language summary of how SNRC differs from ENS, see
       │ DummyOracle / Chainlink    │
       └────────────────────────────┘
 
-  register() enforces:  minCharLength · nftGate · SimplexNamePolicy (reserved, bona fide)
+  register() enforces:  minCharLength · nftGate · SimplexNamePolicy (reserved, community)
   admin:  setMinCharLength · disableNftGate · SimplexNamePolicy.addReservedNames ·
           SimplexNamePolicy.registerReserved
 
@@ -54,7 +54,7 @@ except under the root or a TLD. `StablePriceOracle` is vendored but
 modified (SNRC added `price6Letter`, `priceUSD` and `InvalidPriceFeed`); it is what
 `.testing` runs, while `.simplex` uses the new `SimplexPriceOracle`.
 `SimplexController` is custom (UUPS); `BaseRegistrarImplementation` is modified (v3 — ERC721Enumerable + `labelOf`
-label index + `tokenURI` + consented transfer + bona fide transfer check); `SimplexSponsor`,
+label index + `tokenURI` + consented transfer + community name transfer check); `SimplexSponsor`,
 `MetadataRenderer` (swappable), `SubnameRegistrar` (immutable) and `SimplexNamePolicy`
 (UUPS) are new SNRC contracts. **There is no NameWrapper** — only the
 `INameWrapper` interface is kept, because verbatim `PublicResolver` imports it
@@ -97,7 +97,7 @@ User → SimplexController.commit(hash)
        ├─ priceOracle.price(...)               ← unchanged from ENS
        ├─ require(msg.value ≥ totalPrice)      ← unchanged
        ├─ commit-reveal age check              ← unchanged
-       ├─ namePolicy.consumeRegistration(...)  ← NEW: reserved names, bona fide terms
+       ├─ namePolicy.consumeRegistration(...)  ← NEW: reserved names, community terms
        ├─ base.registerWithLabel(label, this, duration)  ← v3: passes the
        │      plaintext label so the registrar records labelOf (hash→name);
        │      registers to the owner directly when resolver = 0
@@ -278,7 +278,7 @@ simplex-namespace-contract/      ← parent repo (this)
       simplex/SimplexSponsor.sol         ← new (sponsored path, owner signature)
       simplex/MetadataRenderer.sol       ← new (on-chain NFT JSON+SVG)
       simplex/SubnameRegistrar.sol       ← new (subname create + index)
-      simplex/SimplexNamePolicy.sol      ← new (UUPS: reserved and bona fide names)
+      simplex/SimplexNamePolicy.sol      ← new (UUPS: reserved and community names)
       simplex/SimplexNamePolicyProxy.sol ← new (ERC1967 proxy)
       simplex/INamePolicy.sol            ← new (hook interface)
       ethregistrar/BaseRegistrarImplementation.sol ← modified (v3: enumerable,

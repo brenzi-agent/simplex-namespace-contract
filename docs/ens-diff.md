@@ -53,6 +53,6 @@ by one owner call. The contract refuses any change that would make a shorter nam
 cheaper than a longer one.
 
 **Almost nothing can change after launch.** Only two contracts — the registration
-controller and the name policy that holds the reserved and bona fide names — are
+controller and the name policy that holds the reserved and community names — are
 upgradeable, and that power is meant to move to a cold owner and eventually be
 renounced. Everything else is fixed once deployed.
