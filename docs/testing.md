@@ -7,7 +7,7 @@ Three layers.
 | Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        | 119 SNRC + upstream ENS suite |
 | Frontend unit          | `testing-app/`, `simplex-app/` | `pnpm test`                             | varies (ENS upstream) |
 | End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 27 |
-| End-to-end `.simplex`  | parent repo          | `npx playwright test --project=simplex-tld` | 12 |
+| End-to-end `.simplex`  | parent repo          | `npx playwright test --project=simplex-tld` | 21 |
 
 ## Solidity unit tests
 
@@ -108,16 +108,21 @@ npx playwright test --grep "search shows name as available"
 
 ### `.simplex`
 
-**18 tests** in `test/e2e/simplex-tld-flow.spec.ts`, against a stack started with
+**21 tests** in `test/e2e/simplex-tld-flow.spec.ts`, against a stack started with
 `SIMPLEX_TLD=simplex ./scripts/run-local.sh`: the `.simplex` search suffix and
 minimum, the USD tier on the register page, paid registration (the controller
 keeps exactly the quoted price), records at registration, no NFT gate, reserved
 names, the admin page refusing labels users cannot register, My Names, the
 too-short guard, and the offer, claim and withdraw flows.
-Bona fide names: a listed name is registered only for two years, and its terms are accepted before it is committed,
-after its commit when it was listed later, and before it is claimed; the terms
-prompt returns when the terms change after the commit; the admin page lists one,
-shows the terms kept on chain and caps its reserved registration at 1095 days. A held name cannot be extended once reserved.
+Terms: every name accepts its terms, served by `scripts/serve-terms.mjs` from
+`test/fixtures/terms/`, at registration and at claim; a plain name is refused
+without the name terms at both; while the name terms link is not a terms link, the
+pricing step says names cannot be registered now. Bona fide names: a listed name is
+registered only for two years, and its community terms are accepted before it is
+committed, after its commit when it was listed later, and before it is claimed; the
+prompt returns, for each kind, when its terms change after the commit; the admin page
+shows both terms from their links, lists a name and caps its reserved registration at
+1095 days. A held name cannot be extended once reserved.
 
 ## Running everything
 

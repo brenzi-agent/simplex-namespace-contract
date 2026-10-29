@@ -12,6 +12,7 @@ import {
   Web3RequestKind,
 } from '@ensdomains/headless-web3-provider'
 import { localhost } from 'viem/chains'
+import { localTermsLink } from '../../scripts/serve-terms.mjs'
 
 const TLD = 'simplex'
 const DEPLOYER_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
@@ -186,9 +187,33 @@ function loadDeployments(): Record<string, `0x${string}`> {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-// Register a name end-to-end via direct contract calls (no UI), paying 20% over
-// the quoted price; the controller refunds the excess.
-async function registerNameOnChain(label: string, withResolver: boolean = false, privateKey: string = DEPLOYER_KEY, termsHash?: `0x${string}`) {
+async function termsOf(label: string) {
+  const { createPublicClient, http, labelhash, parseAbi } = await import('viem')
+  const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
+  const address = loadDeployments().SimplexNamePolicy
+  const abi = parseAbi([
+    'function bonaFideNames(bytes32) view returns (bool)',
+    'function nameTermsHash() view returns (bytes32)',
+    'function communityNameTermsHash() view returns (bytes32)',
+  ])
+  const listed = await pub.readContract({ address, abi, functionName: 'bonaFideNames', args: [labelhash(label)] })
+  return listed
+    ? {
+        commit: 'commitUnderCommunityNameTerms',
+        acceptForClaim: 'acceptCommunityNameTermsForClaim',
+        hash: await pub.readContract({ address, abi, functionName: 'communityNameTermsHash' }),
+      }
+    : {
+        commit: 'commitUnderNameTerms',
+        acceptForClaim: 'acceptNameTermsForClaim',
+        hash: await pub.readContract({ address, abi, functionName: 'nameTermsHash' }),
+      }
+}
+
+// Register a name end-to-end via direct contract calls (no UI), accepting its
+// terms at commit and paying 20% over the quoted price; the controller refunds
+// the excess.
+async function registerNameOnChain(label: string, withResolver: boolean = false, privateKey: string = DEPLOYER_KEY) {
   const { createPublicClient, createWalletClient, http, parseAbi } = await import('viem')
   const { privateKeyToAccount } = await import('viem/accounts')
   const account = privateKeyToAccount(privateKey as `0x${string}`)
@@ -200,9 +225,9 @@ async function registerNameOnChain(label: string, withResolver: boolean = false,
   const abi = parseAbi([
     'function register((string label, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, uint8 reverseRecord, bytes32 referrer)) external payable',
     'function makeCommitment((string label, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, uint8 reverseRecord, bytes32 referrer)) external pure returns (bytes32)',
-    'function commit(bytes32) external',
     'function rentPrice(string,uint256) external view returns ((uint256 base, uint256 premium))',
-    'function commitUnderBonaFideCommunityTerms(bytes32, bytes32) external',
+    'function commitUnderNameTerms(bytes32, bytes32) external',
+    'function commitUnderCommunityNameTerms(bytes32, bytes32) external',
   ])
   const randHex = () =>
     Array.from({ length: 32 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('')
@@ -217,8 +242,8 @@ async function registerNameOnChain(label: string, withResolver: boolean = false,
     referrer: ('0x' + '00'.repeat(32)) as `0x${string}`,
   }
   const commitment = await pub.readContract({ address: controller, abi, functionName: 'makeCommitment', args: [reg] })
-  await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: controller, abi, functionName: 'commit', args: [commitment] }) })
-  if (termsHash) await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: deps.SimplexNamePolicy, abi, functionName: 'commitUnderBonaFideCommunityTerms', args: [commitment, termsHash] }) })
+  const terms = await termsOf(label)
+  await pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: deps.SimplexNamePolicy, abi, functionName: terms.commit as any, args: [commitment, terms.hash] }) })
   await advanceTime(65)
   const price = await pub.readContract({ address: controller, abi, functionName: 'rentPrice', args: [label, MIN_REGISTRATION_DURATION] })
   const value = ((price as any).base + (price as any).premium) * 12n / 10n
@@ -266,7 +291,8 @@ async function openRegistrationOnUI(page: any, uniqueName: string) {
 }
 
 async function commitNameOnUI(page: any, wallet: any, recordsToSet?: Array<{ key: string; value: string }>) {
-  // Step 1: Pricing → Next
+  // Step 1: Pricing → accept the name's terms → Next
+  await page.getByTestId('bona-fide-terms-accept').check({ timeout: 15_000 })
   await page.getByTestId('next-button').click()
   await page.waitForTimeout(1000)
 
@@ -335,16 +361,6 @@ async function writeAsDeployer(address: `0x${string}`, signature: string, args: 
       functionName: item.name,
       args,
     } as any),
-  })
-}
-
-async function readTermsHash() {
-  const { createPublicClient, http, parseAbi } = await import('viem')
-  const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
-  return pub.readContract({
-    address: loadDeployments().SimplexNamePolicy,
-    abi: parseAbi(['function termsHash() view returns (bytes32)']),
-    functionName: 'termsHash',
   })
 }
 
@@ -672,6 +688,8 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(recipientPage.getByTestId('claim-name-records')).toContainText('simplex.contact')
     await expect(recipientPage.getByTestId('claim-name-confirm')).toBeDisabled()
     await recipientPage.getByTestId('claim-name-acknowledge').check()
+    await expect(recipientPage.getByTestId('claim-name-confirm')).toBeDisabled()
+    await recipientPage.getByTestId('bona-fide-terms-accept').check()
     await recipientPage.getByTestId('claim-name-confirm').click()
     await completeTransactions(recipientPage, recipientWallet)
 
@@ -792,10 +810,10 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     expect(owner).toBe(holder)
     const accepted = await pub.getLogs({
       address: deps.SimplexNamePolicy,
-      event: parseAbiItem('event BonaFideTermsAccepted(string name, address indexed holder, bytes32 termsHash)'),
+      event: parseAbiItem('event CommunityNameTermsAccepted(string name, address indexed holder, bytes32 termsHash)'),
       fromBlock: 'earliest',
     })
-    expect(accepted.map(({ args }) => [args.name, args.holder, args.termsHash])).toContainEqual([label, holder, await readTermsHash()])
+    expect(accepted.map(({ args }) => [args.name, args.holder, args.termsHash])).toContainEqual([label, holder, (await termsOf(label)).hash])
   })
 
   test('a name listed after its commit requires accepting the terms before registration', async ({ page }) => {
@@ -822,34 +840,37 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await finishRegistrationOnUI(page, wallet)
   })
 
-  test('the terms prompt returns with the new terms when they change after Finish was opened and closed', async ({ page }) => {
-    const deps = loadDeployments()
-    const label = `bonafide${Date.now().toString(36)}`
-    await writeAsDeployer(deps.SimplexNamePolicy, 'function addBonaFideNames(string[])', [[label]])
-    await syncBrowserClockToChain(page)
-    const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
-    await page.goto('/')
-    await page.waitForTimeout(2000)
-    await connectWallet(page, wallet)
-    await openRegistrationOnUI(page, label)
-    await page.getByTestId('bona-fide-terms-accept').check({ timeout: 15_000 })
-    await commitNameOnUI(page, wallet)
-    await waitOutCommitmentOnUI(page)
-    await page.getByTestId('finish-button').click({ timeout: 30_000 })
-    await page.getByTestId('close-icon').click({ timeout: 15_000 })
+  for (const { kind, listed, setter, file, title } of [
+    { kind: 'name terms', listed: false, setter: 'setNameTerms', file: 'name-terms', title: 'SimpleX name terms, version 2' },
+    { kind: 'community name terms', listed: true, setter: 'setCommunityNameTerms', file: 'community-name-terms', title: 'Bona fide community name terms, version 2' },
+  ]) {
+    test(`the ${kind} prompt returns with the new terms when they change after Finish was opened and closed`, async ({ page }) => {
+      const deps = loadDeployments()
+      const label = `newterms${Date.now().toString(36)}`
+      if (listed) await writeAsDeployer(deps.SimplexNamePolicy, 'function addBonaFideNames(string[])', [[label]])
+      await syncBrowserClockToChain(page)
+      const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
+      await page.goto('/')
+      await page.waitForTimeout(2000)
+      await connectWallet(page, wallet)
+      await openRegistrationOnUI(page, label)
+      await commitNameOnUI(page, wallet)
+      await waitOutCommitmentOnUI(page)
+      await page.getByTestId('finish-button').click({ timeout: 30_000 })
+      await page.getByTestId('close-icon').click({ timeout: 15_000 })
 
-    try {
-      const newTerms = `new bona fide terms for ${label}`
-      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(string)', [newTerms])
-      await page.reload()
-      await page.waitForTimeout(3000)
-      await dismissOverlay(page)
-      await expect(page.getByTestId('bona-fide-terms-text')).toHaveText(newTerms, { timeout: 30_000 })
-      await expect(page.getByTestId('finish-button')).toBeDisabled()
-    } finally {
-      await writeAsDeployer(deps.SimplexNamePolicy, 'function setTerms(string)', [readFileSync(join(process.cwd(), 'bona-fide-terms.simplex.md'), 'utf8')])
-    }
-  })
+      try {
+        await writeAsDeployer(deps.SimplexNamePolicy, `function ${setter}(string)`, [localTermsLink(`${file}-v2.md`)])
+        await page.reload()
+        await page.waitForTimeout(3000)
+        await dismissOverlay(page)
+        await expect(page.getByTestId('bona-fide-terms-text')).toContainText(title, { timeout: 30_000 })
+        await expect(page.getByTestId('finish-button')).toBeDisabled()
+      } finally {
+        await writeAsDeployer(deps.SimplexNamePolicy, `function ${setter}(string)`, [localTermsLink(`${file}.md`)])
+      }
+    })
+  }
 
   test('a bona fide name can be claimed only after the recipient accepts its terms', async ({ page }) => {
     const { createPublicClient, http, keccak256, parseAbi, toBytes } = await import('viem')
@@ -860,7 +881,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     const label = `bonafide${Date.now().toString(36)}`
     const tokenId = BigInt(keccak256(toBytes(label)))
     await writeAsDeployer(deps.SimplexNamePolicy, 'function addBonaFideNames(string[])', [[label]])
-    await registerNameOnChain(label, false, DEPLOYER_KEY, await readTermsHash())
+    await registerNameOnChain(label)
     await writeAsDeployer(deps.BaseRegistrarImplementation, 'function approve(address,uint256)', [recipient, tokenId])
 
     await syncBrowserClockToChain(page)
@@ -885,6 +906,80 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect.poll(ownerOf, { timeout: 30_000 }).toBe(recipient)
   })
 
+  test('a plain name is refused at registration and at claim without the name terms', async () => {
+    const { createPublicClient, createWalletClient, http, keccak256, parseAbi, toBytes, zeroAddress, zeroHash } = await import('viem')
+    const { privateKeyToAccount } = await import('viem/accounts')
+    const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
+    const walletOf = (key: string) =>
+      createWalletClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545'), account: privateKeyToAccount(key as `0x${string}`) })
+    const holder = walletOf(DEPLOYER_KEY)
+    const recipient = walletOf(ACCOUNT1_KEY)
+    const deps = loadDeployments()
+    const abi = parseAbi([
+      'function register((string label, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, uint8 reverseRecord, bytes32 referrer)) external payable',
+      'function makeCommitment((string label, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, uint8 reverseRecord, bytes32 referrer)) external pure returns (bytes32)',
+      'function commit(bytes32) external',
+      'function rentPrice(string,uint256) external view returns ((uint256 base, uint256 premium))',
+      'function approve(address,uint256)',
+      'function offers(uint256) view returns (uint256)',
+      'function transferFrom(address,address,uint256)',
+      'function ownerOf(uint256) view returns (address)',
+      'function acceptNameTermsForClaim(uint256,address,uint256,bytes32)',
+      'function commitUnderNameTerms(bytes32,bytes32)',
+    ])
+    const send = async (wallet: any, address: `0x${string}`, functionName: string, args: unknown[], value?: bigint) =>
+      pub.waitForTransactionReceipt({ hash: await wallet.writeContract({ address, abi, functionName, args, value } as any) })
+    const simulate = (wallet: any, address: `0x${string}`, functionName: string, args: unknown[], value?: bigint) =>
+      pub.simulateContract({ account: wallet.account, address, abi, functionName, args, value } as any)
+
+    const refused = `plain${Date.now().toString(36)}`
+    const reg = {
+      label: refused,
+      owner: holder.account.address,
+      duration: MIN_REGISTRATION_DURATION,
+      secret: zeroHash,
+      resolver: zeroAddress,
+      data: [] as `0x${string}`[],
+      reverseRecord: 0,
+      referrer: zeroHash,
+    }
+    const commitment = await pub.readContract({ address: deps.ETHRegistrarController, abi, functionName: 'makeCommitment', args: [reg] })
+    await send(holder, deps.ETHRegistrarController, 'commit', [commitment])
+    await advanceTime(65)
+    const price = await pub.readContract({ address: deps.ETHRegistrarController, abi, functionName: 'rentPrice', args: [refused, MIN_REGISTRATION_DURATION] })
+    const value = (price.base + price.premium) * 2n
+    await expect(simulate(holder, deps.ETHRegistrarController, 'register', [reg], value)).rejects.toThrow(/reverted|Internal error/i)
+    await send(holder, deps.SimplexNamePolicy, 'commitUnderNameTerms', [commitment, (await termsOf(refused)).hash])
+    await send(holder, deps.ETHRegistrarController, 'register', [reg], value)
+
+    const claimed = `claimed${Date.now().toString(36)}`
+    const tokenId = BigInt(keccak256(toBytes(claimed)))
+    await registerNameOnChain(claimed)
+    await send(holder, deps.BaseRegistrarImplementation, 'approve', [recipient.account.address, tokenId])
+    const take = [holder.account.address, recipient.account.address, tokenId]
+    await expect(simulate(recipient, deps.BaseRegistrarImplementation, 'transferFrom', take)).rejects.toThrow(/reverted|Internal error/i)
+    const offer = await pub.readContract({ address: deps.BaseRegistrarImplementation, abi, functionName: 'offers', args: [tokenId] })
+    await send(recipient, deps.SimplexNamePolicy, 'acceptNameTermsForClaim', [tokenId, holder.account.address, offer, (await termsOf(claimed)).hash])
+    await send(recipient, deps.BaseRegistrarImplementation, 'transferFrom', take)
+    expect(await pub.readContract({ address: deps.BaseRegistrarImplementation, abi, functionName: 'ownerOf', args: [tokenId] })).toBe(recipient.account.address)
+  })
+
+  test('while the name terms link is not a terms link, the pricing step says names cannot be registered now', async ({ page }) => {
+    const deps = loadDeployments()
+    const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
+    await page.goto('/')
+    await page.waitForTimeout(2000)
+    await connectWallet(page, wallet)
+    try {
+      await writeAsDeployer(deps.SimplexNamePolicy, 'function setNameTerms(string)', ['not a terms link'])
+      await openRegistrationOnUI(page, `noterms${Date.now().toString(36)}`)
+      await expect(page.getByTestId('bona-fide-terms-unset')).toContainText("names can't be registered", { timeout: 15_000 })
+      await expect(page.getByTestId('next-button')).toBeDisabled()
+    } finally {
+      await writeAsDeployer(deps.SimplexNamePolicy, 'function setNameTerms(string)', [localTermsLink('name-terms.md')])
+    }
+  })
+
   test('a held name, once reserved, cannot be extended', async ({ page }) => {
     const label = `held${Date.now().toString(36)}`
     await registerNameOnChain(label)
@@ -901,7 +996,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(page.getByTestId('extend-names-confirm')).toBeDisabled()
   })
 
-  test('admin page lists a bona fide name, shows the terms kept on chain and caps its reserved registration at 1095 days', async ({ page }) => {
+  test('admin page shows both terms from their links, lists a bona fide name and caps its reserved registration at 1095 days', async ({ page }) => {
     const { createPublicClient, http, keccak256, parseAbi, toBytes } = await import('viem')
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
     const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
@@ -912,9 +1007,13 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await page.waitForTimeout(5000)
     await dismissOverlay(page)
     await expect(page.locator('text=You are the owner')).toBeVisible({ timeout: 15_000 })
-    const terms = readFileSync(join(process.cwd(), 'bona-fide-terms.simplex.md'))
-    await expect(page.getByTestId('admin-terms-hash')).toContainText(keccak256(terms), { timeout: 15_000 })
-    await expect(page.getByTestId('admin-terms-text')).toContainText(terms.toString().split('\n')[0].replace(/^# /, ''))
+    for (const [prefix, file, title] of [
+      ['admin-terms', 'community-name-terms.md', 'Bona fide community name terms'],
+      ['admin-name-terms', 'name-terms.md', 'SimpleX name terms'],
+    ]) {
+      await expect(page.getByTestId(`${prefix}-hash`)).toContainText(keccak256(toBytes(localTermsLink(file))), { timeout: 15_000 })
+      await expect(page.getByTestId(`${prefix}-text`)).toContainText(title, { timeout: 15_000 })
+    }
 
     const label = `community${Date.now().toString(36)}`
     await page.getByLabel('List name(s)', { exact: true }).fill(label)
