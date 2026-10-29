@@ -11,6 +11,7 @@ import { localhost } from 'viem/chains'
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { localTermsLink } from './serve-terms.mjs'
 import {
   SIMPLEX_PRICE_BASE,
   SIMPLEX_PRICE_RUNGS,
@@ -201,11 +202,11 @@ async function main() {
   }
 
   if (tld === 'simplex') {
-    const terms = readFileSync(join(__dirname, '..', 'bona-fide-terms.simplex.md'), 'utf8')
-    await write(namePolicy, 'setTerms', [terms])
+    await write(namePolicy, 'setNameTerms', [localTermsLink('name-terms.md')])
+    await write(namePolicy, 'setCommunityNameTerms', [localTermsLink('community-name-terms.md')])
     const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
     await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
-    console.log(`Bona fide terms set; listed: ${bonaFideAtDeploy.join(', ')}`)
+    console.log(`Terms links set; listed: ${bonaFideAtDeploy.join(', ')}`)
   }
 
   // UniversalResolver (needed by the frontend for name lookups)

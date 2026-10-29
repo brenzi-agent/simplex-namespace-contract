@@ -5,12 +5,17 @@ cd "$(dirname "$0")/.."
 
 TLD="${SIMPLEX_TLD:-testing}"
 
-for PORT in 8545 3000; do
+for PORT in 8545 3000 8097; do
   if (echo > /dev/tcp/127.0.0.1/$PORT) 2>/dev/null; then
     echo "ERROR: port $PORT is already in use; stop the process listening there first"
     exit 1
   fi
 done
+
+echo "=== Starting the terms server ==="
+node scripts/serve-terms.mjs &
+TERMS_PID=$!
+trap 'kill $TERMS_PID 2>/dev/null' EXIT
 
 echo "=== Starting Hardhat node ==="
 (cd ens-contracts && exec ./node_modules/.bin/hardhat --network hardhat node) &
@@ -49,4 +54,4 @@ NEXT_PUBLIC_DEPLOYMENT_ADDRESSES="$ADDRS" \
 NEXT_PUBLIC_CHAIN_NAME=localhost \
 NEXT_PUBLIC_PROVIDER=http://127.0.0.1:8545 \
 NEXT_PUBLIC_SIMPLEX_TLD="$TLD" \
-exec pnpm dev
+pnpm dev
