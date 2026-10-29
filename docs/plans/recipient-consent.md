@@ -171,7 +171,7 @@ down in favour of a split.
 ## 8. What stays open
 
 - `registerReserved` gives a reserved name to any address, for a term of two to
-  eleven years, three for a bona fide name, without its signature, also after `freeze`, and the admin or the
+  eleven years (at most three for a bona fide name), without its signature, also after `freeze`, and the admin or the
   guardian can reserve any name at once, which stops a held name's renewal, by
   the owner's choice: the admin is trusted, and every call is public.
 - Controllers are trusted the same way. A controller may register any available

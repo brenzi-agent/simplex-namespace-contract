@@ -444,7 +444,7 @@ Accepted:
   admin key can point it at itself and re-point the registry owner and resolver of
   any held name, also after `freeze`.
 - **`registerReserved` is exempt.** The admin assigns a reserved name to any
-  address, for a term of two to eleven years, three for a bona fide name, without its signature, also after
+  address, for a term of two to eleven years (at most three for a bona fide name), without its signature, also after
   `freeze`, and releases the reservation; the admin or the guardian can reserve
   any name at once, and a reserved name cannot be renewed.
   It is an admin call, and public.
