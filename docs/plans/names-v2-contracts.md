@@ -477,7 +477,7 @@ heavily customised fork, not verbatim ENS, so keeping `register` byte-identical 
 **Bona fide community names live in their own contract.** A listed name can be registered
 by anyone, without the consortium, but only by accepting written terms: the name is used in
 the best interest of the community it names. `SimplexNamePolicy` holds the list, the
-keccak256 of the current terms text and the acceptances; the controller and the registrar
+links to the current terms with their keccak256, and the acceptances; the controller and the registrar
 each call it once. It is separate because the controller had too little bytecode left: the
 same logic inside it came out 708 B over the limit.
 
@@ -490,10 +490,11 @@ same logic inside it came out 708 B over the limit.
   commitment alone could be front-run with the same hash and block the owner. A claim
   acceptance is also keyed by the holder: the offer number advances only on `approve`, so
   after a re-registration or an operator transfer it alone would match an old acceptance.
-- *An acceptance includes the terms hash.* `commitUnderBonaFideCommunityTerms` and
-  `acceptBonaFideCommunityTermsForClaim` take the terms hash they accept and revert on any
-  other, so even a direct contract call records exactly which terms the holder accepted;
-  `BonaFideTermsAccepted(name, holder, termsHash)` is emitted at registration and at claim.
+- *An acceptance includes the terms hash.* `commitUnderCommunityNameTerms` and
+  `acceptCommunityNameTermsForClaim`, like their name-terms counterparts for every other
+  name, take the terms hash they accept and revert on any other, so even a direct contract
+  call records exactly which terms the holder accepted; `CommunityNameTermsAccepted(name,
+  holder, termsHash)` or `NameTermsAccepted` is emitted at registration and at claim.
 - *Enforcement reuses the reservation.* A name whose holder breaches the terms is reserved,
   which stops its renewal; after its grace period `registerReserved` assigns it.
 

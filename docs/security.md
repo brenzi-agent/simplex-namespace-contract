@@ -330,11 +330,11 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `removeReservedNames`, `registerReserved` (name policy), `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. `registerReserved` also releases the reservation, so the holder can renew. |
 | `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Dies at `freeze()`. |
 | `freeze()` | owner only | One-way. Makes the implementation, the name policy's implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed or no sponsor is set, so a mis-ordered freeze cannot shut the payable or the sponsored path forever. |
-| `SimplexNamePolicy.addBonaFideNames(string[])` | owner **or** beneficiary | Restrictive: a listed name can then be registered or received only by someone who accepts the current terms, except through `registerReserved` and other registrar controllers (admin), under an off-chain agreement. Skips any name that is registered or in its grace period, since its holder never accepted them. Sent privately, like reservations: a pending listing reveals the name, which a squatter can then register without terms. |
-| `removeBonaFideNames`, `setTerms(string)` | owner only | After `setTerms`, an acceptance not yet used at registration or claim must be made again under the new terms; existing holders are not asked to accept them. |
+| `SimplexNamePolicy.addBonaFideNames(string[])` | owner **or** beneficiary | Restrictive: a listed name can then be registered or received only by someone who accepts the current community name terms, except through `registerReserved` and other registrar controllers (admin), under an off-chain agreement. Skips any name that is registered or in its grace period, since its holder never accepted them. Sent privately, like reservations: a pending listing reveals the name, which a squatter can then register under the general name terms. |
+| `removeBonaFideNames`, `setNameTerms(string)`, `setCommunityNameTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration or claim must be made again; the other kind's acceptances stay valid, and existing holders are not asked to accept. |
 | `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as bona fide; upgrading the policy keeps both lists. |
 | `SimplexNamePolicy` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the lists, acceptances and nonces. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The policy is a registrar controller, so until the freeze an upgrade can mint any available name; the admin can already add a controller. |
-| `commitUnderBonaFideCommunityTerms`, `acceptBonaFideCommunityTermsForClaim`, and their `WithSig` variants | the registrant or recipient, or anyone holding their signature | Records acceptance of the current terms hash, keyed by the acceptor and, for a claim, by the holder and the offer, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
+| `commitUnderNameTerms`, `commitUnderCommunityNameTerms`, `acceptNameTermsForClaim`, `acceptCommunityNameTermsForClaim`, and their `WithSig` variants | the registrant or recipient, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
 | `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient. |
@@ -555,6 +555,30 @@ Accepted:
 - **The root of trust is no longer additive.** The rule is a restriction in
   `ENSRegistry` itself. The upstream `ReverseRegistrar`, which assigns each address
   a node under `addr.reverse`, cannot run against it; SNRC deploys none.
+
+### Terms acceptance and front-running
+
+Every registration and every non-controller transfer consumes an acceptance of
+the name's terms: the community name terms for a listed name, the name terms
+for any other. What a third party can do with what it sees in the mempool:
+
+- **Commit the same commitment first.** The policy then skips its own commit and
+  still records the buyer's acceptance, keyed by the buyer; commit age only
+  starts sooner. Nobody can accept, or overwrite an acceptance, for someone else.
+- **Copy a signed acceptance and submit it first.** It records only the signer's
+  acceptance, and the relayer's transaction reverts `InvalidNonce`. The relayer
+  must then read `acceptedTerms` and go on to the registration when it holds the
+  required hash, rather than ask the buyer to sign again.
+- **Replay a signature.** The four EIP-712 types differ per kind and bind the
+  commitment or offer, the hash, the nonce and the deadline; the per-signer nonce
+  is shared by all four, so an older unsent signature dies once a newer one is used.
+- **Learn whether a committed name is listed** from the commit call it uses. The
+  list is public and small, and registration stays first commit, first reveal.
+
+Terms change only by the admin through the timelock, and the list only by the
+admin or the guardian; a buyer whose terms changed accepts again for the same
+commitment. A claim acceptance can be invalidated only by the holder, by
+offering again.
 
 ### Client and relayer version coupling
 
