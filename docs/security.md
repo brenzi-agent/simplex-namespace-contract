@@ -330,11 +330,11 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `removeReservedNames`, `registerReserved` (name policy), `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. `registerReserved` also releases the reservation, so the holder can renew. |
 | `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Dies at `freeze()`. |
 | `freeze()` | owner only | One-way. Makes the implementation, the name policy's implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed or no sponsor is set, so a mis-ordered freeze cannot shut the payable or the sponsored path forever. |
-| `SimplexNamePolicy.addBonaFideNames(string[])` | owner **or** beneficiary | Restrictive: a listed name can then be registered or received only by someone who accepts the current terms, except through `registerReserved` and other registrar controllers (admin), under an off-chain agreement. Skips any name that is registered or in its grace period, since its holder never accepted them. Sent privately, like reservations: a pending listing reveals the name, which a squatter can then register without terms. |
-| `removeBonaFideNames`, `setTerms(string)` | owner only | After `setTerms`, an acceptance not yet used at registration or claim must be made again under the new terms; existing holders are not asked to accept them. |
-| `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as bona fide; upgrading the policy keeps both lists. |
+| `SimplexNamePolicy.addCommunityNames(string[])` | owner **or** beneficiary | Restrictive: a listed name can then be registered or received only by someone who accepts the current terms, except through `registerReserved` and other registrar controllers (admin), under an off-chain agreement. Skips any name that is registered or in its grace period, since its holder never accepted them. Sent privately, like reservations: a pending listing reveals the name, which a squatter can then register without terms. |
+| `removeCommunityNames`, `setTerms(string)` | owner only | After `setTerms`, an acceptance not yet used at registration or claim must be made again under the new terms; existing holders are not asked to accept them. |
+| `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
 | `SimplexNamePolicy` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the lists, acceptances and nonces. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The policy is a registrar controller, so until the freeze an upgrade can mint any available name; the admin can already add a controller. |
-| `commitUnderBonaFideCommunityTerms`, `acceptBonaFideCommunityTermsForClaim`, and their `WithSig` variants | the registrant or recipient, or anyone holding their signature | Records acceptance of the current terms hash, keyed by the acceptor and, for a claim, by the holder and the offer, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
+| `commitUnderCommunityTerms`, `acceptCommunityTermsForClaim`, and their `WithSig` variants | the registrant or recipient, or anyone holding their signature | Records acceptance of the current terms hash, keyed by the acceptor and, for a claim, by the holder and the offer, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
 | `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient. |
@@ -352,7 +352,7 @@ saying it does:
   policy;
 - the owner or the guardian can stop the renewal of a held name by reserving it,
   and once its grace period ends only `registerReserved` can assign it;
-- the owner or the guardian can list bona fide names, and the owner can set new
+- the owner or the guardian can list community names, and the owner can set new
   terms, remove names from the list, repoint the controller's pointer to
   `SimplexNamePolicy`, and repoint or unset the registrar's. Unsetting the
   registrar's drops the transfer check; a wrong target can block every
@@ -444,7 +444,7 @@ Accepted:
   admin key can point it at itself and re-point the registry owner and resolver of
   any held name, also after `freeze`.
 - **`registerReserved` is exempt.** The admin assigns a reserved name to any
-  address, for a term of two to eleven years (at most three for a bona fide name), without its signature, also after
+  address, for a term of two to eleven years (at most three for a community name), without its signature, also after
   `freeze`, and releases the reservation; the admin or the guardian can reserve
   any name at once, and a reserved name cannot be renewed.
   It is an admin call, and public.
@@ -703,7 +703,7 @@ Accepted, and new to this ledger:
   slow owner replace the beneficiary — would put the treasury back under the key
   the split exists to keep it away from.
   The same power is unbounded in amount: the guardian can give itself any
-  allowance and mint unreserved names to itself for free, up to eleven years each, three for a bona fide name,
+  allowance and mint unreserved names to itself for free, up to eleven years each, three for a community name,
   and renew any name for free. Until GOV8 it is a single hardware wallet, not a
   Safe, so one compromised device suffices. Accepted for that window as well
   (pre-launch review, 2026-10-21); before the freeze the admin can stop it with

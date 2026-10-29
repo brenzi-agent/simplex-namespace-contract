@@ -40,8 +40,8 @@
  *   CONFIRM=yes        skip the interactive confirmation prompt
  *
  * Reads reserved-names.${tld}.csv (name,reason,category), required for .simplex.
- * Reads bona-fide-terms.${tld}.md (the terms text, which goes on chain, hashed to termsHash)
- * and bona-fide-names.${tld}.csv (name,community), both optional; names require terms.
+ * Reads community-terms.${tld}.md (the terms text, which goes on chain, hashed to termsHash)
+ * and community-names.${tld}.csv (name,community), both optional; names require terms.
  *
  * Files written next to the addresses file:
  *   deployments.mainnet.${tld}.json            ← final addresses (on success)
@@ -144,10 +144,10 @@ const RESERVE_BATCH = 200
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const reservedNamesPath = join(REPO_ROOT, `reserved-names.${tld}.csv`)
 const reservedByReason = loadReservedNames(reservedNamesPath)
-const bonaFideTerms = loadBonaFideTerms(join(REPO_ROOT, `bona-fide-terms.${tld}.md`))
-const bonaFideNames = loadBonaFideNames(join(REPO_ROOT, `bona-fide-names.${tld}.csv`))
-if (bonaFideNames.length && !bonaFideTerms) {
-  console.error(`bona-fide-terms.${tld}.md is missing: a listed name cannot be registered while no terms are set`)
+const communityTerms = loadCommunityTerms(join(REPO_ROOT, `community-terms.${tld}.md`))
+const communityNames = loadCommunityNames(join(REPO_ROOT, `community-names.${tld}.csv`))
+if (communityNames.length && !communityTerms) {
+  console.error(`community-terms.${tld}.md is missing: a listed name cannot be registered while no terms are set`)
   process.exit(1)
 }
 
@@ -207,14 +207,14 @@ function loadReservedNames(path) {
   return byReason
 }
 
-function loadBonaFideTerms(path) {
+function loadCommunityTerms(path) {
   if (!existsSync(path)) return undefined
   const text = readFileSync(path, 'utf8')
   return { hash: keccak256(toBytes(text)), text }
 }
 
 /// `name,community` rows. Only the name goes on chain.
-function loadBonaFideNames(path) {
+function loadCommunityNames(path) {
   const [header, ...rows] = existsSync(path) ? parseCsv(readFileSync(path, 'utf8')) : []
   const errors = []
   if (header && header.join(',') !== 'name,community') {
@@ -397,9 +397,9 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
     [controller.address])
   await write(controller, 'setSponsor', [sponsor.address])
 
-  if (bonaFideTerms) await write(namePolicy, 'setTerms', [bonaFideTerms.text])
-  for (let i = 0; i < bonaFideNames.length; i += RESERVE_BATCH) {
-    await write(namePolicy, 'addBonaFideNames', [bonaFideNames.slice(i, i + RESERVE_BATCH)])
+  if (communityTerms) await write(namePolicy, 'setTerms', [communityTerms.text])
+  for (let i = 0; i < communityNames.length; i += RESERVE_BATCH) {
+    await write(namePolicy, 'addCommunityNames', [communityNames.slice(i, i + RESERVE_BATCH)])
   }
   await write(baseRegistrar, 'setNamePolicy', [namePolicy.address])
 
@@ -556,9 +556,9 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     () => read(registrar, [], ADDR, 'namePolicy'))
   await check('name policy is a controller on the registrar', 'true',
     () => read(registrar, ADDR, [{ type: 'bool' }], 'controllers', [addresses.SimplexNamePolicy]))
-  await check('bona fide terms hash', bonaFideTerms?.hash ?? zeroHash,
+  await check('community terms hash', communityTerms?.hash ?? zeroHash,
     () => read(addresses.SimplexNamePolicy, [], [{ type: 'bytes32' }], 'termsHash'))
-  await check('bona fide terms text, by its keccak256', bonaFideTerms?.hash ?? 'empty',
+  await check('community terms text, by its keccak256', communityTerms?.hash ?? 'empty',
     async () => {
       const text = await read(addresses.SimplexNamePolicy, [], [{ type: 'string' }], 'termsText')
       return text ? keccak256(toBytes(text)) : 'empty'
@@ -603,17 +603,17 @@ async function verifyWiring(publicClient, addresses, handedOver) {
   }
   const listed = await publicClient.multicall({
     batchSize: 65_536,
-    contracts: bonaFideNames.map((name) => ({
+    contracts: communityNames.map((name) => ({
       address: addresses.SimplexNamePolicy,
-      abi: [{ type: 'function', name: 'bonaFideNames', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'bool' }], stateMutability: 'view' }],
-      functionName: 'bonaFideNames',
+      abi: [{ type: 'function', name: 'communityNames', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'bool' }], stateMutability: 'view' }],
+      functionName: 'communityNames',
       args: [labelhash(name)],
     })),
   })
-  const unlisted = bonaFideNames.filter((name, i) => listed[i].result !== true)
-  console.log(`  ${unlisted.length ? '✗' : '✓'} bona fide names read back: ${bonaFideNames.length - unlisted.length} of ${bonaFideNames.length}`)
+  const unlisted = communityNames.filter((name, i) => listed[i].result !== true)
+  console.log(`  ${unlisted.length ? '✗' : '✓'} community names read back: ${communityNames.length - unlisted.length} of ${communityNames.length}`)
   if (unlisted.length) {
-    failures.push(`bona fide names (${unlisted.slice(0, 5).join(', ')}${unlisted.length > 5 ? ', …' : ''})`)
+    failures.push(`community names (${unlisted.slice(0, 5).join(', ')}${unlisted.length > 5 ? ', …' : ''})`)
   }
   // A six-character name must quote the cheapest rung. `.testing` is priced at
   // zero on purpose, so only a paid TLD can assert non-zero — for that one, zero

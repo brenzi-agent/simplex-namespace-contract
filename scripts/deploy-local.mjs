@@ -201,11 +201,11 @@ async function main() {
   }
 
   if (tld === 'simplex') {
-    const terms = readFileSync(join(__dirname, '..', 'bona-fide-terms.simplex.md'), 'utf8')
+    const terms = readFileSync(join(__dirname, '..', 'community-terms.simplex.md'), 'utf8')
     await write(namePolicy, 'setTerms', [terms])
-    const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
-    await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
-    console.log(`Bona fide terms set; listed: ${bonaFideAtDeploy.join(', ')}`)
+    const communityAtDeploy = ['communityname', 'communityclaim']
+    await write(namePolicy, 'addCommunityNames', [communityAtDeploy])
+    console.log(`Community terms set; listed: ${communityAtDeploy.join(', ')}`)
   }
 
   // UniversalResolver (needed by the frontend for name lookups)
