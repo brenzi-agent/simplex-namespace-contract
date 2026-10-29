@@ -497,8 +497,8 @@ same logic inside it came out 708 B over the limit.
 - *Enforcement reuses the reservation.* A name whose holder breaches the terms is reserved,
   which stops its renewal; after its grace period `registerReserved` assigns it.
 
-**The reserved names moved into the same contract, and it became upgradeable.** The bona
-fide hooks left the controller 315 B under the size limit. Moving the reserved list,
+**The reserved names moved into the same contract, and it became upgradeable.** The
+community name hooks left the controller 315 B under the size limit. Moving the reserved list,
 `addReservedNames`, `setReservationReason`, `removeReservedNames` and `registerReserved` into
 `SimplexNamePolicy` frees about 2.9 KB and puts every rule about who may hold a name in one
 place.
