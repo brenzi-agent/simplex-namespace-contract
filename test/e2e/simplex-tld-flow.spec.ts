@@ -760,7 +760,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
       .toBe(zeroAddress)
   })
 
-  test('a bona fide name can be registered only after its terms are accepted', async ({ page }) => {
+  test('a bona fide name can be registered only for two years and only after its terms are accepted', async ({ page }) => {
     const { createPublicClient, http, keccak256, parseAbi, parseAbiItem, toBytes } = await import('viem')
     const { privateKeyToAccount } = await import('viem/accounts')
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
@@ -777,6 +777,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(page.getByTestId('bona-fide-terms-text')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('next-button')).toBeDisabled()
     await expect(page.getByTestId('next-button')).toContainText(/Accept the terms/)
+    await expect(page.getByTestId('plus-minus-control-plus')).toBeDisabled()
     await page.getByTestId('bona-fide-terms-accept').check()
     await commitNameOnUI(page, wallet)
     await waitOutCommitmentOnUI(page)
@@ -900,7 +901,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     await expect(page.getByTestId('extend-names-confirm')).toBeDisabled()
   })
 
-  test('admin page lists a bona fide name and shows the terms kept on chain', async ({ page }) => {
+  test('admin page lists a bona fide name, shows the terms kept on chain and caps its reserved registration at 1095 days', async ({ page }) => {
     const { createPublicClient, http, keccak256, parseAbi, toBytes } = await import('viem')
     const pub = createPublicClient({ chain: hardhatChain as any, transport: http('http://127.0.0.1:8545') })
     const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
@@ -927,5 +928,8 @@ test.describe('SimpleX Namespace (.simplex)', () => {
       args: [keccak256(toBytes(label))],
     })
     expect(listed).toBe(true)
+    await expect(page.getByText('730–4015 days')).toBeVisible()
+    await page.getByLabel('Label', { exact: true }).fill(label)
+    await expect(page.getByText('730–1095 days')).toBeVisible({ timeout: 15_000 })
   })
 })

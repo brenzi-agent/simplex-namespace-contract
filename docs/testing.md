@@ -114,10 +114,10 @@ minimum, the USD tier on the register page, paid registration (the controller
 keeps exactly the quoted price), records at registration, no NFT gate, reserved
 names, the admin page refusing labels users cannot register, My Names, the
 too-short guard, and the offer, claim and withdraw flows.
-Bona fide names: the terms are accepted before a listed name is committed,
+Bona fide names: a listed name is registered only for two years, and its terms are accepted before it is committed,
 after its commit when it was listed later, and before it is claimed; the terms
-prompt returns when the terms change after the commit; the admin page lists one
-and shows the terms kept on chain. A held name cannot be extended once reserved.
+prompt returns when the terms change after the commit; the admin page lists one,
+shows the terms kept on chain and caps its reserved registration at 1095 days. A held name cannot be extended once reserved.
 
 ## Running everything
 

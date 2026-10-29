@@ -444,7 +444,7 @@ Accepted:
   admin key can point it at itself and re-point the registry owner and resolver of
   any held name, also after `freeze`.
 - **`registerReserved` is exempt.** The admin assigns a reserved name to any
-  address, for a term of two to eleven years, without its signature, also after
+  address, for a term of two to eleven years (at most three for a bona fide name), without its signature, also after
   `freeze`, and releases the reservation; the admin or the guardian can reserve
   any name at once, and a reserved name cannot be renewed.
   It is an admin call, and public.
@@ -703,7 +703,7 @@ Accepted, and new to this ledger:
   slow owner replace the beneficiary — would put the treasury back under the key
   the split exists to keep it away from.
   The same power is unbounded in amount: the guardian can give itself any
-  allowance and mint unreserved names to itself for free, up to eleven years each,
+  allowance and mint unreserved names to itself for free, up to eleven years each, three for a bona fide name,
   and renew any name for free. Until GOV8 it is a single hardware wallet, not a
   Safe, so one compromised device suffices. Accepted for that window as well
   (pre-launch review, 2026-10-21); before the freeze the admin can stop it with
