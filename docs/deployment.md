@@ -82,9 +82,9 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
    - `eth-usd.data.eth` resolver record → `DummyOracle` (the frontend's
      `useEthPrice` resolves this ENS name on chain)
    - Two reserved labels by default: `simplex`, `simplex-chat`
-   - On `.simplex`, loopback links to `test/fixtures/terms/name-terms.md` and
-     `community-name-terms.md`, served on port 8097 by `scripts/serve-terms.mjs`,
-     and the sample bona fide names `bonafidename`, `bonafideclaim`
+   - On `.simplex`, loopback links to `test/fixtures/terms/general-terms.md` and
+     `community-terms.md`, served on port 8097 by `scripts/serve-terms.mjs`,
+     and the sample community names `communityname`, `communityclaim`
    - Addresses persisted to `deployments.local.json` and printed as a JSON line
      prefixed with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES=`.
 3. Starts the Next.js dev server with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES`,
@@ -184,7 +184,7 @@ Pass `CONFIRM=yes` to skip the prompt. The dry run is read-only against mainnet
    `simplex-chat` on the policy, in batches of 200, sets the metadata renderer,
    caps `maxLabelLength` at 63, and registers `eth-usd.data.eth` → the Chainlink feed
    so the frontend's `useEthPrice` resolves on chain. Sets both terms links
-   from `terms.<tld>.json`, lists the names in `bona-fide-names.<tld>.csv`,
+   from `terms.<tld>.json`, lists the names in `community-names.<tld>.csv`,
    and points the registrar at the policy (`setNamePolicy`).
 3. Makes the guardian the beneficiary, proposes `OWNER_ADDRESS` as owner of the
    controller and the price oracle (`Ownable2Step`), reads the stack back, and
@@ -206,14 +206,14 @@ stops on a duplicate, a dotted label, a label users cannot register (the dApp's
 `ALLOWED_LABEL_REGEX`: a-z, 0-9 and hyphens), or an unknown category.
 The read-back after the deploy checks every label.
 
-`terms.<tld>.json` is required: `{ "nameTerms": link, "communityNameTerms": link }`,
+`terms.<tld>.json` is required: `{ "generalTerms": link, "communityTerms": link }`,
 each a link to one file at one commit on git.simplex.chat with the sha256 of its
 bytes, `https://git.simplex.chat/simplex-chat/simplex-chat/raw/commit/<sha>/<path>#sha256=<hex>`.
 Every registration accepts one of them, so the script exits when either is
 missing. Before any transaction it runs `scripts/terms-check.mjs` on both: the
-link's commit must be the target of a `name-terms-v*` or `community-name-terms-v*`
+link's commit must be the target of a `general-terms-v*` or `community-terms-v*`
 tag on both hosts, and both hosts must serve the same bytes, matching the sha256.
-Bona fide community names are optional. `bona-fide-names.<tld>.csv` has a
+Community names are optional. `community-names.<tld>.csv` has a
 `name,community` header (only the name goes on chain) and the same label rule.
 The read-back checks both pointers, both links and their hashes, and every
 listed name.
@@ -437,15 +437,15 @@ key. `setPriceOracle` deliberately survives `freeze()`.
   `withdraw()` is permissionless and pays `beneficiary`.
 - `SimplexNamePolicy` reads its keys from the controller: `owner()` and
   `beneficiary()`.
-  - `addBonaFideNames(string[])` — owner **or beneficiary**. Skips, with
-    `BonaFideNameSkipped`, any name that is registered or in its grace period.
+  - `addCommunityNames(string[])` — owner **or beneficiary**. Skips, with
+    `CommunityNameSkipped`, any name that is registered or in its grace period.
     Send it privately, like a reservation. About 28k gas per name (5.7M per
     batch of 200).
-  - `removeBonaFideNames(string[])`, `setNameTerms(string link)` and
-    `setCommunityNameTerms(string link)` — owner-only. After a new link, an
+  - `removeCommunityNames(string[])`, `setGeneralTerms(string link)` and
+    `setCommunityTerms(string link)` — owner-only. After a new link, an
     acceptance of that kind not yet used at registration or claim must be made
     again; existing holders are not asked to accept it. Publish a new version by
-    committing the file, tagging it `name-terms-vN` or `community-name-terms-vN`,
+    committing the file, tagging it `general-terms-vN` or `community-terms-vN`,
     waiting for the git.simplex.chat mirror, running `scripts/terms-check.mjs`,
     and only then calling the setter through the timelock.
   - `setNamePolicy(address)` on the controller and on the registrar —
@@ -457,8 +457,8 @@ key. `setPriceOracle` deliberately survives `freeze()`.
     registrar's accepts it, and every holder transfer then reverts until the
     pointer is corrected.
     A new policy contract starts empty: reserve names on it before pointing the
-    controller at it. It also cannot list a held name as bona fide until the
-    name is free again.
+    controller at it. It also cannot list a held name as a community name until
+    the name is free again.
   - `upgradeTo(address)` on the policy proxy (UUPS) — the controller's owner,
     until the controller is frozen. Keeps both lists, the acceptances and the
     nonces. The new implementation must be built for the same controller and

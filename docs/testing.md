@@ -116,8 +116,8 @@ names, the admin page refusing labels users cannot register, My Names, the
 too-short guard, and the offer, claim and withdraw flows.
 Terms: every name accepts its terms, served by `scripts/serve-terms.mjs` from
 `test/fixtures/terms/`, at registration and at claim; a plain name is refused
-without the name terms at both; while the name terms link is not a terms link, the
-pricing step says names cannot be registered now. Bona fide names: a listed name is
+without the general terms at both; while the general terms link is not a terms link, the
+pricing step says names cannot be registered now. Community names: a listed name is
 registered only for two years, and its community terms are accepted before it is
 committed, after its commit when it was listed later, and before it is claimed; the
 prompt returns, for each kind, when its terms change after the commit; the admin page

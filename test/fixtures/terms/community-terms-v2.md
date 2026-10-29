@@ -1,8 +1,9 @@
 # Bona fide community name terms, version 2
 
 These terms apply to every name on the .simplex list of bona fide community
-names, together with the SimpleX name terms in force. You accept them when you
-register or receive such a name, and they bind everyone who holds it after you.
+names, together with the SimpleX general terms in force. You accept them when
+you register or receive such a name, and they bind everyone who holds it after
+you.
 
 ## What a bona fide name is for
 

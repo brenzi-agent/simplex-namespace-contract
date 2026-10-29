@@ -202,11 +202,11 @@ async function main() {
   }
 
   if (tld === 'simplex') {
-    await write(namePolicy, 'setNameTerms', [localTermsLink('name-terms.md')])
-    await write(namePolicy, 'setCommunityNameTerms', [localTermsLink('community-name-terms.md')])
-    const bonaFideAtDeploy = ['bonafidename', 'bonafideclaim']
-    await write(namePolicy, 'addBonaFideNames', [bonaFideAtDeploy])
-    console.log(`Terms links set; listed: ${bonaFideAtDeploy.join(', ')}`)
+    await write(namePolicy, 'setGeneralTerms', [localTermsLink('general-terms.md')])
+    await write(namePolicy, 'setCommunityTerms', [localTermsLink('community-terms.md')])
+    const communityAtDeploy = ['communityname', 'communityclaim']
+    await write(namePolicy, 'addCommunityNames', [communityAtDeploy])
+    console.log(`Terms links set; listed: ${communityAtDeploy.join(', ')}`)
   }
 
   // UniversalResolver (needed by the frontend for name lookups)

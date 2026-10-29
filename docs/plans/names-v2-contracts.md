@@ -446,7 +446,7 @@ unless it is reserved again. When a competing claim arises, the guardian reserve
 again, and the admin settles it with `removeReservedNames` executed before the grace period
 ends (the holder keeps it) or, after the grace period, `registerReserved` to whoever the
 ruling names. The hold takes effect at the name's current expiry, which its holder may have
-pushed up to three years out, or eleven through a sponsored renewal of a name not on the bona fide list. A reservation made in error
+pushed up to three years out, or eleven through a sponsored renewal of a name not on the community list. A reservation made in error
 can be undone with `removeReservedNames` until the name's grace period ends.
 
 **The beneficiary is permanent and independent of the owner.** `setBeneficiary` is
@@ -474,7 +474,7 @@ logic living in two places is where a divergence bug hides. `SimplexController` 
 heavily customised fork, not verbatim ENS, so keeping `register` byte-identical in the
 `main...simplex` diff buys less than the duplication costs.
 
-**Bona fide community names live in their own contract.** A listed name can be registered
+**Community names live in their own contract.** A listed name can be registered
 by anyone, without the consortium, but only by accepting written terms: the name is used in
 the best interest of the community it names. `SimplexNamePolicy` holds the list, the
 links to the current terms with their keccak256, and the acceptances; the controller and the registrar
@@ -490,16 +490,16 @@ same logic inside it came out 708 B over the limit.
   commitment alone could be front-run with the same hash and block the owner. A claim
   acceptance is also keyed by the holder: the offer number advances only on `approve`, so
   after a re-registration or an operator transfer it alone would match an old acceptance.
-- *An acceptance includes the terms hash.* `commitUnderCommunityNameTerms` and
-  `acceptCommunityNameTermsForClaim`, like their name-terms counterparts for every other
+- *An acceptance includes the terms hash.* `commitUnderCommunityTerms` and
+  `acceptCommunityTermsForClaim`, like their general-terms counterparts for every other
   name, take the terms hash they accept and revert on any other, so even a direct contract
-  call records exactly which terms the holder accepted; `CommunityNameTermsAccepted(name,
-  holder, termsHash)` or `NameTermsAccepted` is emitted at registration and at claim.
+  call records exactly which terms the holder accepted; `CommunityTermsAccepted(name,
+  holder, termsHash)` or `GeneralTermsAccepted` is emitted at registration and at claim.
 - *Enforcement reuses the reservation.* A name whose holder breaches the terms is reserved,
   which stops its renewal; after its grace period `registerReserved` assigns it.
 
-**The reserved names moved into the same contract, and it became upgradeable.** The bona
-fide hooks left the controller 315 B under the size limit. Moving the reserved list,
+**The reserved names moved into the same contract, and it became upgradeable.** The
+community name hooks left the controller 315 B under the size limit. Moving the reserved list,
 `addReservedNames`, `setReservationReason`, `removeReservedNames` and `registerReserved` into
 `SimplexNamePolicy` frees about 2.9 KB and puts every rule about who may hold a name in one
 place.
@@ -779,7 +779,7 @@ New files under `ens-contracts/test/simplex/`, following the existing fixture id
 - `TestReservationRace.test.ts` — a squatter who commits on seeing the reservation cannot
   land in time; a matured speculative commitment is refused just the same; an immature
   commitment is refused on both registration paths; `registerReserved` needs no commitment.
-- `TestBonaFideTerms.test.ts` — listing by the owner or guardian skips names that are
+- `TestCommunityTerms.test.ts` — listing by the owner or guardian skips names that are
   registered or in grace; a listed name cannot be registered without accepting, on either
   path; accepting at commit, directly or signed, registers it and emits the acceptance;
   another acceptor's acceptance neither counts nor blocks the owner; new terms require a new

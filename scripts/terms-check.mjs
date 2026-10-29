@@ -5,7 +5,7 @@ import { pathToFileURL } from 'url'
 
 const REPO = 'simplex-chat/simplex-chat'
 const HOSTS = [`https://git.simplex.chat/${REPO}.git`, `https://github.com/${REPO}.git`]
-const TAG_PREFIX = { general: 'name-terms-v', community: 'community-name-terms-v' }
+const TAG_PREFIX = { general: 'general-terms-v', community: 'community-terms-v' }
 const MAX_BYTES = 256 * 1024
 const LINK =
   /^https:\/\/git\.simplex\.chat\/simplex-chat\/simplex-chat\/raw\/commit\/([0-9a-f]{40})\/([A-Za-z0-9_./-]+\.md)#sha256=([0-9a-f]{64})$/
