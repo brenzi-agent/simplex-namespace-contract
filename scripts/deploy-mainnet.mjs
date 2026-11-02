@@ -142,6 +142,7 @@ if (!guardianAddress || guardianAddress.toLowerCase() === ownerAddress.toLowerCa
 const REASONS = { Internal: 1, Trademark: 2, Community: 3 }
 // About 5.2M gas each, well under the per-transaction cap of 16,777,216 (EIP-7825).
 const RESERVE_BATCH = 200
+const COMMUNITY_BATCH = 100
 // The labels users can register: simplex-app src/hooks/useValidate.ts ALLOWED_LABEL_REGEX.
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const reservedNamesPath = join(REPO_ROOT, `reserved-names.${tld}.csv`)
@@ -401,8 +402,8 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
 
   await write(namePolicy, 'setGeneralTerms', [terms.generalTerms.link])
   await write(namePolicy, 'setCommunityTerms', [terms.communityTerms.link])
-  for (let i = 0; i < communityNames.length; i += RESERVE_BATCH) {
-    await write(namePolicy, 'addCommunityNames', [communityNames.slice(i, i + RESERVE_BATCH)])
+  for (let i = 0; i < communityNames.length; i += COMMUNITY_BATCH) {
+    await write(namePolicy, 'addCommunityNames', [communityNames.slice(i, i + COMMUNITY_BATCH)])
   }
   await write(baseRegistrar, 'setNamePolicy', [namePolicy.address])
 
