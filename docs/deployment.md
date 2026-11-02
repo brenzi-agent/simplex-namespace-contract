@@ -312,14 +312,14 @@ rung; each rung is `(maxLength, priceUSDPerYear)` and covers every length up to
 
 | length | per year | rung |
 |---|---|---|
-| 6+ | $10 | base price |
+| 6+ | $50 | base price |
 | 5 | $100 | `(5, 100e18)` |
 | 4 | $1,000 | `(4, 1000e18)` |
 | 3 | $10,000 | `(3, 10000e18)` |
 | 2 | $100,000 | `(2, 100000e18)` |
 | 1 | $1,000,000 | `(1, 1000000e18)` |
 
-That is `setPrices(10e18, [(1, 1000000e18), (2, 100000e18), (3, 10000e18),
+That is `setPrices(50e18, [(1, 1000000e18), (2, 100000e18), (3, 10000e18),
 (4, 1000e18), (5, 100e18)])`. Rungs go in ascending length order with
 non-increasing prices, each `maxLength` in 1..64, and the base must not exceed the
 lowest rung; the setter reverts otherwise, so no length can ever be cheaper than a

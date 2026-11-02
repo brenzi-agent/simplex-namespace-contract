@@ -1,8 +1,9 @@
 /**
  * The `.simplex` price curve, in the shape `SimplexPriceOracle` takes it: a base
  * price per year for every length without an exception, plus exceptions
- * `(labelLength, priceCentsPerYear)`, each for that exact length only. $10 a
- * year at six characters and above, ten times more for each character lost.
+ * `(labelLength, priceCentsPerYear)`, each for that exact length only. $50 a
+ * year at six characters and above, so $100 for the two-year minimum; below six,
+ * $100 a year at five and ten times more for each character lost.
  *
  * One source of truth for deploy-local, deploy-testnet and deploy-mainnet, so
  * the three cannot drift apart.
@@ -14,8 +15,8 @@
  */
 const USD = 100n
 
-/** Every length without an exception, so six characters and up: $10 / yr. */
-export const SIMPLEX_PRICE_BASE = 10n * USD
+/** Every length without an exception, so six characters and up: $50 / yr. */
+export const SIMPLEX_PRICE_BASE = 50n * USD
 
 export const SIMPLEX_PRICE_RUNGS = [
   { labelLength: 1n, priceCentsPerYear: 1000000n * USD }, //    $1,000,000 / yr

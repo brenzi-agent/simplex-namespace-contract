@@ -191,14 +191,14 @@ than a longer one.
 
 | Length | Annual price | Source |
 |--------|-------------|--------|
-| 6+     | $10         | base price |
+| 6+     | $50         | base price |
 | 5      | $100        | rung 5 |
 | 4      | $1,000      | rung 4 |
 | 3      | $10,000     | rung 3 |
 | 2      | $100,000    | rung 2 |
 | 1      | $1,000,000  | rung 1 |
 
-That is `setPrices(10e18, [(1, 1000000e18), (2, 100000e18), (3, 10000e18),
+That is `setPrices(50e18, [(1, 1000000e18), (2, 100000e18), (3, 10000e18),
 (4, 1000e18), (5, 100e18)])`, which is what
 [`scripts/simplex-price-curve.mjs`](../scripts/simplex-price-curve.mjs) holds and
 all three deploy scripts read. The rungs run down to one character so that

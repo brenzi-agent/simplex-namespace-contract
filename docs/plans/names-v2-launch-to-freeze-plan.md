@@ -268,11 +268,12 @@ which a subclass could not work around.
 
 `SimplexPriceOracle` takes a **base price per year** plus a sparse list of **rungs**, each
 `(maxLength, priceUSDPerYear)`. A rung at `K` covers every length up to `K`, and anything
-longer than the tallest rung pays the base price. The launch curve is $10 a year at six
-characters and above, then ten times more for each character below that:
+longer than the tallest rung pays the base price. The launch curve is $50 a year at six
+characters and above ($100 for the two-year minimum), $100 a year at five, then ten times
+more for each character below that:
 
 ```
-setPrices(10e18, [(1, 1000000e18), (2, 100000e18), (3, 10000e18),
+setPrices(50e18, [(1, 1000000e18), (2, 100000e18), (3, 10000e18),
                   (4, 1000e18), (5, 100e18)])
 ```
 
