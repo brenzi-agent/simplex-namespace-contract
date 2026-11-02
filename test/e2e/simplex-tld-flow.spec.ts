@@ -396,7 +396,7 @@ test.describe('SimpleX Namespace (.simplex)', () => {
     const tier = page.getByTestId('simplex-tier-6')
     await expect(tier).toBeVisible({ timeout: 15_000 })
     await expect(tier).toContainText('6+ chars')
-    await expect(tier).toContainText('$10')
+    await expect(tier).toContainText('$50')
     await expect(tier).toHaveAttribute('data-active', 'true')
     await expect(page.getByTestId('simplex-tier-5')).toHaveCount(0)
     await expect(page.locator('text=/Credit card/i')).toHaveCount(0)

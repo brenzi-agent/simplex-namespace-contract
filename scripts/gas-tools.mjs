@@ -269,7 +269,7 @@ export async function fundOnFork({ forkUrl, address, weiHex }) {
 // ---------------- dry-run runner (forked node) ----------------
 
 export function createDryRunRunner({ forkUrl, forkChainId, account, alreadyDone = new Set() }) {
-  const transport = http(forkUrl)
+  const transport = http(forkUrl, { timeout: 120_000 })
   // The fork keeps mainnet *state* but uses its own chainId (Hardhat
   // defaults to 31337 even with `--fork`). Sign with the fork's id, not
   // mainnet's, or the node rejects every raw tx.

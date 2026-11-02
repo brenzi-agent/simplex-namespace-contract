@@ -268,18 +268,18 @@ which a subclass could not work around.
 
 `SimplexPriceOracle` takes a **base price per year** plus a sparse list of **rungs**, each
 `(maxLength, priceUSDPerYear)`. A rung at `K` covers every length up to `K`, and anything
-longer than the tallest rung pays the base price. The launch curve is $10 a year at six
-characters and above, then ten times more for each character below that:
+longer than the tallest rung pays the base price. The launch curve is $50 a year ($100 for
+the two-year minimum) with no rungs, since names shorter than six characters cannot be
+registered:
 
 ```
-setPrices(10e18, [(1, 1000000e18), (2, 100000e18), (3, 10000e18),
-                  (4, 1000e18), (5, 100e18)])
+setPrices(50e18, [])
 ```
 
-The rungs go down to one character so that lowering `minCharLength` later never hands out
-free names. `deploy-mainnet.mjs` reads them from `scripts/simplex-price-curve.mjs`, the one
-place the curve is written down, and the post-deploy read-back checks every rung and the feed
-scale on chain before the handover.
+The base price covers every length, so lowering `minCharLength` later never hands out free
+names. `deploy-mainnet.mjs` reads the curve from `scripts/simplex-price-curve.mjs`, the one
+place it is written down, and the post-deploy read-back checks it and the feed scale on chain
+before the handover.
 
 Mind the unit: these are attoUSD **per year**. The older oracle that `.testing` runs takes
 attoUSD **per second**, so the two lists are not interchangeable. Pasting one into the other
@@ -338,8 +338,7 @@ can register any label that is not reserved, whatever the sales switch says.
 
 A sponsored registration or renewal deducts that name's own list price, so the allowance
 bounds exposure in money rather than counting transactions. At the launch curve, $100,000
-buys 10,000 one-year six-character names, or 100 four-character ones, or ten three-character
-ones.
+buys 1,000 two-year registrations.
 
 There is no separate step to register a registrar: any address with a non-zero allowance is
 one, and zero means it is not. The hot wallet also needs its own ETH for gas, because the

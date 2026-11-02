@@ -139,7 +139,7 @@ pnpm dev
 > Ignore the warning `Error syncing data`. It only appears on hardhat local testing
 
 1. Search for an available 6+ char name (e.g., `testname`)
-2. Click to register → `.testing` is free (gas only); `.simplex` costs $10/year, which the local oracle's $1/ETH makes about 20 ETH for the two-year minimum
+2. Click to register → `.testing` is free (gas only); `.simplex` costs $50/year, which the local oracle's $1/ETH makes about 100 ETH for the two-year minimum
 3. **Commit** transaction → confirm in MetaMask
 4. Wait 60 seconds (commit-reveal delay)
 5. **Register** transaction → confirm in MetaMask, pay ETH
