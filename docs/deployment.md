@@ -158,7 +158,7 @@ MAINNET_RPC_URL=https://…           # your RPC (used for fork + real)
 MAX_BASE_FEE_GWEI=0.078             # cap; a tx only lands when base ≤ this
 SIMPLEX_TLD=simplex                 # 'testing' is already deployed
 OWNER_ADDRESS=0x…                   # admin key (required, ≠ deployer)
-GUARDIAN_ADDRESS=0x…                # guardian key (required, ≠ OWNER_ADDRESS)
+GUARDIAN_ADDRESS=0x…                # guardian key (required; may equal OWNER_ADDRESS)
 BUMP_AFTER_HOURS=24                 # stall threshold (optional)
 BUMP_PCT=20                         # bump on stall (optional)
 node scripts/deploy-mainnet.mjs
@@ -213,6 +213,10 @@ Every registration accepts one of them, so the script exits when either is
 missing. Before any transaction it runs `scripts/terms-check.mjs` on both: the
 link's commit must be the target of a `general-terms-v*` or `community-terms-v*`
 tag on both hosts, and both hosts must serve the same bytes, matching the sha256.
+With `TERMS_UNCHECKED=yes` a failed check is printed and the link is deployed as
+a placeholder. The store service then refuses orders and the dApp shows the
+terms as unavailable, until the admin sets checked links. `terms.simplex.json`
+holds such placeholders.
 Community names are optional. `community-names.<tld>.csv` has a
 `name,community` header (only the name goes on chain) and the same label rule.
 The read-back checks both pointers, both links and their hashes, and every
@@ -566,11 +570,12 @@ are deployed.
 | `MAX_BASE_FEE_GWEI` | Per-gas cap; a tx only lands when base ≤ this        |
 | `SIMPLEX_TLD`       | `testing` (default) or `simplex`                     |
 | `OWNER_ADDRESS`     | Admin key; required, must differ from the deployer   |
-| `GUARDIAN_ADDRESS`  | Guardian key (beneficiary); required, ≠ `OWNER_ADDRESS` |
+| `GUARDIAN_ADDRESS`  | Guardian key (beneficiary); required, may equal `OWNER_ADDRESS` |
 | `ETHUSD_FEED`       | Override the Chainlink ETH/USD feed                  |
 | `SMPXNFT_ADDR`      | Override the SMPXNFT gate contract                   |
 | `ETHERSCAN_API_KEY` | Etherscan v2 multi-chain key (verify script)         |
 | `BUMP_AFTER_HOURS` / `BUMP_PCT` / `FORK_PORT` / `CONFIRM` | Gas-strategy tuning (see the script header) |
+| `TERMS_UNCHECKED`   | `yes` deploys terms links that fail `terms-check.mjs`, as placeholders |
 
 ---
 

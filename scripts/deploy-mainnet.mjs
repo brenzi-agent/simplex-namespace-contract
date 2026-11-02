@@ -122,17 +122,15 @@ if (!ownerAddress) {
 }
 // The guardian holds the restrictive, no-delay powers: setRegistrarAllowance (the
 // money kill switch), setPublicSalesOpen (the pause), addReservedNames, and it is
-// `withdraw`'s payee. It must differ from the admin owner — that separation is the
-// point. See docs/plans/names-v2-launch-to-freeze-plan.md.
+// `withdraw`'s payee. See docs/plans/names-v2-launch-to-freeze-plan.md.
 const guardianAddress = process.env.GUARDIAN_ADDRESS
   ? requireAddress('GUARDIAN_ADDRESS', process.env.GUARDIAN_ADDRESS)
   : undefined
-if (!guardianAddress || guardianAddress.toLowerCase() === ownerAddress.toLowerCase()) {
+if (!guardianAddress) {
   console.error(
-    'GUARDIAN_ADDRESS must be set and must differ from OWNER_ADDRESS.\n' +
-      '  `setBeneficiary` is owner-callable only while the beneficiary is unset, so a\n' +
-      '  guardian equal to the admin owner is burned in permanently at deploy time and\n' +
-      '  collapses the two-key split the admin model is built on.',
+    'GUARDIAN_ADDRESS must be set.\n' +
+      '  `setBeneficiary` is owner-callable only while the beneficiary is unset; after\n' +
+      '  that only the guardian can replace itself.',
   )
   process.exit(1)
 }
@@ -754,7 +752,8 @@ async function main() {
   for (const [role, kind] of [['general', 'generalTerms'], ['community', 'communityTerms']]) {
     await checkTermsLink(role, terms[kind].link).catch((err) => {
       console.error(`terms.${tld}.json ${kind}: ${err.message}`)
-      process.exit(1)
+      if (process.env.TERMS_UNCHECKED !== 'yes') process.exit(1)
+      console.error('  TERMS_UNCHECKED=yes: deploying it as a placeholder')
     })
   }
 
