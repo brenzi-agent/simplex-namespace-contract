@@ -21,7 +21,7 @@ hot wallet.
 | Milestone | Change |
 |---|---|
 | GOV1 | The deploy key deploys `.simplex` and reserves the roughly 3000 names chosen in advance. Public sales closed. |
-| GOV2 | Handover: `setBeneficiary` first, then four ownership transfers, all on one day. The deploy key stops being used. |
+| GOV2 | Handover: `setBeneficiary` first, then four ownership transfers and the registry root moved into `Root`, all on one day. The deploy key stops being used. |
 | GOV3 | The guardian gives the registrar hot wallet its spending allowance. First real use of the new keys. |
 | GOV4 | Contracts, registrar, app and codes all live. |
 | GOV5 | The handover is verified and the deploy key is destroyed. |
@@ -96,6 +96,11 @@ No key can take, transfer or re-point a name somebody owns. `_register` requires
 `available(id)`, false until 90 days past expiry, and that check lives in the immutable
 registrar. `reclaim` needs the token holder. `approveWithSig` needs the owner's signature, and
 only the recipient, or a controller, can complete a transfer.
+One exception lasts until GOV9. The registry root's owner, the admin key, can assign the
+`simplex` node to itself, then any name's node, and write that name's records; once the
+registry root is in `Root`, `Root`'s controller can do the same. The redeploy of section 7
+rests on that power. `root.lock(labelhash("simplex"))` at GOV9 ends it: `Root` has no call
+that reassigns a locked label or moves the registry root out.
 After GOV9 no key can change the controller's code either, so no key can write records on a
 name it does not own. That matters because the controller is `trustedETHController` on the
 resolver, and a hostile upgrade would abuse exactly that authority.
@@ -237,11 +242,12 @@ Every on-chain call, in order, with who signs it.
 
 Caller: **deploy key**, alone.
 
-1. Deploy `ENSRegistry`, `Root`, `BaseRegistrarImplementation`, `SimplexPriceOracle`,
+1. Deploy `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexPriceOracle`,
    `SimplexController` implementation and proxy, `SimplexSponsor(controllerProxy)`,
    `SimplexNamePolicy(controllerProxy, baseRegistrar)` implementation and proxy,
    `SubnameRegistrar`, `SimplexResolver`, `MetadataRenderer`, `UniversalResolver`.
-2. `Root.setController(deployKey, true)`; `Root.setSubnodeOwner(labelhash("simplex"), baseRegistrar)`.
+2. `ens.setSubnodeOwner(0x0, labelhash("simplex"), baseRegistrar)`, from the deploy key, which
+   holds the registry root until the handover. `Root` comes with the handover (A2).
 3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.addController(namePolicy)`;
    `controller.setNamePolicy(namePolicy)`; `baseRegistrar.setMetadataRenderer(renderer)`;
    `baseRegistrar.setMaxLabelLength(63)`; `baseRegistrar.setSubnameHook(subnameRegistrar)`.
@@ -254,7 +260,7 @@ Caller: **deploy key**, alone.
    batches of 200. Measured cost is 25.8k gas per name: 5.2M per batch, 77M in total,
    single-digit dollars at the base fee we expect. Run it at a low base fee;
    `deploy-mainnet.mjs` supports that through `MAX_BASE_FEE_GWEI`.
-7. Leave `publicSalesOpen == false` and `Root.locked("simplex") == false`.
+7. Leave `publicSalesOpen == false`.
 
 A transaction may use at most 16,777,216 gas (EIP-7825), and the gas estimate for the loop
 in step 6 passes that above about 210 names, so the batches stay at 200. The name list is
@@ -306,25 +312,29 @@ that only the beneficiary can move it, so the guardian is chosen here or not at 
 | 2 | deploy key | `controller.transferOwnership(adminKey)` |
 | 3 | admin key | `controller.acceptOwnership()`, required by `Ownable2Step` |
 | 4 | deploy key | `baseRegistrar.transferOwnership(adminKey)` |
-| 5 | deploy key | `root.setController(adminKey, true)` and `root.setController(deployKey, false)` |
-| 6 | deploy key | `root.transferOwnership(adminKey)` |
-| 7 | deploy key | `priceOracle.transferOwnership(adminKey)` |
-| 8 | admin key | `priceOracle.acceptOwnership()`, required by `Ownable2Step` |
+| 5 | deploy key | `ens.setOwner(0x0, adminKey)`, after `eth` and `data.eth` go to the admin key and `eth-usd.data.eth` to nobody |
+| 6 | deploy key | `priceOracle.transferOwnership(adminKey)` |
+| 7 | admin key | `priceOracle.acceptOwnership()`, required by `Ownable2Step` |
+| 8 | deploy key | Deploy `Root(ens)`, the upstream contract, then `root.transferOwnership(adminKey)` |
+| 9 | admin key | `root.setController(adminKey, true)` |
+| 10 | admin key | `ens.setOwner(0x0, root)`. `Root` has no call that moves the registry root out again |
 
-All eight complete on one day, since there is no delay to wait out. Steps 4 and 6 are
-single-step `Ownable`: they take effect immediately, nobody has to accept, and the
-transaction gives no sign of whether anyone holds the key. So the admin address must be
-correct, and there is no second chance. Confirm the admin device can sign before step 4, by
-having it execute step 3.
+All ten complete on one day, since there is no delay to wait out. Steps 4, 5 and 8 take
+effect immediately, nobody has to accept, and the transaction gives no sign of whether
+anyone holds the key. So the admin address must be correct, and there is no second chance.
+Confirm the admin device can sign before step 4, by having it execute step 3. Step 10 is
+final as well: read `root.owner()` and `root.controllers(adminKey)` before it.
 
-Verify: `owner()` is the admin key on all four contracts; `beneficiary()` is the guardian
+Verify: `owner()` is the admin key on the controller, the registrar, the price oracle and
+`Root`; `ens.owner(0x0)` is `Root`, `root.controllers(adminKey)` is true and
+`root.locked(labelhash("simplex"))` is false; `beneficiary()` is the guardian
 key; `sponsor()` is the verified `SimplexSponsor`, whose `controller()` is this controller; `pendingOwner()` is empty on both the controller and the price oracle; every call the
 deploy key used to make now reverts. The oracle is the one most easily missed, because it is
 not reachable from the controller. A handover that checks only the controller looks complete
 while the price curve is still held by a key that is about to be destroyed.
 
 Between steps 2 and 3 the deploy key can still redirect the controller elsewhere, so it is
-destroyed only once all eight calls have landed and those checks pass. That is GOV5.
+destroyed only once all ten calls have landed and those checks pass. That is GOV5.
 
 ### A3. Guardian's first use (GOV3)
 

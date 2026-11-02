@@ -146,7 +146,7 @@ are behind a proxy (ERC1967/UUPS); every other contract is non-upgradeable:
 
 1. MockSMPXNFT (local/testnet only, shared)
 2. ENSRegistry
-3. Root → transfer registry root → assign TLD ownership → lock
+3. Registry root: held by the deploy key, which assigns the TLD from it; it moves into `Root` after the handover (step 12)
 4. BaseRegistrarImplementation v3 (own the TLD node)
 5. Price oracle (DummyOracle local / Chainlink mainnet) + SimplexPriceOracle for `.simplex` (ExponentialPremiumPriceOracle on the legacy `.testing` stack); transfer its `Ownable2Step` ownership to the admin key separately from the controller's
 6. SimplexController = impl + ERC1967 proxy (NFT gate on for .testing, off for .simplex); add as controller on the base registrar → SimplexNamePolicy = impl(controller, baseRegistrar) + `SimplexNamePolicyProxy` → add as controller on the base registrar → `controller.setNamePolicy(policy)`
@@ -155,10 +155,10 @@ are behind a proxy (ERC1967/UUPS); every other contract is non-upgradeable:
 9. MetadataRenderer(`.<tld>`) → `baseRegistrar.setMetadataRenderer(renderer)`
 10. UniversalResolver + Multicall3
 11. `baseRegistrar.setMaxLabelLength(63)` — not optional: the label is written to `labelOf` permanently
-12. Reserve the a-priori names on the policy, then hand over: `setBeneficiary(guardian)` **first** (owner-callable only while unset), then ownership of Root, BaseRegistrar and the controller to the admin timelock
+12. Reserve the a-priori names on the policy, then hand over: `setBeneficiary(guardian)` **first** (owner-callable only while unset), then ownership of BaseRegistrar, the controller and the registry root to the admin; the admin then moves the registry root into a `Root` it owns (launch-to-freeze plan A2)
 13. Output addresses to `deployments/<network>-<tld>.json`
 
-No reverse registrar is deployed. `Root.lock` is **not** called at deployment — while the label is unlocked a redeploy can keep the registry and re-point the TLD, which is the cheap recovery path until real users exist.
+No reverse registrar is deployed. `Root` comes after the deploy and `Root.lock` at GOV9 — while the label is unlocked a redeploy can keep the registry and re-point the TLD, which is the cheap recovery path until real users exist.
 
 ## Conventions from the PoC to follow
 

@@ -178,10 +178,11 @@ down in favour of a split.
   name directly to any address and transfer a name it holds, was offered or
   operates for to anyone, and `addController` survives `freeze` as the repair
   path, so the admin key can always add one.
-- The owner of the root, and of every TLD, can assign nodes under it to anyone,
-  permanently: the scripts give the root and `eth` to the admin key and deploy no
-  `Root`, so nothing locks the `simplex` label, and the admin can point it at
-  itself and re-point the registry owner and resolver of any held name.
+- The owner of the root, and of every TLD, can assign nodes under it to anyone.
+  The deploy gives the root and `eth` to the admin key, which moves the root into
+  `Root` at the handover; until `root.lock(labelhash("simplex"))` at GOV9, the
+  admin can point `simplex` at itself and re-point the registry owner and
+  resolver of any held name.
 - **Consent covers the name, not its contents.** Between the recipient's consent
   and the claim landing, the holder can still change the name's records, point
   its registry resolver at a contract of the holder's own, and create subnames

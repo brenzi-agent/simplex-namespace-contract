@@ -273,16 +273,18 @@ would defeat the two-key split. Verified by running `deploy-local.mjs` end to en
 a Hardhat node and then registering through both the payable and the sponsored path on the
 deployed stack.
 
-Still outstanding: a purpose-built `.simplex` script that also deploys `Root`, reserves
-the ~3000 a-priori names, and prints the handover calls.
+Still outstanding: a purpose-built `.simplex` script that reserves the ~3000 a-priori names
+and prints the handover calls. `Root` is not part of it: the admin moves the registry root
+into `Root` at the handover.
 
 
 
 `scripts/deploy-simplex.mjs`, modelled on `deploy-mainnet.mjs`. Only what differs is listed
 here; the full call sequence including the unchanged wiring is Appendix A1 of the
-launch-to-freeze plan. Deploy `Root` and give it the registry root, assign the TLD through
-it, deploy `SimplexResolver` with `nameWrapper = SubnameRegistrar`,
-`trustedETHController` and `trustedController` = the controller proxy, and
+launch-to-freeze plan. Assign the TLD from the registry root, which moves into `Root` at the
+handover (launch-to-freeze plan A2), deploy `SimplexResolver` with
+`nameWrapper = SubnameRegistrar`, `trustedETHController` and `trustedController` = the
+controller proxy, and
 `trustedReverseRegistrar = address(0)`. `nftGateEnabled = false`, `smpxNft = address(0)`,
 `minCharLength = 6`, `setMaxLabelLength(63)` on the registrar, and the price curve of
 `scripts/simplex-price-curve.mjs` against the Chainlink ETH/USD feed: $50 a year, with no
@@ -679,8 +681,8 @@ Dates and the full custody model are in the launch-to-freeze plan; this is the c
 view of the same sequence.
 
 1. **30 Oct 2026** — deploy per W7, reserve the ~3000 a-priori names, verify on Etherscan,
-   tag the commit (`simplex-mainnet-v1`). `publicSalesOpen` false, `Root.locked("simplex")`
-   false.
+   tag the commit (`simplex-mainnet-v1`). `publicSalesOpen` false; no `Root` yet, the
+   registry root moves into it at the handover.
 2. **2 Nov 2026** — governance handover. Before it, confirm the six-entry price curve is in
    place: `setPriceOracle` is owner-only, so after the handover it moves at the timelock's
    pace. `setBeneficiary(guardianSafe)` first, since it is
