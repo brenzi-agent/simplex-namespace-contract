@@ -42,8 +42,7 @@ assigned separately.
 **Registration rules are SNRC's own.** A name must be 6+ characters (loosened
 over time) and some names are reserved. For `.testing`, registration was
 initially limited to holders of a specific "SMPXNFT" access NFT — that gate has
-since been lifted. Pricing is USD-denominated ($50/year for 6+ chars, $100 for 5,
-ten times more for each character shorter); `.testing` is free.
+since been lifted. Pricing is USD-denominated ($50/year); `.testing` is free.
 
 **Prices can be changed without a new contract.** ENS bakes its price list into
 the oracle at deployment, so every price change means deploying a replacement.

@@ -308,8 +308,8 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
   // all-zero curve (gas-only registration) and keeps it: swapping a deployed
   // TLD's oracle is a separate change. `.simplex` gets SimplexPriceOracle,
   // whose curve and feed are both settable by call afterwards, so it
-  // never has to be redeployed to change what a name costs. Its rungs run down
-  // to one character, so lowering minCharLength never hands out free names.
+  // never has to be redeployed to change what a name costs. Its base price
+  // covers every length, so lowering minCharLength never hands out free names.
   const isTesting = tld === 'testing'
   const priceOracle = isTesting
     ? await deploy('ExponentialPremiumPriceOracle',

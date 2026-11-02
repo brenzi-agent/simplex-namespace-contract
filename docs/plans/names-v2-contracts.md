@@ -284,25 +284,9 @@ launch-to-freeze plan. Deploy `Root` and give it the registry root, assign the T
 it, deploy `SimplexResolver` with `nameWrapper = SubnameRegistrar`,
 `trustedETHController` and `trustedController` = the controller proxy, and
 `trustedReverseRegistrar = address(0)`. `nftGateEnabled = false`, `smpxNft = address(0)`,
-`minCharLength = 6`, `setMaxLabelLength(63)` on the registrar, and the six-entry price
-curve against the Chainlink ETH/USD feed, in attoUSD per second:
-
-```
-price1Letter  31709791983700000    $1,000,000 / year
-price2Letter   3170979198370000      $100,000 / year
-price3Letter    317097919837000       $10,000 / year
-price4Letter     31709791983700        $1,000 / year
-price5Letter      3170979198370          $100 / year
-price6Letter       317097919837           $10 / year   (six characters and above)
-```
-
-Six entries, not five: `StablePriceOracle` used to apply `price5Letter` to everything of
-five characters or more, so a six-character name could not be priced apart from a
-five-character one. The sixth entry splits them, and a five-entry array still behaves
-exactly as before. Every rung is an exact multiple of the 6+ rung, so the ten-times-per-
-character ratio holds without rounding drift. The one- and two-character rungs continue
-the ladder rather than sitting at zero, so lowering `minCharLength` further can never hand
-out free names.
+`minCharLength = 6`, `setMaxLabelLength(63)` on the registrar, and the price curve of
+`scripts/simplex-price-curve.mjs` against the Chainlink ETH/USD feed: $50 a year, with no
+price for names shorter than six characters, which cannot be registered.
 
 `setDefaultResolver` after both the controller and the resolver exist — the dependency is
 circular, which is why it is a setter and not an initializer argument.
@@ -347,8 +331,8 @@ optional.
 ## 5. Design decisions
 
 **The registrar limit is money, not a count of operations.** A flat per-operation credit
-prices a ten-year four-character name the same as a one-year six-character one, so it
-bounds transactions rather than exposure. `IPriceOracle.price` returns wei, which moves
+prices a ten-year name the same as a two-year one, so it bounds transactions rather than
+exposure. `IPriceOracle.price` returns wei, which moves
 with ETH and is useless as a limit, so `StablePriceOracle` gains `priceUSD` returning the
 same quote in attoUSD before conversion — the unit the price list is already configured
 in — and `setPriceOracle` is typed to `IPriceOracleUSD` so a replacement oracle must
