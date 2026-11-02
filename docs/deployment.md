@@ -215,7 +215,8 @@ link's commit must be the target of a `general-terms-v*` or `community-terms-v*`
 tag on both hosts, and both hosts must serve the same bytes, matching the sha256.
 With `TERMS_UNCHECKED=yes` a failed check is printed and the link is deployed as
 a placeholder. The store service then refuses orders and the dApp shows the
-terms as unavailable, until the admin sets checked links.
+terms as unavailable, until the admin sets checked links. `terms.simplex.json`
+holds such placeholders.
 Community names are optional. `community-names.<tld>.csv` has a
 `name,community` header (only the name goes on chain) and the same label rule.
 The read-back checks both pointers, both links and their hashes, and every
