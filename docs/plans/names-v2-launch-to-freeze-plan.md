@@ -302,7 +302,7 @@ that only the beneficiary can move it, so the guardian is chosen here or not at 
 
 | # | Caller | Call |
 |---|---|---|
-| 1 | deploy key | `controller.setBeneficiary(guardianKey)`. Rejects the zero address, and `deploy-mainnet.mjs` refuses to run if `GUARDIAN_ADDRESS` is unset or equals `OWNER_ADDRESS` |
+| 1 | deploy key | `controller.setBeneficiary(guardianKey)`. Rejects the zero address, and `deploy-mainnet.mjs` refuses to run if `GUARDIAN_ADDRESS` is unset. A guardian equal to the admin key later moves itself with `controller.setBeneficiary(guardianKey)` |
 | 2 | deploy key | `controller.transferOwnership(adminKey)` |
 | 3 | admin key | `controller.acceptOwnership()`, required by `Ownable2Step` |
 | 4 | deploy key | `baseRegistrar.transferOwnership(adminKey)` |
