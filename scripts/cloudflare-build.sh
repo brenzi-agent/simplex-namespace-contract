@@ -2,7 +2,7 @@
 # Cloudflare Pages build entry-point.
 # Configure in the dashboard:
 #   Build command:        bash scripts/cloudflare-build.sh
-#   Build output dir:     testing-app/out
+#   Build output dir:     out
 #   Submodules:           CF_PAGES_SUBMODULES=true (or this script pulls them)
 #
 # Required env vars (set in Cloudflare → Settings → Environment variables):
@@ -114,3 +114,6 @@ pnpm install --frozen-lockfile
   pnpm build
   pnpm export
 )
+
+rm -rf out
+cp -r testing-app/out out

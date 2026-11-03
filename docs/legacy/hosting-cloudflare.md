@@ -25,7 +25,7 @@ Cloudflare watches the GitHub repo and rebuilds on every push.
 2. Build configuration:
    - **Build command**: `bash scripts/cloudflare-build.sh`
    - **Build output directory**: read from `wrangler.toml`
-     (`pages_build_output_dir = "./ens-app-v3/out"`) — the newer
+     (`pages_build_output_dir = "./out"`) — the newer
      dashboard no longer surfaces this field, but `wrangler.toml`
      supersedes it.
    - **Root directory**: empty.
@@ -80,9 +80,25 @@ change build steps. In order:
    ```
    `jq` is not preinstalled on the Cloudflare build image — the script
    uses a node one-liner to minify the JSON, which is guaranteed available.
-8. Cloudflare deploys `ens-app-v3/out/` to the Pages project. The
+8. The script copies `testing-app/out/` to `out/`, and Cloudflare deploys
+   `out/` to the Pages project. The
    `wrangler.toml`'s `pages_build_output_dir` tells the deploy step
    where to look.
+
+### The `.simplex` staging project
+
+A second Pages project on the same repo builds `simplex-app`:
+
+- **Build command**: `bash scripts/cloudflare-build-simplex.sh`
+- **Production branch**: `main`; **Preview branches**: None
+- **Build output directory**: `out`, from `wrangler.toml`, as for `.testing`
+
+The script initialises only `simplex-app`, sets `NEXT_PUBLIC_CHAIN_NAME=mainnet`,
+`NEXT_PUBLIC_SIMPLEX_TLD=simplex` and the addresses from
+`deployments.mainnet.simplex.json` itself, builds the static export and copies it
+to `out/`. Dashboard variables do not reach the build shell while `wrangler.toml`
+is present, so the script sets every value. The deployed dApp is the
+`simplex-app` commit pinned on `main`.
 
 ### Routing on a static host
 
