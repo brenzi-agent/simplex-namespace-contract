@@ -437,12 +437,13 @@ signing an EIP-712 intent ([`plans/recipient-consent.md`](./plans/recipient-cons
 
 Accepted:
 
-- **The root's and the TLDs' owners are trusted, permanently.** They assign nodes
-  to anyone, and so do their registry operators. The admin key owns the root and
-  `eth`; the registrar owns `simplex` and assigns a name's node only to its holder.
-  The deploy scripts deploy no `Root`, so nothing locks the `simplex` label: the
-  admin key can point it at itself and re-point the registry owner and resolver of
-  any held name, also after `freeze`.
+- **The root's and the TLDs' owners are trusted until GOV9.** They assign nodes
+  to anyone, and so do their registry operators. The registrar owns `simplex` and
+  assigns a name's node only to its holder. The deploy gives the root and `eth` to
+  the admin key, which moves the root into `Root` at the handover (launch-to-freeze
+  plan A2). Until `root.lock(labelhash("simplex"))` at GOV9, the admin key can
+  point `simplex` at itself and re-point the registry owner and resolver of any
+  held name; after the lock, no key can.
 - **`registerReserved` is exempt.** The admin assigns a reserved name to any
   address, for a term of two to eleven years (at most three for a community name), without its signature, also after
   `freeze`, and releases the reservation; the admin or the guardian can reserve
@@ -741,8 +742,8 @@ Accepted, and new to this ledger:
   can judge abuse, so it must pre-flight simulate every relayed transaction and
   refuse above a gas threshold, and validate payload sizes before submitting.
   This is a security property carried by the service, not the contracts.
-- **V3 — hostile pricing is the one path from a retained key to a held name
-  that is not reserved.**
+- **V3 — after GOV9, hostile pricing is the one path from a retained key to a
+  held name that is not reserved.**
   `setPriceOracle` survives the freeze by necessity: the Chainlink feed is
   `immutable` inside the oracle, so freezing pricing would let a retired feed end
   registration and renewal forever. The cost is that an admin could price

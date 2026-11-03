@@ -293,6 +293,24 @@ the deployer key only after the second run's read-back passes. **On the live `.t
 deploy this step has not yet run**, so the deployer EOA still holds admin +
 UUPS-upgrade authority (security review finding H1).
 
+### Moving the registry root into `Root`
+
+After the second run `OWNER_ADDRESS` owns the registry root. On `.simplex` it moves
+into ENS's `Root` (`ens-contracts/contracts/root/Root.sol`, unchanged from
+upstream) on the same day, so that `root.lock(labelhash("simplex"))` can end
+the root's power over `simplex` at GOV9 (launch-to-freeze plan A2 and A7):
+
+1. Any key deploys `Root(<ENSRegistry>)` and calls
+   `transferOwnership(OWNER_ADDRESS)`.
+2. `OWNER_ADDRESS` calls `root.setController(OWNER_ADDRESS, true)`.
+3. `OWNER_ADDRESS` calls `ENSRegistry.setOwner(0x0, root)`. `Root` has no call
+   that moves the registry root out again.
+
+Confirm: `ENSRegistry.owner(0x0)` is `Root`, `root.owner()` is `OWNER_ADDRESS`,
+`root.controllers(OWNER_ADDRESS)` is true and `root.locked(labelhash("simplex"))`
+is false. Until the lock, `root.setSubnodeOwner(labelhash("simplex"), newRegistrar)`
+from `OWNER_ADDRESS` is the redeploy path.
+
 ### Source verification on Etherscan
 
 `deploy-mainnet.mjs` writes `verification.mainnet.${tld}.json` at the end of a
