@@ -37,6 +37,7 @@ const controllerAbi = abiOf('simplex/SimplexController.sol/SimplexController.jso
 const namePolicyAbi = abiOf('simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json')
 const resolverAbi = abiOf('simplex/SimplexResolver.sol/SimplexResolver.json')
 const subnameRegistrarAbi = abiOf('simplex/SubnameRegistrar.sol/SubnameRegistrar.json')
+const registryAbi = abiOf('registry/ENSRegistry.sol/ENSRegistry.json')
 
 const controller = addrs.ETHRegistrarController
 const namePolicy = addrs.SimplexNamePolicy
@@ -107,6 +108,7 @@ async function main() {
   await register('expiring', { contactLink: link, duration: IN_GRACE })
   await register('lapsed', { contactLink: link })
 
+  await send(addrs.ENSRegistry, registryAbi, 'setApprovalForAll', [subnameRegistrar, true])
   for (const parent of ['bakery', 'expiring']) {
     await send(subnameRegistrar, subnameRegistrarAbi, 'createSubname', [namehash(`${parent}.${tld}`), 'menu'])
     console.log(`created menu.${parent}.${tld}`)
