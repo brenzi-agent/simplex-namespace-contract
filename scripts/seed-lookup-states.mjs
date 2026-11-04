@@ -1,12 +1,13 @@
 /**
  * Seed a local SNRC deployment with one on-chain state per name-lookup answer the app can show.
- * Run from parent repo, after deploy-local.mjs:  node scripts/seed-lookup-states.mjs
+ * Run from parent repo, after `SIMPLEX_TLD=simplex node scripts/deploy-local.mjs`:  node scripts/seed-lookup-states.mjs
  *
  * Requires: a hardhat node started with HARDHAT_INITIAL_DATE ~900 days in the past, so that
- * each name's expiry lands where its row needs it against the client's real wall clock.
- * Registers in .testing: bakery (live, with a contact record), expiring (past expiry, in grace),
- * nolink (live, no records), privacy (reserved, community), sunflower (left unregistered),
- * then installs a price oracle carrying the real price list.
+ * each name's expiry lands where its row needs it; chain time is then set to the wall clock.
+ * Registers in .simplex under the general terms: bakery (live, with a contact record),
+ * expiring (past expiry, in grace), lapsed (past grace), nolink (live, no records), the
+ * subnames menu.bakery (held) and menu.expiring (not held once its 2LD expired),
+ * privacy (reserved, community), brandname (reserved, trademark), sunflower (left unregistered).
  */
 import { createPublicClient, createWalletClient, http, encodeFunctionData, namehash, keccak256, toHex, stringToBytes } from 'viem'
 import { localhost } from 'viem/chains'
@@ -19,7 +20,7 @@ const ARTIFACTS = join(__dirname, '..', 'ens-contracts', 'artifacts', 'contracts
 const abiOf = (p) => JSON.parse(readFileSync(join(ARTIFACTS, p), 'utf8')).abi
 
 const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
-const tld = process.env.SIMPLEX_TLD || 'testing'
+const tld = process.env.SIMPLEX_TLD || 'simplex'
 const addrs = JSON.parse(process.env.ADDRS)
 
 const transport = http(rpcUrl)
@@ -35,12 +36,12 @@ const OWNER = account.address
 const controllerAbi = abiOf('simplex/SimplexController.sol/SimplexController.json')
 const namePolicyAbi = abiOf('simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json')
 const resolverAbi = abiOf('simplex/SimplexResolver.sol/SimplexResolver.json')
-const nftAbi = abiOf('mocks/MockSMPXNFT.sol/MockSMPXNFT.json')
+const subnameRegistrarAbi = abiOf('simplex/SubnameRegistrar.sol/SubnameRegistrar.json')
 
 const controller = addrs.ETHRegistrarController
 const namePolicy = addrs.SimplexNamePolicy
 const resolver = addrs.PublicResolver
-const nft = addrs.MockSMPXNFT
+const subnameRegistrar = addrs.SubnameRegistrar
 
 async function send(address, abi, functionName, args, value = 0n) {
   const hash = await wallet.writeContract({ address, abi, functionName, args, value })
@@ -55,10 +56,6 @@ async function rpc(method, params = []) {
   })
   return (await r.json()).result
 }
-
-const YEAR = 31557600n // ENS's seconds per year
-// attoUSD per second, by label length: $10000 (3), $1000 (4), $100 (5), $10 (6+)
-const RENT_PRICES = [0n, 0n, 10000n, 1000n, 100n, 10n].map((usd) => (usd * 10n ** 18n) / YEAR)
 
 const DAY = 24n * 60n * 60n
 const MIN_DURATION = 730n * DAY
@@ -83,7 +80,8 @@ async function register(label, { contactLink, duration = MIN_DURATION } = {}) {
     referrer: '0x0000000000000000000000000000000000000000000000000000000000000000',
   }
   const commitment = await pub.readContract({ address: controller, abi: controllerAbi, functionName: 'makeCommitment', args: [registration] })
-  await send(controller, controllerAbi, 'commit', [commitment])
+  const terms = await pub.readContract({ address: namePolicy, abi: namePolicyAbi, functionName: 'generalTermsHash' })
+  await send(namePolicy, namePolicyAbi, 'commitUnderGeneralTerms', [commitment, terms])
 
   const minAge = await pub.readContract({ address: controller, abi: controllerAbi, functionName: 'minCommitmentAge' })
   await rpc('evm_increaseTime', [Number(minAge) + 5])
@@ -96,8 +94,6 @@ async function register(label, { contactLink, duration = MIN_DURATION } = {}) {
 }
 
 async function main() {
-  // the .testing deployment is NFT-gated; account #0 needs one to register
-  await send(nft, nftAbi, 'mint', [OWNER])
   const open = await pub.readContract({ address: controller, abi: controllerAbi, functionName: 'publicSalesOpen' })
   if (!open) await send(controller, controllerAbi, 'setPublicSalesOpen', [true])
 
@@ -109,14 +105,25 @@ async function main() {
 
   // registered before the client's today, and inside its grace period now
   await register('expiring', { contactLink: link, duration: IN_GRACE })
+  await register('lapsed', { contactLink: link })
 
-  // held back by the registry: Community is the only reason the lookup names
+  for (const parent of ['bakery', 'expiring']) {
+    await send(subnameRegistrar, subnameRegistrarAbi, 'createSubname', [namehash(`${parent}.${tld}`), 'menu'])
+    console.log(`created menu.${parent}.${tld}`)
+  }
+
+  // held back by the registry
+  const REASON_TRADEMARK = 2
   const REASON_COMMUNITY = 3
   await send(namePolicy, namePolicyAbi, 'addReservedNames', [['privacy'], REASON_COMMUNITY])
   console.log(`reserved privacy.${tld} (community)`)
+  await send(namePolicy, namePolicyAbi, 'addReservedNames', [['brandname'], REASON_TRADEMARK])
+  console.log(`reserved brandname.${tld} (trademark)`)
 
   const now = Math.floor(Date.now() / 1000)
-  for (const label of ['bakery', 'nolink', 'expiring']) {
+  await rpc('evm_setNextBlockTimestamp', [now])
+  await rpc('evm_mine')
+  for (const label of ['bakery', 'nolink', 'expiring', 'lapsed']) {
     const id = BigInt(keccak256(stringToBytes(label)))
     const expires = await pub.readContract({ address: addrs.BaseRegistrarImplementation, abi: abiOf('ethregistrar/BaseRegistrarImplementation.sol/BaseRegistrarImplementation.json'), functionName: 'nameExpires', args: [id] })
     const days = Math.round((Number(expires) - now) / 86400)
@@ -126,20 +133,6 @@ async function main() {
         : `${label}.${tld} expired ${-days} days ago, ${90 + days} days of grace left`,
     )
   }
-
-  const oracleAbi = abiOf('ethregistrar/ExponentialPremiumPriceOracle.sol/ExponentialPremiumPriceOracle.json')
-  const { abi: oracleDeployAbi, bytecode } = JSON.parse(
-    readFileSync(join(ARTIFACTS, 'ethregistrar/ExponentialPremiumPriceOracle.sol/ExponentialPremiumPriceOracle.json'), 'utf8'),
-  )
-  const oracleHash = await wallet.deployContract({
-    abi: oracleDeployAbi,
-    bytecode,
-    args: [addrs.DummyOracle, RENT_PRICES, 100000000000000000000000000n, 21n],
-  })
-  const { contractAddress: priceOracle } = await pub.waitForTransactionReceipt({ hash: oracleHash })
-  await send(controller, controllerAbi, 'setPriceOracle', [priceOracle])
-  const quote = await pub.readContract({ address: priceOracle, abi: oracleAbi, functionName: 'priceUSD', args: ['sunflower', 0n, YEAR] })
-  console.log(`price oracle -> ${priceOracle} (a 6+ char name quotes $${Number(quote.base) / 1e18}/year)`)
 
   console.log('\nseeded. sunflower.%s was never registered (available).', tld)
 }
