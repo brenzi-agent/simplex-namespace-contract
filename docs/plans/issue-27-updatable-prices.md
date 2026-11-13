@@ -5,6 +5,9 @@
 but like this: 1. base price per year for all lengths, 2. sparse map
 (length -> price) with increasing prices for decreasing lengths."*
 
+Amended by holder-only renewal: only the holder renews, so "permissionless renewal" below
+describes the design before it.
+
 ## 1. Table of contents
 
 1. Table of contents
