@@ -550,22 +550,22 @@ that must not change, and a name registered with `registerReserved` that a
 non-holder cannot renew (`NotHolder`), its holder cannot renew before accepting
 (`TermsNotAccepted`), and its holder then renews once on each path. Nothing is
 sent to mainnet unless the rehearsal passes, and the script stops before
-mainnet while the controller has a pending owner or the registrar has another
-owner. The first run on mainnet saves the settings to
-`deployments.mainnet.simplex.holder-renewal.before.json` and prints each owner
-call with its calldata; run the script again after the owner's calls are mined,
-and it compares the settings with that file and writes the three addresses to
-`deployments.mainnet.simplex.json` and `verification.mainnet.simplex.json`.
-None of the 12 settings may change between the two runs, or the comparison
-fails and nothing is written.
+mainnet while the controller has a pending owner or the deploy key still owns
+the registry root.
+
+The first run on mainnet writes the three addresses to
+`verification.mainnet.simplex.json` and prints each owner call with its
+calldata. Run `NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs`
+before the owner signs, so that the owner signs only implementations whose
+source Etherscan shows: the three new contracts must report OK, and the ten
+verified before report "already verified" as failures. Run the script again
+after the owner's calls are mined: it checks both calls and the new sponsor's
+controller, and writes the three addresses to `deployments.mainnet.simplex.json`.
 After that, `build-verification.mjs` would derive the proxies' constructor
 arguments from the new implementation addresses, so the verification file is
 not regenerated with it.
 
-Commit the two files with the journal and the saved settings, then run
-`NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs`: the
-three new contracts must report OK, and the ten verified before report "already
-verified" as failures. Tag the deployed ens-contracts commit
+Commit both files with the journal, and tag the deployed ens-contracts commit
 `simplex-mainnet-v2`. The guardian grants allowances on the new sponsor after
 the names service points its sponsor address at it.
 

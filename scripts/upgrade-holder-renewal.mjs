@@ -17,7 +17,7 @@ import {
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
 import { execFileSync } from 'child_process'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import {
@@ -31,10 +31,9 @@ const addressesPath = join(REPO_ROOT, 'deployments.mainnet.simplex.json')
 const verificationPath = join(REPO_ROOT, 'verification.mainnet.simplex.json')
 const journalPath = join(REPO_ROOT, 'deployments.mainnet.simplex.holder-renewal.journal.jsonl')
 const attemptsLogPath = join(REPO_ROOT, 'deployments.mainnet.simplex.holder-renewal.attempts.log')
-const beforePath = join(REPO_ROOT, 'deployments.mainnet.simplex.holder-renewal.before.json')
 const IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
 const YEAR = 365n * 86400n
-const REHEARSAL_LABEL = 'holderrenewalrehearsal'
+const REHEARSAL_LABEL = `holderrenewal${Date.now().toString(36)}`
 const REHEARSAL_HOLDER = getAddress('0x000000000000000000000000000000000000c0de')
 
 const { DEPLOYER_KEY, MAINNET_RPC_URL, MAX_BASE_FEE_GWEI } = process.env
@@ -47,6 +46,7 @@ for (const [name, value] of Object.entries({ DEPLOYER_KEY, MAINNET_RPC_URL, MAX_
 const account = privateKeyToAccount(DEPLOYER_KEY)
 const maxBaseFeeWei = parseGwei(MAX_BASE_FEE_GWEI)
 const addresses = JSON.parse(readFileSync(addressesPath, 'utf8'))
+const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
 const controller = getAddress(addresses.ETHRegistrarController)
 const registrar = getAddress(addresses.BaseRegistrarImplementation)
 const namePolicy = getAddress(addresses.SimplexNamePolicy)
@@ -64,10 +64,11 @@ const controllerContract = {
   abi: [...CONTROLLER.abi, ...POLICY.abi.filter((item) => item.type === 'error')],
 }
 const policyContract = { address: namePolicy, abi: POLICY.abi }
-const registrarAbi = parseAbi([
-  'function nameExpires(uint256) view returns (uint256)',
-  'function owner() view returns (address)',
-])
+const registrarAbi = parseAbi(['function nameExpires(uint256) view returns (uint256)'])
+const registryContract = {
+  address: getAddress(addresses.ENSRegistry),
+  abi: parseAbi(['function owner(bytes32) view returns (address)']),
+}
 
 const PRESERVED = [
   [controllerContract, 'beneficiary'],
@@ -120,16 +121,12 @@ async function pendingOwnerCalls(client, deployed) {
   return ownerCalls(deployed).filter((_, i) => !done[i])
 }
 
-async function check(client, before, deployed) {
-  const after = await snapshot(client)
+async function checkUpgrade(client, deployed, more = {}) {
   const sponsorController = await read(client, { address: deployed.sponsor, abi: SPONSOR.abi }, 'controller')
   return report({
     'both owner calls are in effect': (await pendingOwnerCalls(client, deployed)).length === 0,
     'the new sponsor serves the controller proxy': getAddress(sponsorController) === controller,
-    ...Object.fromEntries(PRESERVED.map(([contract, functionName], i) => [
-      `${functionName} on ${contract.address} is unchanged: ${after[i]}`,
-      after[i] === before[i],
-    ])),
+    ...more,
   })
 }
 
@@ -157,6 +154,8 @@ async function rehearse(fork, client, send, { sponsor }, { owner, guardian }) {
   const expiry = () => client.readContract({
     address: registrar, abi: registrarAbi, functionName: 'nameExpires', args: [id],
   })
+  const accept = async (from) =>
+    send(from, policyContract, 'acceptGeneralTermsForRenewal', [id, await expiry(), YEAR, terms])
   const renewOutcome = async (from, value) => {
     const trace = await client.request({
       method: 'debug_traceCall',
@@ -186,14 +185,14 @@ async function rehearse(fork, client, send, { sponsor }, { owner, guardian }) {
   const { base } = await client.readContract({
     ...controllerContract, functionName: 'rentPrice', args: [REHEARSAL_LABEL, YEAR],
   })
-  await send(guardian, policyContract, 'acceptGeneralTermsForRenewal', [id, YEAR, terms])
+  await accept(guardian)
   const nonHolder = await renewOutcome(guardian, base)
   const unaccepted = await renewOutcome(REHEARSAL_HOLDER, base)
-  await send(REHEARSAL_HOLDER, policyContract, 'acceptGeneralTermsForRenewal', [id, YEAR, terms])
+  await accept(REHEARSAL_HOLDER)
   const accepted = await renewOutcome(REHEARSAL_HOLDER, base)
   await send(REHEARSAL_HOLDER, controllerContract, 'renew', renewal, base)
   await send(guardian, sponsorContract, 'setRegistrarAllowance', [guardian, parseEther('1000')])
-  await send(REHEARSAL_HOLDER, policyContract, 'acceptGeneralTermsForRenewal', [id, YEAR, terms])
+  await accept(REHEARSAL_HOLDER)
   await send(guardian, sponsorContract, 'renewWithCredit', [...renewal, REHEARSAL_HOLDER])
   return report({
     [`a non-holder who accepted the terms renews: ${nonHolder}`]: nonHolder === 'reverts NotHolder',
@@ -204,18 +203,18 @@ async function rehearse(fork, client, send, { sponsor }, { owner, guardian }) {
   })
 }
 
-function record({ policyImpl, controllerImpl, sponsor }) {
-  const updated = {
-    SimplexControllerImpl: controllerImpl.toLowerCase(),
-    SimplexNamePolicyImpl: policyImpl.toLowerCase(),
-    SimplexSponsor: sponsor.toLowerCase(),
-  }
-  writeFileSync(addressesPath, JSON.stringify({ ...addresses, ...updated }, null, 2))
-  const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
-  for (const [name, address] of Object.entries(updated)) verification.contracts[name].address = address
-  writeFileSync(verificationPath, JSON.stringify(verification, null, 2))
-  console.log(`Wrote ${addressesPath} and ${verificationPath}`)
+function record(path, entries, update) {
+  const file = JSON.parse(readFileSync(path, 'utf8'))
+  for (const [name, address] of Object.entries(entries)) update(file, name, address.toLowerCase())
+  writeFileSync(path, JSON.stringify(file, null, 2))
+  console.log(`Wrote ${path}`)
 }
+
+const recorded = ({ policyImpl, controllerImpl, sponsor }) => ({
+  SimplexControllerImpl: controllerImpl,
+  SimplexNamePolicyImpl: policyImpl,
+  SimplexSponsor: sponsor,
+})
 
 async function main() {
   const fork = await spawnHardhatFork({
@@ -244,10 +243,13 @@ async function main() {
     dryTotals = dry.totals()
     for (const [contract, functionName, args] of ownerCalls(deployed))
       await send(keys.owner, contract, functionName, args)
-    const upgraded = await check(client, before, deployed)
+    const after = await snapshot(client)
+    const upgraded = await checkUpgrade(client, deployed, Object.fromEntries(PRESERVED.map(
+      ([contract, functionName], i) => [`${functionName} on ${contract.address} is unchanged: ${after[i]}`, after[i] === before[i]],
+    )))
     const renewed = await rehearse(fork, client, send, deployed, keys)
     if (!upgraded || !renewed) throw new Error('rehearsal failed: nothing was sent to mainnet')
-    console.log('  rehearsal passed')
+    console.log(`  rehearsal passed; the three deployments use ${dryTotals.totalGas} gas`)
   } finally {
     fork.stop()
   }
@@ -259,9 +261,9 @@ async function main() {
     console.error('MAINNET_RPC_URL is not mainnet')
     process.exit(1)
   }
-  const owner = await read(publicClient, controllerContract, 'owner')
-  const registrarOwner = await read(publicClient, { address: registrar, abi: registrarAbi }, 'owner')
-  if ((await read(publicClient, controllerContract, 'pendingOwner')) !== zeroAddress || registrarOwner !== owner) {
+  const pendingOwner = await read(publicClient, controllerContract, 'pendingOwner')
+  const root = await publicClient.readContract({ ...registryContract, functionName: 'owner', args: [zeroHash] })
+  if (pendingOwner !== zeroAddress || root === getAddress(verification.deployer)) {
     console.error('The ownership handover is not complete: run deploy-mainnet.mjs again from tag simplex-mainnet-v1 first.')
     process.exit(1)
   }
@@ -276,25 +278,23 @@ async function main() {
   const deployed = await deployContracts(real.deploy)
   const pending = await pendingOwnerCalls(publicClient, deployed)
   if (pending.length) {
-    if (!existsSync(beforePath)) writeFileSync(beforePath, JSON.stringify(await snapshot(publicClient), null, 2))
-    console.log(`\nThe controller owner ${owner} submits, in this order:`)
+    record(verificationPath, recorded(deployed), (file, name, address) => { file.contracts[name].address = address })
+    console.log('Verify the three contracts on Etherscan before the owner signs:')
+    console.log('  NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs')
+    console.log(`\nThe controller owner ${await read(publicClient, controllerContract, 'owner')} submits, in this order:`)
     for (const [contract, functionName, args] of pending) {
       console.log(`  to ${contract.address}: ${functionName}(${args.join(', ')})`)
       console.log(`    calldata ${encodeFunctionData({ abi: contract.abi, functionName, args })}`)
     }
-    console.log(`Then run this script again: it compares the result with ${beforePath} and records the addresses.`)
+    console.log('Then run this script again: it checks the upgrade and records the addresses.')
     return
   }
-  if (!existsSync(beforePath)) {
-    console.error(`${beforePath} is missing: the run that printed the owner's calls saves it.`)
-    process.exit(1)
-  }
   console.log('\n--- Mainnet read-back ---')
-  if (!(await check(publicClient, JSON.parse(readFileSync(beforePath, 'utf8')), deployed))) {
+  if (!(await checkUpgrade(publicClient, deployed))) {
     process.exitCode = 1
     return
   }
-  record(deployed)
+  record(addressesPath, recorded(deployed), (file, name, address) => { file[name] = address })
 }
 
 main().catch((err) => {
