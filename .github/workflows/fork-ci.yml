@@ -1,0 +1,41 @@
+name: Fork CI
+
+on:
+  push:
+    branches: ['ci/**']
+
+jobs:
+  rehearse-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pin
+        run: echo "sha=$(git ls-tree HEAD ens-contracts | cut -f1 | cut -d' ' -f3)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brenzi-agent/ens-contracts
+          ref: ${{ steps.pin.outputs.sha }}
+          path: ens-contracts
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ens-contracts/.nvmrc
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: ens-contracts
+
+      - name: Rehearse the upgrade on a fork of mainnet
+        env:
+          MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
+          MAX_BASE_FEE_GWEI: '0.05'
+        run: |
+          set +e
+          DEPLOYER_KEY=0x$(openssl rand -hex 32) node scripts/upgrade-holder-renewal.mjs < /dev/null 2>&1 | tee rehearsal.log
+          grep -q 'rehearsal passed' rehearsal.log
