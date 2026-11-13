@@ -269,7 +269,9 @@ once the handover is complete; the deployer EOA until then).
 From a wallet controlling `OWNER_ADDRESS`, submit `acceptOwnership()` at the
 controller proxy (stored as `ETHRegistrarController` in the addresses file) and
 at the price oracle (`SimplexPriceOracle`; `.testing`'s oracle has no owner).
-Then run `deploy-mainnet.mjs` again with the same env vars: it reads both owners
+Then run `deploy-mainnet.mjs` again with the same env vars, from a checkout of
+the deployment's tag (`simplex-mainnet-v1` for `.simplex`) with its submodules,
+since the journal's call digests are of that build: it reads both owners
 and makes the single-step handovers only if both are `OWNER_ADDRESS`, so the
 admin has proven it can sign before anything irreversible is sent.
 
@@ -505,7 +507,10 @@ To renew, the registrar relays the holder's EIP-712
 (domain `SimplexNamePolicy`) with `acceptGeneralTermsForRenewalWithSig` or
 `acceptCommunityTermsForRenewalWithSig`, then calls
 `sponsor.renewWithCredit(label, duration, referrer, holder)` with the same
-duration.
+duration. When the relay reverts `InvalidNonce` because someone submitted the
+signature first, the registrar reads
+`acceptedRenewalTerms(tokenId, holder, nameExpires(tokenId) + duration)` and
+renews if it holds the current hash.
 
 ### Upgrading the controller (UUPS)
 
@@ -524,30 +529,41 @@ for the `__gap` / append-only invariants and the pre-upgrade checklist.
 
 `scripts/upgrade-holder-renewal.mjs` brings a deployed `.simplex` stack to the
 rule that only the holder renews, after accepting the current terms of the
-name's kind for that duration. It deploys the `SimplexNamePolicy` and
-`SimplexController` implementations and a new `SimplexSponsor`, then makes three
-owner calls, in this order:
+name's kind for that renewal. Run it after the ownership handover. It deploys
+the `SimplexNamePolicy` and `SimplexController` implementations and a new
+`SimplexSponsor` from any funded key, which gains no role, and prints the two
+calls the controller owner then submits, in this order:
 
 1. `upgradeTo(<policy implementation>)` on the name policy proxy;
-2. `upgradeTo(<controller implementation>)` on the controller proxy;
-3. `setSponsor(<sponsor>)` on the controller proxy.
+2. `upgradeToAndCall(<controller implementation>, <setSponsor(<sponsor>) calldata>)`
+   on the controller proxy, which switches the controller and the sponsor in one
+   transaction.
 
 ```sh
 DEPLOYER_KEY=0x… MAINNET_RPC_URL=https://… MAX_BASE_FEE_GWEI=0.05 \
   node scripts/upgrade-holder-renewal.mjs
 ```
 
-The script first rehearses on a fork of mainnet: the upgrade, a read-back of the
-owner, guardian, sales switch, terms, resolver, oracle and a reserved name, and a
-name registered with `registerReserved` that its holder renews once on each path
-while a renewal by anyone else reverts `NotHolder`. Nothing is sent to mainnet
-unless the rehearsal passes. While the deploy key owns the controller, the
-script sends the three owner calls itself; otherwise it prints them, and a second
-run after they are mined checks the result. It then writes the three addresses
-to `deployments.mainnet.simplex.json` and `verification.mainnet.simplex.json`.
-Commit both with `deployments.mainnet.simplex.holder-renewal.journal.jsonl`, run
-`verify-etherscan.mjs`, and tag the deployed ens-contracts commit
-`simplex-mainnet-v2`. Registrar allowances are granted on the new sponsor.
+The script first rehearses on a fork of mainnet, signing the owner's calls by
+impersonation: the upgrade, a read-back of 12 controller and policy settings
+that must not change, and a name registered with `registerReserved` that a
+non-holder cannot renew (`NotHolder`), its holder cannot renew before accepting
+(`TermsNotAccepted`), and its holder then renews once on each path. Nothing is
+sent to mainnet unless the rehearsal passes. The first run on mainnet saves the
+settings to `deployments.mainnet.simplex.holder-renewal.before.json`; run the
+script again after the owner's calls are mined, and it compares the settings
+with that file and writes the three addresses to
+`deployments.mainnet.simplex.json` and `verification.mainnet.simplex.json`.
+After that, `build-verification.mjs` would derive the proxies' constructor
+arguments from the new implementation addresses, so the verification file is
+not regenerated with it.
+
+Commit the two files with the journal and the saved settings, then run
+`NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs`: the
+three new contracts must report OK, and the ten verified before report "already
+verified" as failures. Tag the deployed ens-contracts commit
+`simplex-mainnet-v2`. The guardian grants allowances on the new sponsor after
+the names service points its sponsor address at it.
 
 ---
 

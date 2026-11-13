@@ -3,6 +3,10 @@
 Built on `simplex-namespace-contract` @ `540cd29` / `ens-contracts` @ `0654cd2`, on
 `ens-contracts@ab/recipient-consent`. Decided with the owner on 12 Oct 2026.
 
+Amended by holder-only renewal: only the holder renews, and each renewal consumes the
+holder's acceptance of the current terms of the name's kind for that renewal. Statements
+below that anyone may renew describe the design before it.
+
 ## 1. Table of contents
 
 1. Table of contents
