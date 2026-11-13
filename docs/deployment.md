@@ -460,8 +460,8 @@ key. `setPriceOracle` deliberately survives `freeze()`.
     batch of 200).
   - `removeCommunityNames(string[])`, `setGeneralTerms(string link)` and
     `setCommunityTerms(string link)` — owner-only. After a new link, an
-    acceptance of that kind not yet used at registration or claim must be made
-    again; existing holders are not asked to accept it. Publish a new version by
+    acceptance of that kind not yet used at registration, claim or renewal must
+    be made again; existing holders accept it at their next renewal. Publish a new version by
     committing the file, tagging it `general-terms-vN` or `community-terms-vN`,
     waiting for the git.simplex.chat mirror, running `scripts/terms-check.mjs`,
     and only then calling the setter through the timelock.
@@ -500,6 +500,13 @@ The registrar refuses a client's registration whose owner is the registrar's own
 address: no signature is checked then, so the client would choose the name and
 records the registrar holds.
 
+To renew, the registrar relays the holder's EIP-712
+`AcceptGeneralTermsForRenewal` or `AcceptCommunityTermsForRenewal` signature
+(domain `SimplexNamePolicy`) with `acceptGeneralTermsForRenewalWithSig` or
+`acceptCommunityTermsForRenewalWithSig`, then calls
+`sponsor.renewWithCredit(label, duration, referrer, holder)` with the same
+duration.
+
 ### Upgrading the controller (UUPS)
 
 Deploy a fresh implementation, then have the owner submit `upgradeTo(newImpl)`
@@ -512,6 +519,35 @@ for the `__gap` / append-only invariants and the pre-upgrade checklist.
 > `impls.${network}.json`) is currently **Sepolia-wired** (reads
 > `SEPOLIA_RPC_URL`); generalise it for mainnet or deploy the implementation
 > directly.
+
+### Holder-only renewal on the deployed `.simplex`
+
+`scripts/upgrade-holder-renewal.mjs` brings a deployed `.simplex` stack to the
+rule that only the holder renews, after accepting the current terms of the
+name's kind for that duration. It deploys the `SimplexNamePolicy` and
+`SimplexController` implementations and a new `SimplexSponsor`, then makes three
+owner calls, in this order:
+
+1. `upgradeTo(<policy implementation>)` on the name policy proxy;
+2. `upgradeTo(<controller implementation>)` on the controller proxy;
+3. `setSponsor(<sponsor>)` on the controller proxy.
+
+```sh
+DEPLOYER_KEY=0x… MAINNET_RPC_URL=https://… MAX_BASE_FEE_GWEI=0.05 \
+  node scripts/upgrade-holder-renewal.mjs
+```
+
+The script first rehearses on a fork of mainnet: the upgrade, a read-back of the
+owner, guardian, sales switch, terms, resolver, oracle and a reserved name, and a
+name registered with `registerReserved` that its holder renews once on each path
+while a renewal by anyone else reverts `NotHolder`. Nothing is sent to mainnet
+unless the rehearsal passes. While the deploy key owns the controller, the
+script sends the three owner calls itself; otherwise it prints them, and a second
+run after they are mined checks the result. It then writes the three addresses
+to `deployments.mainnet.simplex.json` and `verification.mainnet.simplex.json`.
+Commit both with `deployments.mainnet.simplex.holder-renewal.journal.jsonl`, run
+`verify-etherscan.mjs`, and tag the deployed ens-contracts commit
+`simplex-mainnet-v2`. Registrar allowances are granted on the new sponsor.
 
 ---
 

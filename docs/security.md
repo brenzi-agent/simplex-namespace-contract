@@ -331,11 +331,11 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Dies at `freeze()`. |
 | `freeze()` | owner only | One-way. Makes the implementation, the name policy's implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed or no sponsor is set, so a mis-ordered freeze cannot shut the payable or the sponsored path forever. |
 | `SimplexNamePolicy.addCommunityNames(string[])` | owner **or** beneficiary | Restrictive: a listed name can then be registered or received only by someone who accepts the current community terms, except through `registerReserved` and other registrar controllers (admin), under an off-chain agreement. Skips any name that is registered or in its grace period, since its holder never accepted them. Sent privately, like reservations: a pending listing reveals the name, which a squatter can then register under the general terms. |
-| `removeCommunityNames`, `setGeneralTerms(string)`, `setCommunityTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration or claim must be made again; the other kind's acceptances stay valid, and existing holders are not asked to accept. |
+| `removeCommunityNames`, `setGeneralTerms(string)`, `setCommunityTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration, claim or renewal must be made again; the other kind's acceptances stay valid, and existing holders accept the new link at their next renewal. |
 | `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
 | `SimplexNamePolicy` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the lists, acceptances and nonces. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The policy is a registrar controller, so until the freeze an upgrade can mint any available name; the admin can already add a controller. |
-| `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, and their `WithSig` variants | the registrant or recipient, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
-| `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
+| `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, `acceptGeneralTermsForRenewal`, `acceptCommunityTermsForRenewal`, and their `WithSig` variants | the registrant, recipient or holder, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, and for a renewal, by the name and the duration, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
+| `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. Renewing names the holder, whose acceptance for that renewal the name policy consumes. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
 | `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient. |
 
@@ -491,6 +491,10 @@ Accepted:
   while its offer stands, including an offer that a renewal revives after the
   name expired, and for an unused `ApproveName` signature, which a plain
   `approve` does not invalidate.
+- **A renewal acceptance stands until it is used.** It is stored for the name,
+  the holder and the duration, and the next renewal of that duration by the
+  holder, or by a registrar naming the holder, consumes it while the terms are
+  unchanged. Clients accept immediately before they renew.
 - **A failed claim holds up the recipient's later intents.** `ApproveName` and
   `ClaimName` share the registrar's per-signer nonce, and the holder can make a
   claim fail by withdrawing the offer, so clients sign no other registrar intent
@@ -533,7 +537,7 @@ Accepted:
   its stealth address.
 - **An offer outlives its signature.** The `ApproveName` deadline limits when the
   signature can be submitted. The offer itself stands until a transfer, a burn or
-  a withdrawal, including through the grace period, so a renewal by anyone
+  a withdrawal, including through the grace period, so a renewal by the holder
   revives it. Plain `approve` still accepts a lapsed name, and a renewal makes
   that offer claimable too. `approveWithSig` refuses a lapsed name, so a holder
   without ETH withdraws an offer during the grace period only after a renewal.
@@ -546,9 +550,9 @@ Accepted:
   consent was turned down: anyone who had approved a marketplace could then be
   sent names through it.
 - **No push to a burn address.** A holder who wants rid of a name offers it to a
-  contract that takes it and never transfers it on. None is deployed, a holder
-  without ETH cannot deploy one, and letting the name lapse is not in the holder's
-  control, since anyone may renew it.
+  contract that takes it and never transfers it on. None is deployed and a holder
+  without ETH cannot deploy one; letting the name lapse is in the holder's
+  control, since only the holder renews it.
 - **Contracts that take a name and transfer it on trap it.** Escrow-style markets,
   lending and staking vaults transfer to a third party without calling `approve`
   first, so the transfer reverts and the name stays in the contract until it
@@ -719,17 +723,18 @@ Accepted, and new to this ledger:
   a compromised guardian permanently holds `withdraw` and `setRegistrarAllowance`.
   No name can be taken from its holder before it expires, but the guardian can
   reserve held names, which stops their renewal, and reserve them again whenever
-  the admin releases them. The admin's recovery is to release and renew each
-  such name in one atomic timelock batch, every term, or to add a
-  `BaseRegistrar` controller that renews regardless of reservations
-  (`addController` survives the freeze). Accepted on the basis that the guardian
+  the admin releases them. The admin's recovery is to add a `BaseRegistrar`
+  controller that renews regardless of reservations (`addController` survives
+  the freeze); a released name is renewed only by its holder, so the guardian can
+  reserve it again first. Accepted on the basis that the guardian
   is a Safe:
   compromise requires the multisig threshold, and the alternative — letting the
   slow owner replace the beneficiary — would put the treasury back under the key
   the split exists to keep it away from.
   The same power is unbounded in amount: the guardian can give itself any
   allowance and mint unreserved names to itself for free, up to eleven years each, three for a community name,
-  and renew any name for free. Until GOV8 it is a single hardware wallet, not a
+  and renew for free any name whose holder accepted the terms for that renewal.
+  Until GOV8 it is a single hardware wallet, not a
   Safe, so one compromised device suffices. Accepted for that window as well
   (pre-launch review, 2026-10-21); before the freeze the admin can stop it with
   `setSponsor(0)` or rotate the guardian by upgrade, but names already minted
@@ -749,7 +754,7 @@ Accepted, and new to this ledger:
   registration and renewal forever. The cost is that an admin could price
   renewals out of reach and take names as they lapse. It is the slowest and
   loudest attack available — public for the timelock delay, then each name's
-  remaining term plus 90 days of grace, with renewal permissionless throughout.
+  remaining term plus 90 days of grace, with the holder able to renew throughout.
   The other path is reservation: a reserved name cannot be renewed, and after
   its grace period `registerReserved` assigns it (see "What `freeze()` does not
   stop").
