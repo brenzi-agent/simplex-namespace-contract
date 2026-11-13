@@ -264,7 +264,7 @@ async function main() {
   const pendingOwner = await read(publicClient, controllerContract, 'pendingOwner')
   const root = await publicClient.readContract({ ...registryContract, functionName: 'owner', args: [zeroHash] })
   if (pendingOwner !== zeroAddress || root === getAddress(verification.deployer)) {
-    console.error('The ownership handover is not complete: run deploy-mainnet.mjs again from tag simplex-mainnet-v1 first.')
+    console.error('The controller has a pending owner, or the deploy key still owns the registry root: complete the ownership handover first.')
     process.exit(1)
   }
   await analyzeAndConfirm({
@@ -279,8 +279,8 @@ async function main() {
   const pending = await pendingOwnerCalls(publicClient, deployed)
   if (pending.length) {
     record(verificationPath, recorded(deployed), (file, name, address) => { file.contracts[name].address = address })
-    console.log('Verify the three contracts on Etherscan before the owner signs:')
-    console.log('  NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs')
+    console.log('Commit the journal and the verification file, and verify the three contracts on Etherscan before the owner signs:')
+    console.log('  ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs')
     console.log(`\nThe controller owner ${await read(publicClient, controllerContract, 'owner')} submits, in this order:`)
     for (const [contract, functionName, args] of pending) {
       console.log(`  to ${contract.address}: ${functionName}(${args.join(', ')})`)

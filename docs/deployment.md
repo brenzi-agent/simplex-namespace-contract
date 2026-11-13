@@ -555,7 +555,8 @@ the registry root.
 
 The first run on mainnet writes the three addresses to
 `verification.mainnet.simplex.json` and prints each owner call with its
-calldata. Run `NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs`
+calldata. Commit that file with the journal, and run
+`ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs`
 before the owner signs, so that the owner signs only implementations whose
 source Etherscan shows: the three new contracts must report OK, and the ten
 verified before report "already verified" as failures. Run the script again
@@ -565,7 +566,7 @@ After that, `build-verification.mjs` would derive the proxies' constructor
 arguments from the new implementation addresses, so the verification file is
 not regenerated with it.
 
-Commit both files with the journal, and tag the deployed ens-contracts commit
+Commit the addresses file, and tag the deployed ens-contracts commit
 `simplex-mainnet-v2`. The guardian grants allowances on the new sponsor after
 the names service points its sponsor address at it.
 

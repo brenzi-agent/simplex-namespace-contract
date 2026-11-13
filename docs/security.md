@@ -491,12 +491,11 @@ Accepted:
   while its offer stands, including an offer that a renewal revives after the
   name expired, and for an unused `ApproveName` signature, which a plain
   `approve` does not invalidate.
-- **A renewal acceptance stands for the term it names.** It names the name's
-  expiry, a signed one inside the signature, and is stored for the name, the
-  holder, that expiry and the duration, so the holder, or a registrar naming
-  the holder, can use it until the name's expiry changes or the terms do. The
-  holder cannot withdraw it within that term. Clients accept immediately
-  before they renew.
+- **A renewal acceptance stands for the current term.** It must name the
+  name's current expiry when it is made (a signed one inside the signature),
+  and is stored for the name, the holder, that expiry and the duration, so the
+  holder, or a registrar naming the holder, can use it until the name's expiry
+  changes or the terms do. Clients accept immediately before they renew.
 - **A renewal in the grace period costs gas per name held.** The registrar's
   `ownerOf` reverts once a name has expired, so the policy then finds the holder
   by enumerating the holder's names, expired ones not yet re-registered
