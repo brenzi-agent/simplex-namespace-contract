@@ -11,6 +11,7 @@ import {
   parseEther,
   parseGwei,
   toHex,
+  zeroAddress,
   zeroHash,
 } from 'viem'
 import { mainnet } from 'viem/chains'
@@ -63,7 +64,10 @@ const controllerContract = {
   abi: [...CONTROLLER.abi, ...POLICY.abi.filter((item) => item.type === 'error')],
 }
 const policyContract = { address: namePolicy, abi: POLICY.abi }
-const registrarAbi = parseAbi(['function nameExpires(uint256) view returns (uint256)'])
+const registrarAbi = parseAbi([
+  'function nameExpires(uint256) view returns (uint256)',
+  'function owner() view returns (address)',
+])
 
 const PRESERVED = [
   [controllerContract, 'beneficiary'],
@@ -255,6 +259,12 @@ async function main() {
     console.error('MAINNET_RPC_URL is not mainnet')
     process.exit(1)
   }
+  const owner = await read(publicClient, controllerContract, 'owner')
+  const registrarOwner = await read(publicClient, { address: registrar, abi: registrarAbi }, 'owner')
+  if ((await read(publicClient, controllerContract, 'pendingOwner')) !== zeroAddress || registrarOwner !== owner) {
+    console.error('The ownership handover is not complete: run deploy-mainnet.mjs again from tag simplex-mainnet-v1 first.')
+    process.exit(1)
+  }
   await analyzeAndConfirm({
     publicClient, account, maxBaseFeeWei, dryRunTotals: dryTotals, journalPath,
     label: '.simplex holder-renewal upgrade', bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
@@ -267,11 +277,17 @@ async function main() {
   const pending = await pendingOwnerCalls(publicClient, deployed)
   if (pending.length) {
     if (!existsSync(beforePath)) writeFileSync(beforePath, JSON.stringify(await snapshot(publicClient), null, 2))
-    console.log(`\nThe controller owner ${await read(publicClient, controllerContract, 'owner')} submits, in this order:`)
-    for (const [contract, functionName, args] of pending)
-      console.log(`  on ${contract.address}: ${functionName}(${args.join(', ')})`)
+    console.log(`\nThe controller owner ${owner} submits, in this order:`)
+    for (const [contract, functionName, args] of pending) {
+      console.log(`  to ${contract.address}: ${functionName}(${args.join(', ')})`)
+      console.log(`    calldata ${encodeFunctionData({ abi: contract.abi, functionName, args })}`)
+    }
     console.log(`Then run this script again: it compares the result with ${beforePath} and records the addresses.`)
     return
+  }
+  if (!existsSync(beforePath)) {
+    console.error(`${beforePath} is missing: the run that printed the owner's calls saves it.`)
+    process.exit(1)
   }
   console.log('\n--- Mainnet read-back ---')
   if (!(await check(publicClient, JSON.parse(readFileSync(beforePath, 'utf8')), deployed))) {

@@ -202,9 +202,9 @@ acquisition yet; accepted as is in the pre-launch review (2026-10-21, M5).
 - **No reentrancy surface** in the new contracts: the registry is trusted, the
   renderer is `view`, no ETH is handled, and the controller's record-write path
   is `nonReentrant` (covered by the `ReentrantResolver` test).
-  `SimplexNamePolicy`'s only state-changing outbound call is the
-  controller's `nonReentrant` `commit`; its consume paths make no
-  state-changing outbound calls.
+  Outside the owner-only `registerReserved`, `SimplexNamePolicy`'s only
+  state-changing outbound call is the controller's `nonReentrant` `commit`;
+  its consume paths make none.
 - **`labelOf` cannot be spoofed** (registrar or subname): the key is
   `keccak256(label)` and the value is `label`, so the stored entry is always the
   correct preimage; write-once only avoids redundant writes.
@@ -334,7 +334,7 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `removeCommunityNames`, `setGeneralTerms(string)`, `setCommunityTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration, claim or renewal must be made again; the other kind's acceptances stay valid, and existing holders accept the new link at their next renewal. |
 | `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
 | `SimplexNamePolicy` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the lists, acceptances and nonces. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The policy is a registrar controller, so until the freeze an upgrade can mint any available name; the admin can already add a controller. |
-| `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, `acceptGeneralTermsForRenewal`, `acceptCommunityTermsForRenewal`, and their `WithSig` variants | the registrant, recipient or holder, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, and for a renewal, by the name and the expiry the renewal reaches, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
+| `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, `acceptGeneralTermsForRenewal`, `acceptCommunityTermsForRenewal`, and their `WithSig` variants | any address for itself, or anyone holding its signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, and for a renewal, by the name, its current expiry and the duration, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. Renewing names the holder, whose acceptance for that renewal the name policy consumes. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
 | `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient. |
@@ -492,13 +492,15 @@ Accepted:
   name expired, and for an unused `ApproveName` signature, which a plain
   `approve` does not invalidate.
 - **A renewal acceptance stands for the current term.** It is stored for the
-  name, the holder and the expiry the renewal reaches, so the holder, or a
-  registrar naming the holder, can use it until the name's expiry changes or the
-  terms do. The holder cannot withdraw it within that term. Clients accept
-  immediately before they renew.
+  name, the holder, the name's expiry when it was made and the duration, so the
+  holder, or a registrar naming the holder, can use it until the name's expiry
+  or the terms change. The holder cannot withdraw it within that term. Clients
+  accept immediately before they renew.
 - **A renewal in the grace period costs gas per name held.** The registrar's
   `ownerOf` reverts once a name has expired, so the policy then finds the holder
-  by enumerating the holder's names. The relayer bounds that gas, as for V2.
+  by enumerating the holder's names, expired ones not yet re-registered
+  included. On the sponsored path the relayer bounds that gas, as for V2; on the
+  payable path the holder pays it.
 - **A failed claim holds up the recipient's later intents.** `ApproveName` and
   `ClaimName` share the registrar's per-signer nonce, and the holder can make a
   claim fail by withdrawing the offer, so clients sign no other registrar intent
