@@ -203,8 +203,8 @@ acquisition yet; accepted as is in the pre-launch review (2026-10-21, M5).
   renderer is `view`, no ETH is handled, and the controller's record-write path
   is `nonReentrant` (covered by the `ReentrantResolver` test).
   `SimplexNamePolicy`'s only state-changing outbound call is the
-  controller's `nonReentrant` `commit`; its consume paths make no outbound
-  calls.
+  controller's `nonReentrant` `commit`; its consume paths make no
+  state-changing outbound calls.
 - **`labelOf` cannot be spoofed** (registrar or subname): the key is
   `keccak256(label)` and the value is `label`, so the stored entry is always the
   correct preimage; write-once only avoids redundant writes.
@@ -334,7 +334,7 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `removeCommunityNames`, `setGeneralTerms(string)`, `setCommunityTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration, claim or renewal must be made again; the other kind's acceptances stay valid, and existing holders accept the new link at their next renewal. |
 | `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
 | `SimplexNamePolicy` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the lists, acceptances and nonces. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The policy is a registrar controller, so until the freeze an upgrade can mint any available name; the admin can already add a controller. |
-| `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, `acceptGeneralTermsForRenewal`, `acceptCommunityTermsForRenewal`, and their `WithSig` variants | the registrant, recipient or holder, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, and for a renewal, by the name and the duration, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
+| `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, `acceptGeneralTermsForRenewal`, `acceptCommunityTermsForRenewal`, and their `WithSig` variants | the registrant, recipient or holder, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, and for a renewal, by the name and the expiry the renewal reaches, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. Renewing names the holder, whose acceptance for that renewal the name policy consumes. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
 | `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient. |
@@ -491,10 +491,14 @@ Accepted:
   while its offer stands, including an offer that a renewal revives after the
   name expired, and for an unused `ApproveName` signature, which a plain
   `approve` does not invalidate.
-- **A renewal acceptance stands until it is used.** It is stored for the name,
-  the holder and the duration, and the next renewal of that duration by the
-  holder, or by a registrar naming the holder, consumes it while the terms are
-  unchanged. Clients accept immediately before they renew.
+- **A renewal acceptance stands for the current term.** It is stored for the
+  name, the holder and the expiry the renewal reaches, so the holder, or a
+  registrar naming the holder, can use it until the name's expiry changes or the
+  terms do. The holder cannot withdraw it within that term. Clients accept
+  immediately before they renew.
+- **A renewal in the grace period costs gas per name held.** The registrar's
+  `ownerOf` reverts once a name has expired, so the policy then finds the holder
+  by enumerating the holder's names. The relayer bounds that gas, as for V2.
 - **A failed claim holds up the recipient's later intents.** `ApproveName` and
   `ClaimName` share the registrar's per-signer nonce, and the holder can make a
   claim fail by withdrawing the offer, so clients sign no other registrar intent
@@ -552,7 +556,8 @@ Accepted:
 - **No push to a burn address.** A holder who wants rid of a name offers it to a
   contract that takes it and never transfers it on. None is deployed and a holder
   without ETH cannot deploy one; letting the name lapse is in the holder's
-  control, since only the holder renews it.
+  control, since only the holder renews it, unless the holder left an unused
+  renewal acceptance for the current term.
 - **Contracts that take a name and transfer it on trap it.** Escrow-style markets,
   lending and staking vaults transfer to a third party without calling `approve`
   first, so the transfer reverts and the name stays in the contract until it
@@ -563,20 +568,22 @@ Accepted:
 
 ### Terms acceptance and front-running
 
-Every registration and every non-controller transfer consumes an acceptance of
-the name's terms: the community terms for a listed name, the general terms
-for any other. What a third party can do with what it sees in the mempool:
+Every registration, every non-controller transfer and every renewal through the
+controller consumes an acceptance of the name's terms: the community terms for a
+listed name, the general terms for any other. What a third party can do with what it sees in the mempool:
 
 - **Commit the same commitment first.** The policy then skips its own commit and
   still records the buyer's acceptance, keyed by the buyer; commit age only
   starts sooner. Nobody can accept, or overwrite an acceptance, for someone else.
 - **Copy a signed acceptance and submit it first.** It records only the signer's
   acceptance, and the relayer's transaction reverts `InvalidNonce`. The relayer
-  must then read `acceptedTerms` and go on to the registration when it holds the
-  required hash, rather than ask the buyer to sign again.
-- **Replay a signature.** The four EIP-712 types differ per kind and bind the
-  commitment or offer, the hash, the nonce and the deadline; the per-signer nonce
-  is shared by all four, so an older unsent signature dies once a newer one is used.
+  must then read `acceptedTerms` (or `acceptedRenewalTerms`) and go on to the
+  registration (or renewal) when it holds the required hash, rather than ask the
+  buyer to sign again.
+- **Replay a signature.** The six EIP-712 types differ per kind and bind the
+  commitment, the offer or the renewal's name and duration, the hash, the nonce
+  and the deadline; the per-signer nonce is shared by all six, so an older unsent
+  signature dies once a newer one is used.
 - **Learn whether a committed name is listed** from the commit call it uses. The
   list is public and small, and registration stays first commit, first reveal.
 
