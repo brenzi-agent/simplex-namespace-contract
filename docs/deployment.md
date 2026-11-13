@@ -17,7 +17,7 @@ the historical playbook lives in [`legacy/sepolia-deployment.md`](./legacy/sepol
 | TLD        | Contracts | dApp | Notes |
 |------------|-----------|------|-------|
 | `.testing` | **Live on mainnet** — addresses in [`deployments.mainnet.testing.json`](../deployments.mainnet.testing.json) | **Live** on GitHub Pages — [`testing-names.simplex.chat`](https://testing-names.simplex.chat) | NFT gate **disabled** (lifted on-chain 2026-07-09 via `disableNftGate`, one-way); `minCharLength = 6`; registration is **open and free** (all-zero price oracle). Controller ownership handoff to the cold owner is **still pending** — see [below](#completing-the-ownership-handover). |
-| `.simplex` | **Not deployed** | — | Planned: same stack, **no** NFT gate, the real USD price curve. dApp will likely be **self-hosted + IPFS** (see [dApp hosting](#dapp-hosting)). |
+| `.simplex` | **Deployed on mainnet**, handover pending — addresses in [`deployments.mainnet.simplex.json`](../deployments.mainnet.simplex.json) | — | Same stack, **no** NFT gate, the real USD price curve, public sales closed. dApp will likely be **self-hosted + IPFS** (see [dApp hosting](#dapp-hosting)). |
 
 The live `.testing` controller is the proxy at
 `0xeeb9b6bf5fb68fb726005f7ba549c2f4b32f2dad` (`ETHRegistrarController` in the
@@ -509,7 +509,7 @@ To renew, the registrar relays the holder's EIP-712
 `sponsor.renewWithCredit(label, duration, referrer, holder)` with the same
 duration. When the relay reverts `InvalidNonce` because someone submitted the
 signature first, the registrar reads
-`acceptedRenewalTerms(tokenId, holder, nameExpires(tokenId) + duration)` and
+`acceptedRenewalTerms(tokenId, holder, nameExpires(tokenId), duration)` and
 renews if it holds the current hash.
 
 ### Upgrading the controller (UUPS)
@@ -549,11 +549,15 @@ impersonation: the upgrade, a read-back of 12 controller and policy settings
 that must not change, and a name registered with `registerReserved` that a
 non-holder cannot renew (`NotHolder`), its holder cannot renew before accepting
 (`TermsNotAccepted`), and its holder then renews once on each path. Nothing is
-sent to mainnet unless the rehearsal passes. The first run on mainnet saves the
-settings to `deployments.mainnet.simplex.holder-renewal.before.json`; run the
-script again after the owner's calls are mined, and it compares the settings
-with that file and writes the three addresses to
+sent to mainnet unless the rehearsal passes, and the script stops before
+mainnet while the controller has a pending owner or the registrar has another
+owner. The first run on mainnet saves the settings to
+`deployments.mainnet.simplex.holder-renewal.before.json` and prints each owner
+call with its calldata; run the script again after the owner's calls are mined,
+and it compares the settings with that file and writes the three addresses to
 `deployments.mainnet.simplex.json` and `verification.mainnet.simplex.json`.
+None of the 12 settings may change between the two runs, or the comparison
+fails and nothing is written.
 After that, `build-verification.mjs` would derive the proxies' constructor
 arguments from the new implementation addresses, so the verification file is
 not regenerated with it.
