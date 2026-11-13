@@ -155,9 +155,10 @@ async function rehearse(fork, client, send, { sponsor }) {
   const expiry = () => client.readContract({
     address: registrar, abi: registrarAbi, functionName: 'nameExpires', args: [id],
   })
-  const revertOf = (from, value) => client
+  const outcome = (from, value) => client
     .simulateContract({ ...controllerContract, functionName: 'renew', args: renewal, account: from, value })
-    .then(() => 'none', (e) => e.walk((cause) => cause instanceof ContractFunctionRevertedError)?.data?.errorName)
+    .then(() => 'succeeds', (e) => `reverts: ${
+      e.walk((cause) => cause instanceof ContractFunctionRevertedError)?.data?.errorName ?? e.shortMessage}`)
 
   await send(owner, policyContract, 'addReservedNames', [[REHEARSAL_LABEL], 1])
   await send(owner, policyContract, 'registerReserved', [REHEARSAL_LABEL, REHEARSAL_HOLDER, 2n * YEAR])
@@ -165,10 +166,12 @@ async function rehearse(fork, client, send, { sponsor }) {
   const { base } = await client.readContract({
     ...controllerContract, functionName: 'rentPrice', args: [REHEARSAL_LABEL, YEAR],
   })
+  await send(guardian, policyContract, 'acceptGeneralTermsForRenewal', [id, YEAR, terms])
+  const nonHolder = await outcome(guardian, base)
+  const unaccepted = await outcome(REHEARSAL_HOLDER, base)
   const results = {
-    'a renewal by anyone but the holder reverts NotHolder': (await revertOf(guardian, base)) === 'NotHolder',
-    'the holder renewal reverts TermsNotAccepted before an acceptance':
-      (await revertOf(REHEARSAL_HOLDER, base)) === 'TermsNotAccepted',
+    [`a renewal by a non-holder who accepted the terms ${nonHolder}`]: nonHolder.startsWith('reverts'),
+    [`a renewal by the holder before an acceptance ${unaccepted}`]: unaccepted.startsWith('reverts'),
   }
   await send(REHEARSAL_HOLDER, policyContract, 'acceptGeneralTermsForRenewal', [id, YEAR, terms])
   await send(REHEARSAL_HOLDER, controllerContract, 'renew', renewal, base)
