@@ -241,8 +241,10 @@ async function main() {
     const before = await snapshot(client)
     const deployed = await deployContracts(dry.deploy)
     dryTotals = dry.totals()
-    for (const [contract, functionName, args] of ownerCalls(deployed))
-      await send(keys.owner, contract, functionName, args)
+    for (const [contract, functionName, args] of ownerCalls(deployed)) {
+      if (keys.owner === account.address) await dry.write(contract, functionName, args)
+      else await send(keys.owner, contract, functionName, args)
+    }
     const after = await snapshot(client)
     const upgraded = await checkUpgrade(client, deployed, Object.fromEntries(PRESERVED.map(
       ([contract, functionName], i) => [`${functionName} on ${contract.address} is unchanged: ${after[i]}`, after[i] === before[i]],
@@ -263,7 +265,8 @@ async function main() {
   }
   const pendingOwner = await read(publicClient, controllerContract, 'pendingOwner')
   const root = await publicClient.readContract({ ...registryContract, functionName: 'owner', args: [zeroHash] })
-  if (pendingOwner !== zeroAddress || root === getAddress(verification.deployer)) {
+  const handedOver = pendingOwner === zeroAddress && root !== getAddress(verification.deployer)
+  if (!handedOver && process.env.BEFORE_HANDOVER !== 'yes') {
     console.error('The controller has a pending owner, or the deploy key still owns the registry root: complete the ownership handover first.')
     process.exit(1)
   }
@@ -276,9 +279,13 @@ async function main() {
     bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT, journalPath, attemptsLogPath,
   })
   const deployed = await deployContracts(real.deploy)
+  if ((await read(publicClient, controllerContract, 'owner')) === account.address)
+    for (const call of ownerCalls(deployed)) await real.write(...call)
   const pending = await pendingOwnerCalls(publicClient, deployed)
-  if (pending.length) {
+  const recordVerification = () =>
     record(verificationPath, recorded(deployed), (file, name, address) => { file.contracts[name].address = address })
+  if (pending.length) {
+    recordVerification()
     console.log('Commit the journal and the verification file, and verify the three contracts on Etherscan before the owner signs:')
     console.log('  ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs')
     console.log(`\nThe controller owner ${await read(publicClient, controllerContract, 'owner')} submits, in this order:`)
@@ -294,6 +301,7 @@ async function main() {
     process.exitCode = 1
     return
   }
+  recordVerification()
   record(addressesPath, recorded(deployed), (file, name, address) => { file[name] = address })
 }
 

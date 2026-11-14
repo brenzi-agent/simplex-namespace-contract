@@ -570,6 +570,17 @@ Commit the addresses file, and tag the deployed ens-contracts commit
 `simplex-mainnet-v2`. The guardian grants allowances on the new sponsor after
 the names service points its sponsor address at it.
 
+The alternative order upgrades before the handover, while the deploy key still
+owns the controller: run the script with `BEFORE_HANDOVER=yes` and the deploy
+key as `DEPLOYER_KEY`. It then sends the owner's two calls itself, without the
+Etherscan check before signing, and writes the three addresses to both files;
+verify the contracts afterwards. The handover run from tag
+`simplex-mainnet-v1` then also reports the controller's sponsor and both
+implementation slots as failed, and rewrites both files with the addresses of
+run 1, so run this script once more after it to write the new ones back. This
+order saves the admin two transactions and leaves the upgrade with the deploy
+key, which holds every role until the handover.
+
 ---
 
 ## dApp hosting
