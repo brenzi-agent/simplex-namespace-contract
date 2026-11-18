@@ -43,15 +43,17 @@ Example: a two-year registration paid by card is disputed 30 days later. The pri
 | D5 | Renewals paid by card | not sold: the store renews for crypto, prepaid codes, or a balance past its reversal deadline | pending the owner |
 | D6 | Who reverses | the guardian or the admin, before `reversibleUntil` | pending the owner |
 | D15 | Reversible days of a card payment | 180 | pending the owner |
-| D7 | Who reinstates | the admin; a reinstatement settles at once | decided |
-| D8 | Form and bound of the reversible days | a whole number of days, at most 180; 0 registers the whole term | decided |
+| D7 | Who reinstates | the admin; the registration is settled at once by a reinstatement | pending the owner |
+| D8 | Form and bound of the reversible days | a whole number of days, at most `MAX_REVERSIBLE_DAYS`, the largest value D15 allows: 180 with its applied option; 0 registers the whole term | decided, with D15 |
 | D9 | Settlement window | 30 days between `reversibleUntil` and `E`; both stored in each entry | decided |
 | D10 | Renewal of an unsettled registration | refused on both paths until settlement | decided |
 | D11 | Settlement of a reserved name | allowed, to the paid term | decided |
 | D12 | Placement | a new contract, `SimplexSettlement`, behind a UUPS proxy, a registrar controller; its address held once, by the name policy | decided |
 | D13 | Who settles | anyone: the store service, a script in this repository, and the dApp's Settle action | decided |
-| D14 | Start of card sales | card payments for names enabled by a store setting of their own, after the clients of section 10 that show the paid expiry and ask for the acknowledgement are released | decided |
+| D14 | Start of card sales | card payments for names enabled by a store setting of their own, after the releases of the dApp, simplex.domains and the names resolver of section 10; the app's claim flow, not built yet, ships with the acknowledgement | pending the owner |
 | D16 | Rollback of the controller | only to an implementation that calls `consumeRenewal`, while any entry is in effect | decided |
+| D17 | A reversal batch with a name out of effect, reversed already or past its deadline | that name skipped, with `NamePaymentReversalSkipped`; the others reversed | decided |
+| D18 | A new name policy for the controller | refused unless its `settlement()` is the current policy's | decided |
 
 ## 4. Registration states
 
@@ -62,7 +64,8 @@ stateDiagram-v2
   reversible --> reversed: guardian or admin, reversePayments, before reversibleUntil
   reversed --> final: admin, reinstatePayments, up to E + 90 days, expiry = paid expiry
   reversible --> final: anyone, settleRegistration, from reversibleUntil up to E + 90 days, expiry = paid expiry
-  reversible --> final: a renewal by another registrar controller the admin adds, entry ignored
+  reversible --> final: a renewal by another registrar controller the admin adds, or through a controller without consumeRenewal, entry ignored, remaining lost
+  reversed --> final: a renewal by another registrar controller the admin adds, or through a controller without consumeRenewal, entry ignored
   reversible --> lapsed: unsettled after E + 90 days
   reversed --> lapsed: after E + 90 days
   lapsed --> [*]: available to any registration path
@@ -89,12 +92,12 @@ The expiry is changed by settlement, by reinstatement, by every later registrati
 | State | renewal, both paths | claim, on chain | `settleRegistration` | `reversePayments` | `reinstatePayments` |
 |---|---|---|---|---|---|
 | reversible, before `reversibleUntil` | `RegistrationNotSettled` | allowed; clients ask for an acknowledgement | `ReversiblePeriodNotEnded` | guardian or admin | `PaymentNotReversed` |
-| reversible, `reversibleUntil` to `E` | `RegistrationNotSettled` | allowed; clients settle first | anyone | `ReversiblePeriodEnded` | `PaymentNotReversed` |
-| reversible, after `E`, up to `E` + 90 days | `RegistrationNotSettled` | refused by `ownerOf` | anyone | `ReversiblePeriodEnded` | `PaymentNotReversed` |
-| reversed, up to `E` | `RegistrationNotSettled` | `PaymentReversed` | `PaymentReversed` | `PaymentReversed` | admin |
-| reversed, after `E`, up to `E` + 90 days | `RegistrationNotSettled` | refused by `ownerOf` | `PaymentReversed` | `PaymentReversed` | admin |
-| lapsed, after `E` + 90 days | refused by the registrar's `renew` | — | `NotReversible` | `NotReversible` | `NotReversible` |
-| final | as #49 | as #49 | `NotReversible` | `NotReversible` | `NotReversible` |
+| reversible, `reversibleUntil` to `E` | `RegistrationNotSettled` | allowed; clients settle first | anyone | skipped | `PaymentNotReversed` |
+| reversible, after `E`, up to `E` + 90 days | `RegistrationNotSettled` | refused by `ownerOf` | anyone | skipped | `PaymentNotReversed` |
+| reversed, up to `E` | `RegistrationNotSettled` | `PaymentReversed` | `PaymentReversed` | skipped | admin |
+| reversed, after `E`, up to `E` + 90 days | `RegistrationNotSettled` | refused by `ownerOf` | `PaymentReversed` | skipped | admin |
+| lapsed, after `E` + 90 days | refused by the registrar's `renew` | — | `NotReversible` | skipped | `NotReversible` |
+| final | as #49 | as #49 | `NotReversible` | skipped | `NotReversible` |
 
 ```
 SimplexController.registerSponsored(registration, reversibleDays)       sponsor only
@@ -120,11 +123,11 @@ settleRegistration(label)                                               anyone
 
 reversePayments(labels)                                                 controller.beneficiary() or controller.owner() only
   for each label:
-    entry in effect                                                     else NotReversible(label)
-    !reversed                                                           else PaymentReversed(label)
-    block.timestamp < reversibleUntil                                   else ReversiblePeriodEnded(label)
-    reversed = true
-    emit NamePaymentReversed(labelhash)
+    entry out of effect, reversed, or block.timestamp >= reversibleUntil:
+      emit NamePaymentReversalSkipped(label)
+    else:
+      reversed = true
+      emit NamePaymentReversed(labelhash)
 
 reinstatePayments(labels)                                               controller.owner() only
   for each label:
@@ -141,15 +144,20 @@ reversibleRegistration(id) view                                         proxy on
   else: (0, 0, false)
 
 SimplexNamePolicy.consumeRenewal(label, labelhash, duration, holder)
+  ... as #49, the holder check first
   settlement.reversibleRegistration(id).reversibleUntil == 0            else RegistrationNotSettled(label)
   ... as #49
+
+SimplexController.setNamePolicy(newNamePolicy)                          owner only
+  ... as #49
+  namePolicy == 0 or newNamePolicy.settlement() == namePolicy.settlement()   else NamePolicyMismatch()
 
 SimplexNamePolicy.consumeTransfer(tokenId, from, to, offer, label)
   !settlement.reversibleRegistration(tokenId).reversed                  else PaymentReversed(label)
   ... as #49
 ```
 
-Example after the change: a two-year registration with 180 reversible days expires on day 210 until it is settled, and is extended to day 730 by settlement from day 180. Disputed on day 30 and reversed, it stays with its holder until day 210, without renewal or onward claim, and, with D4, without records from the names resolver; it is available after day 300. Without D4, the names resolver answers its records through the grace period ([`snrc-resolve.py:1238`](https://github.com/simplex-chat/simplexmq/blob/9c4a814fdab9f7350b5f259bb5afe5145b5bd383/scripts/resolver/service/snrc-resolve.py#L1238)), and SimpleX users see the reversal only after day 300.
+Example after the change: a two-year registration with 180 reversible days expires on day 210 until it is settled, and is extended to day 730 by settlement from day 180. Disputed on day 30 and reversed, it stays with its holder until day 210, without renewal or onward claim, and, with D4, without records from the names resolver; it is available after day 300. Without D4, the names resolver answers its records through the grace period ([`snrc-resolve.py:1237`](https://github.com/simplex-chat/simplexmq/blob/9c4a814fdab9f7350b5f259bb5afe5145b5bd383/scripts/resolver/service/snrc-resolve.py#L1237)), and SimpleX users see the reversal only after day 300.
 
 ```mermaid
 sequenceDiagram
@@ -223,9 +231,9 @@ sequenceDiagram
 | a buyer who disputes, or a card thief | holds the name until `E` | renewal refused; after the reversal, claims refused and records withheld by the names resolver; available after `E` + 90 days; other on-chain readers show its records until then |
 | a card thief's modified names page | signs `RegisterName` with `reversibleDays = 0` | the store refuses a reveal signed over another value than its stored one |
 | a third party who claims before the reversal | loses the name at `E` | the recipient acknowledges the reversal deadline before the claim (D1) |
-| the guardian | reverses any unsettled reversible registration before `reversibleUntil` | one hardware wallet until GOV8; kept after `freeze()`; a reinstatement settles the registration, which then cannot be reversed; while the guardian and the admin are one key, the split separates nothing; the store alerts on a reversal the operators did not request |
-| the admin | reverses; reinstates; upgrades `SimplexSettlement` until `freeze()`; adds a registrar controller, whose renewal ends an entry; removes `SimplexSettlement` as a registrar controller, also after `freeze()`, after which every unsettled registration lapses after `E` + 90 days | as every admin power, behind the timelock from GOV8; a reinstatement lands up to `E` + 90 days, after the 7-day delay |
-| `SimplexSettlement` | a registrar controller: registers and renews in its code's bounds | the same trust as the name policy, which is a registrar controller behind a UUPS proxy too |
+| the guardian | reverses any unsettled reversible registration before `reversibleUntil` | one hardware wallet until GOV8; kept after `freeze()`; a registration reinstated by the admin is settled, and cannot be reversed again; while the guardian and the admin are one key, the split separates nothing; the store alerts on a reversal the operators did not request |
+| the admin | reverses; reinstates; upgrades `SimplexSettlement` until `freeze()`; adds a registrar controller, by whose renewal an entry is ended and its `remaining` lost; removes `SimplexSettlement` as a registrar controller, also after `freeze()`, after which every unsettled registration lapses after `E` + 90 days; repoints the registrar's name policy, also after `freeze()`, without a check of its `settlement()` | as every admin power, behind the timelock from GOV8; a reinstatement lands up to `E` + 90 days, after the 7-day delay; the controller's pointer is checked (D18) |
+| `SimplexSettlement` | a registrar controller, bounded by its code | the same trust as the name policy, which is a registrar controller behind a UUPS proxy too |
 | a fault in `SimplexSettlement.reversibleRegistration` | all holder transfers and renewals of all names revert, as the name policy calls it on both | repaired by an upgrade until `freeze()`; after it, transfers by `registrar.setNamePolicy(0)`, without the terms check, and renewals by an added registrar controller |
 | the registrar key | registers with reversible days only when the buyer signed them (D0) | a registration to its own address is unsigned, as today |
 | the store service | settles each reversible registration | unsettled after `E` + 90 days, an honest buyer's name lapses; anyone can settle (D13) |
@@ -233,10 +241,10 @@ sequenceDiagram
 | a holder whose dispute is won | the names resolver withholds the name's records from the reversal to the reinstatement, 2 to 3 months | the store tells the holder; with D4 only |
 | a dispute still open at `E` + 90 days | the name becomes available | the guardian reserves it privately before `E` + 90 days; on a won dispute the admin assigns it with `registerReserved`, for at least 730 days, or the store refunds; on a lost one the admin releases it with `removeReservedNames` |
 | a dispute won before `E` + 90 days of a name the guardian reserved | the reinstated name cannot be renewed while reserved | the admin's reinstatement goes with `removeReservedNames` |
-| a rollback of the controller to an implementation without `consumeRenewal`, such as v1 `0x0b1120b6…89eddb` | a renewal changes the expiry and ends the entry: a reversed holder escapes, an honest buyer loses the rest of the paid term | D16: excluded while any entry is in effect |
+| a rollback of the controller to an implementation without `consumeRenewal`, such as v1 `0x0b1120b6…89eddb` | the expiry is changed by a renewal and the entry ended: a reversed holder escapes, an honest buyer loses the rest of the paid term | D16: excluded while any entry is in effect |
 | the freeze | `SimplexSettlement`'s upgrades end at `freeze()` only because its implementation checks `controller.frozen()`; as a registrar controller, an implementation without that check keeps a power to mint and renew any name | the freeze recipe reads the settlement's implementation slot, as it reads the policy's |
 | a payment withdrawn again after a reinstatement | the registration stays final | the store's loss |
-| a reversal after `reversibleUntil` | outside the contracts | the store's loss; 180 days after the registration exceed Stripe's usual 120 days after the payment, also from `term_start` (2027-01-01) for registrations from 2 Nov 2026; a later `term_start` shortens that margin |
+| a reversal after `reversibleUntil` | outside the contracts | the store's loss; 180 days after the registration reach Stripe's usual 120 days after the payment, also from `term_start` (2027-01-01) for registrations from 2 Nov 2026; a later `term_start` shortens that margin |
 | the snapshot-and-redeploy fallback | re-mints an unsettled name as final | the store's reversal window for it ends |
 
 ## 7. Contract changes
@@ -281,6 +289,7 @@ flowchart LR
 - events:
   - `NamePaymentReversible(bytes32 indexed labelhash, uint256 reversibleUntil, uint256 paidExpires)`;
   - `NamePaymentReversed(bytes32 indexed labelhash)`;
+  - `NamePaymentReversalSkipped(string label)`;
   - `NameRegistrationSettled(bytes32 indexed labelhash, uint256 expires)`.
 - errors:
   - `ReversibleDaysTooMany(uint256)`;
@@ -288,12 +297,11 @@ flowchart LR
   - `NotController()`;
   - `NotProxy()`;
   - `NotOwner()`;
-  - `NotBeneficiary()`;
+  - `NotOwnerOrBeneficiary()`;
   - `Frozen()`;
   - `ImplementationMismatch()`;
   - `NotReversible(string)`;
   - `ReversiblePeriodNotEnded(string)`;
-  - `ReversiblePeriodEnded(string)`;
   - `PaymentReversed(string)`;
   - `PaymentNotReversed(string)`.
 
@@ -301,7 +309,7 @@ flowchart LR
 
 - the implementation's immutable `settlement`, bound for every later implementation;
 - `_authorizeUpgrade` also refuses an implementation built for another `settlement`, and so refuses the #49 implementation: the policy is fixed forward only;
-- the checks in `consumeRenewal` and `consumeTransfer`;
+- the checks in `consumeRenewal`, after the holder check, and in `consumeTransfer`;
 - errors:
   - `PaymentReversed(string)`;
   - `RegistrationNotSettled(string)`.
@@ -314,7 +322,8 @@ flowchart LR
 `SimplexController`, upgraded in place, storage unchanged:
 
 - `registerSponsored(registration, reversibleDays)`;
-- `_registerCore` takes the first term, which `register` passes as `registration.duration`.
+- `_registerCore` takes the first term, which `register` passes as `registration.duration`;
+- `setNamePolicy` refuses a policy with another `settlement()` (D18).
 
 `SimplexSponsor`, a new deployment:
 
@@ -331,14 +340,14 @@ flowchart LR
 - the policy's binding to `settlement`;
 - the invariant `MAX_REVERSIBLE_DAYS days + SETTLEMENT_WINDOW < MIN_REGISTRATION`.
 
-Sizes of a prototype on #49, by solc 0.8.26, optimizer runs 1,000,000, EVM `paris`, against the limit of 24,576 bytes:
+Sizes of a prototype on #49, by solc 0.8.26, optimizer runs 1,000,000, EVM `paris`, against the limit of 24,576 bytes; the prototype is committed with the implementation:
 
 | Contract | #49 | Prototype | Headroom |
 |---|---|---|---|
-| `SimplexController` | 21,889 | 22,295 | 2,281 |
+| `SimplexController` | 21,889 | 22,689 | 1,887 |
 | `SimplexNamePolicy` | 22,652 | 23,466 | 1,110 |
 | `SimplexSponsor` | 5,840 | 5,856 | 18,720 |
-| `SimplexSettlement` | — | 9,078 | 15,498 |
+| `SimplexSettlement` | — | 9,125 | 15,451 |
 
 ## 8. Deployment and rollback
 
@@ -352,7 +361,7 @@ By the recipe of [#18](https://github.com/brenzi/simplex-namespace-contract/pull
 | 4 | guardian key | `newSponsor.setRegistrarAllowance(registrarKey, N)`, for the store service's hot wallet |
 | 5 | operators | the store service registers every order already signed for the old sponsor, and takes no new reveal |
 | 6 | controller owner | `namePolicy.setGeneralTerms(link)` and `namePolicy.setCommunityTerms(link)`, when the terms text states the condition |
-| 7 | controller owner | `controller.upgradeToAndCall(controllerImpl, setSponsor(newSponsor))`, in one transaction: the new controller has no one-argument `registerSponsored` for the old sponsor |
+| 7 | controller owner | `controller.upgradeToAndCall(controllerImpl, setSponsor(newSponsor))`, in one transaction: the new controller's `registerSponsored` takes two arguments, and the old sponsor passes one |
 | 8 | operators | the store service and the names page, with the new sponsor address and `RegisterName` type; the remaining orders are signed once |
 
 ```mermaid
@@ -420,13 +429,15 @@ sequenceDiagram
   A->>St: reinstatePayments([label, ...]), up to E + 90 days
 ```
 
-- Store each payment's reversal deadline with it, and supply each sponsored registration's `reversibleDays` for the owner's signature:
+- Store each payment's reversal deadline with it: a card payment's, its time plus D15's days; a balance's, the latest deadline of the money it holds, from `taken` orders, moves and late card money included.
+- Supply each sponsored registration's `reversibleDays` for the owner's signature:
   - a card payment: 180 (D15);
   - an in-app payment, when added for names: 180;
-  - a balance: the whole days, rounded up, from the signing to the deadline of the money it holds;
+  - a balance: the whole days, rounded up, from the signing to the balance's deadline;
   - an order paid from a balance and a card together: the larger of the two;
   - crypto and prepaid codes: 0.
-- Enable card payments for names by a setting of their own, after the client releases of section 10.
+- Enable card payments for names by a setting of their own, after the releases of the dApp, simplex.domains and the names resolver of section 10 (D14).
+- Read `NamePaymentReversalSkipped` after each reversal batch, and alert the operators for each name skipped.
 - Build the `RegisterName` digest and the calldata from the stored `reversibleDays`, and refuse a reveal signed over any other value.
 - Show at checkout that a card payment is final 180 days after the registration, and on the order page the exact date.
 - Show the paid expiry and the date the registration becomes final, in place of the expiry on chain.
@@ -442,6 +453,7 @@ sequenceDiagram
   - `RegistrationNotSettled`: settle, then retry;
   - `ReversiblePeriodNotEnded`: wait for `reversibleUntil`;
   - `NotReversible` on settlement: settled already, or lapsed;
+  - `PaymentReversed` on settlement: reversed, so settled only by a reinstatement;
   - `PaymentReversed` on a relayed claim: permanent.
 
 ## 10. Effects outside this repository
@@ -470,14 +482,18 @@ sequenceDiagram
   - the claim flow of section 5.
 - This repository:
   - `scripts/settle-due.mjs`: settles every due entry from the `NamePaymentReversible` events, with the labels from `registrar.labelOf`, with any funded key;
-  - `scripts/deploy-mainnet.mjs`, `scripts/deploy-local.mjs` and `scripts/build-verification.mjs`, which build `SimplexNamePolicy(controller, registrar)` today: the settlement implementation and proxy before the policy, `addController(settlement)`, the settlement passed to the policy, the read-back and the Etherscan entries; the snapshot-and-redeploy fallback runs `deploy-mainnet.mjs`;
-  - `docs/plans/names-v2-launch-to-freeze-plan.md`: §4, §5, §7, and the tables A1, A6 and A7;
-  - `docs/security.md`: the new privileged surface, the risks of section 6, the invariant "before its registration expires, `E` for an unsettled reversible registration, while `SimplexSettlement` is a registrar controller", and line 329, as a reserved name is settled to its paid term;
+  - `scripts/deploy-mainnet.mjs`, `scripts/deploy-local.mjs`, `scripts/deploy-testnet.mjs:171-173` and `scripts/build-verification.mjs`, which build `SimplexNamePolicy(controller, registrar)` today: the settlement implementation and proxy before the policy, `addController(settlement)`, the settlement passed to the policy, the read-back and the Etherscan entries; the snapshot-and-redeploy fallback runs `deploy-mainnet.mjs`;
+  - `docs/plans/names-v2-launch-to-freeze-plan.md`: the guardian's bound in §3 (lines 56-58), §4, §5, §7, and the tables A1, A6 and A7;
+  - `docs/security.md`: the new privileged surface, the risks of section 6, the invariant "before its registration expires, `E` for an unsettled reversible registration, while `SimplexSettlement` is a registrar controller", line 329, as a reserved name is settled to its paid term, "What `freeze()` does not stop" (lines 342-367), and V1 (lines 717-736), as a compromised guardian also reverses new card registrations after the freeze;
   - `docs/deployment.md:3-5` and `docs/architecture.md:170-171`: `SimplexSettlement` among the contracts behind a proxy;
   - `docs/deployment.md:495-497`: the new `registerWithCredit`;
-  - `CLAUDE.md:52, 91, 104, 110-111, 116, 144-145`: the proxies, the settlement of a reserved name, the freeze and its upgrade authority, the admin capabilities and `registerWithCredit`;
+  - `CLAUDE.md:52, 54, 91, 104, 110-111, 116, 144-145, 152`: the proxies, the settlement of a reserved name, the freeze and its upgrade authority, the admin capabilities, `registerWithCredit`, and the deployment order;
   - the deployment script of #18, and its rollback recipe, which names the v1 implementation (D16).
-- ens-contracts: the test fixture `test/simplex/fixtures/namesV2.ts:183`.
+- ens-contracts tests at #49:
+  - `fixtures/namesV2.ts:183` and `TestNamePolicy.test.ts:60`: the policy's constructor;
+  - `fixtures/namesV2.ts:274` and `TestRecipientConsent.test.ts:90`: the `RegisterName` type;
+  - `TestRecipientConsent.test.ts:123-270` and `TestRegistrarAllowance.test.ts:142-302`: the new `registerWithCredit`;
+  - `TestRecipientConsent.test.ts:235`: the new `registerSponsored`.
 
 ## 11. Tests
 
@@ -502,10 +518,10 @@ sequenceDiagram
 - renewal on both paths reverts `RegistrationNotSettled` before settlement and works after it; a renewal acceptance signed before settlement reverts `TermsNotAccepted` after it.
 - reversal:
   - refuses a claim and settlement; the name lapses at `E` and is available one second after `E` + 90 days;
-  - reverts at `block.timestamp == reversibleUntil`;
+  - skips the name at `block.timestamp == reversibleUntil`;
   - succeeds for the guardian and the admin; reverts for the registrar, the holder and anyone else;
   - reverts for a final registration;
-  - reverses several names in one call, and reverts the call for one name out of effect.
+  - reverses several names in one call, and skips a name out of effect, reversed already or past its deadline, with `NamePaymentReversalSkipped`.
 - reinstatement:
   - extends the term at once and ends the entry, so a second reversal reverts `NotReversible`;
   - is allowed at `E` + 90 days and reverts one second later;
@@ -514,7 +530,7 @@ sequenceDiagram
   - `transferFrom`, both `safeTransferFrom` overloads and `claimWithSig` revert `PaymentReversed` after a reversal;
   - `approve` and `approveWithSig` still work;
   - an offer and a claim before the reversal succeed, and the reversal then applies to the new holder;
-  - a claim between `reversibleUntil` and `E` succeeds, and a reversal then reverts `ReversiblePeriodEnded`;
+  - a claim between `reversibleUntil` and `E` succeeds, and a reversal then skips the name;
   - subnames keep their owner between `reversibleUntil` and `E`.
 - stale and lapsed entries:
   - a re-registration of a lapsed name, through `registerWithCredit` and through `registerReserved`, leaves the entry without effect;
@@ -527,6 +543,7 @@ sequenceDiagram
   - the deployment order and the rollback, with transfers and renewals across each step;
   - a renewal through the v1 controller implementation ends an entry, which pins D16;
   - the name policy refuses an upgrade to the #49 implementation;
+  - the controller's `setNamePolicy` refuses a policy built for another `settlement`;
   - an upgrade of proxies populated by the #49 implementations keeps every value;
   - the invariant `MAX_REVERSIBLE_DAYS days + SETTLEMENT_WINDOW < MIN_REGISTRATION`.
 - each new guard, removed, fails at least one test.
