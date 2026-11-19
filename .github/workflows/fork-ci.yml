@@ -37,5 +37,170 @@ jobs:
           MAX_BASE_FEE_GWEI: '0.05'
         run: |
           set +e
-          DEPLOYER_KEY=0x$(openssl rand -hex 32) node scripts/upgrade-holder-renewal.mjs < /dev/null 2>&1 | tee rehearsal.log
+          DEPLOYER_KEY=0x$(openssl rand -hex 32) node scripts/upgrade-payment-reversal.mjs < /dev/null 2>&1 | tee rehearsal.log
           grep -q 'rehearsal passed' rehearsal.log
+
+  fresh-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pin
+        run: echo "sha=$(git ls-tree HEAD ens-contracts | cut -f1 | cut -d' ' -f3)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brenzi-agent/ens-contracts
+          ref: ${{ steps.pin.outputs.sha }}
+          path: ens-contracts
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ens-contracts/.nvmrc
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: ens-contracts
+
+      - name: Dry-run a fresh .simplex deployment on a fork of mainnet
+        env:
+          MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
+          MAX_BASE_FEE_GWEI: '0.05'
+          SIMPLEX_TLD: simplex
+          OWNER_ADDRESS: '0x000000000000000000000000000000000000a11c'
+          GUARDIAN_ADDRESS: '0x000000000000000000000000000000000000b0b0'
+          TERMS_UNCHECKED: 'yes'
+        run: |
+          set +e
+          DEPLOYER_KEY=0x$(openssl rand -hex 32) node scripts/deploy-mainnet.mjs < /dev/null 2>&1 | tee deployment.log
+          grep -q 'Dry-run captured' deployment.log
+
+  local-settlement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RPC_URL: http://127.0.0.1:8545
+      ADDRESSES: deployments.local.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pin
+        run: echo "sha=$(git ls-tree HEAD ens-contracts | cut -f1 | cut -d' ' -f3)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brenzi-agent/ens-contracts
+          ref: ${{ steps.pin.outputs.sha }}
+          path: ens-contracts
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ens-contracts/.nvmrc
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: ens-contracts
+
+      - run: npx hardhat compile
+        working-directory: ens-contracts
+
+      - name: Start a local node
+        working-directory: ens-contracts
+        run: |
+          nohup npx hardhat --network hardhat node > "$GITHUB_WORKSPACE/node.log" 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -sf -X POST -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' "$RPC_URL" > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$GITHUB_WORKSPACE/node.log"
+          exit 1
+
+      - name: Deploy .simplex locally
+        run: SIMPLEX_TLD=simplex node scripts/deploy-local.mjs
+
+      - name: Register a name with one reversible day, and pass that day
+        run: |
+          node --input-type=module <<'EOF'
+          import { createPublicClient, createWalletClient, http, labelhash, parseAbi, parseEther, toHex, zeroAddress, zeroHash } from 'viem'
+          import { localhost } from 'viem/chains'
+          import { readFileSync, writeFileSync } from 'fs'
+          const transport = http(process.env.RPC_URL)
+          const client = createPublicClient({ chain: localhost, transport })
+          const wallet = createWalletClient({ chain: localhost, transport, account: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' })
+          const addresses = JSON.parse(readFileSync(process.env.ADDRESSES, 'utf8'))
+          const abi = parseAbi([
+            'struct Registration { string label; address owner; uint256 duration; bytes32 secret; address resolver; bytes[] data; uint8 reverseRecord; bytes32 referrer; }',
+            'function makeCommitment(Registration registration) pure returns (bytes32)',
+            'function generalTermsHash() view returns (bytes32)',
+            'function settlement() view returns (address)',
+            'function commitUnderGeneralTerms(bytes32 commitment, bytes32 acceptedTermsHash)',
+            'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
+            'function registerWithCredit(Registration registration, uint256 reversibleDays, uint256 nonce, uint256 deadline, bytes sig)',
+            'function reversiblePayment(uint256 id) view returns (uint256 reversibleUntil, uint256 paidExpires, bool reversed, bool renewal)',
+            'function nameExpires(uint256 id) view returns (uint256)',
+          ])
+          const send = async (address, functionName, args) => {
+            const { status } = await client.waitForTransactionReceipt({ hash: await wallet.writeContract({ address, abi, functionName, args }) })
+            if (status !== 'success') throw new Error(`${functionName} reverted`)
+          }
+          const later = async (seconds) => {
+            await client.request({ method: 'evm_increaseTime', params: [toHex(seconds)] })
+            await client.request({ method: 'evm_mine', params: [] })
+          }
+          const registration = {
+            label: 'cardpayment', owner: wallet.account.address, duration: 730n * 86400n, secret: zeroHash,
+            resolver: zeroAddress, data: [], reverseRecord: 0, referrer: zeroHash,
+          }
+          const id = BigInt(labelhash(registration.label))
+          const policy = addresses.SimplexNamePolicy
+          const settlement = await client.readContract({ address: policy, abi, functionName: 'settlement' })
+          await send(addresses.SimplexSponsor, 'setRegistrarAllowance', [wallet.account.address, parseEther('1000')])
+          await send(policy, 'commitUnderGeneralTerms', [
+            await client.readContract({ address: addresses.ETHRegistrarController, abi, functionName: 'makeCommitment', args: [registration] }),
+            await client.readContract({ address: policy, abi, functionName: 'generalTermsHash' }),
+          ])
+          await later(61)
+          await send(addresses.SimplexSponsor, 'registerWithCredit', [registration, 1n, 0n, 0n, '0x'])
+          const [reversibleUntil, paidExpires] = await client.readContract({ address: settlement, abi, functionName: 'reversiblePayment', args: [id] })
+          const expires = await client.readContract({ address: addresses.BaseRegistrarImplementation, abi, functionName: 'nameExpires', args: [id] })
+          console.log(`expires ${expires}, reversibleUntil ${reversibleUntil}, paid expiry ${paidExpires}`)
+          if (expires !== reversibleUntil + 30n * 86400n) throw new Error('the first term is not 30 days past reversibleUntil')
+          writeFileSync('paid-expiry.txt', String(paidExpires))
+          await later(86401)
+          EOF
+
+      - name: Settle every due payment
+        env:
+          SETTLER_KEY: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
+        run: |
+          node scripts/settle-due.mjs | tee settlement.log
+          grep -q '✓ cardpayment' settlement.log
+          grep -q '^1 settled' settlement.log
+
+      - name: Check the paid expiry
+        run: |
+          node --input-type=module <<'EOF'
+          import { createPublicClient, http, labelhash, parseAbi } from 'viem'
+          import { readFileSync } from 'fs'
+          const client = createPublicClient({ transport: http(process.env.RPC_URL) })
+          const addresses = JSON.parse(readFileSync(process.env.ADDRESSES, 'utf8'))
+          const abi = parseAbi(['function nameExpires(uint256 id) view returns (uint256)'])
+          const expires = await client.readContract({
+            address: addresses.BaseRegistrarImplementation, abi, functionName: 'nameExpires', args: [BigInt(labelhash('cardpayment'))],
+          })
+          const paid = BigInt(readFileSync('paid-expiry.txt', 'utf8'))
+          console.log(`expires ${expires}, paid expiry ${paid}`)
+          if (expires !== paid) throw new Error('the settlement did not extend the name to its paid expiry')
+          EOF
+
+      - if: failure()
+        run: tail -200 node.log
