@@ -159,7 +159,7 @@ async function main() {
     const realRunner = () => createWaitForBaseRunner({
       publicClient: client, walletClient, account,
       maxBaseFeeWei: parseGwei('1000'), bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
-      journalPath, attemptsLogPath: join(journalDir, 'attempts.log'), confirmations: 1,
+      journalPath, attemptsLogPath: join(journalDir, 'attempts.log'), confirmations: 1, pollReceiptMs: 250,
     })
     const nonceBefore = await client.getTransactionCount({ address: account.address })
     const sentOnce = async (steps) => {
