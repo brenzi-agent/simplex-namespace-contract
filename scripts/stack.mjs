@@ -1,6 +1,6 @@
 import {
   createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, http, namehash, pad,
-  parseAbi, toHex, zeroAddress,
+  parseAbi, toEventSelector, toEventSignature, toFunctionSelector, toFunctionSignature, toHex, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { execFileSync } from 'child_process'
@@ -256,6 +256,15 @@ export async function deployBehindProxy(deploy, name, addresses, setup, initialO
 }
 
 export const proxyAdminOf = (proxy) => getContractAddress({ from: proxy, nonce: 1n })
+
+export function interfaceOf(abi) {
+  const signatures = (type, selector, signature) =>
+    Object.fromEntries(abi.filter((item) => item.type === type).map((item) => [selector(item), signature(item)]))
+  return {
+    functions: signatures('function', toFunctionSelector, toFunctionSignature),
+    events: signatures('event', toEventSelector, toEventSignature),
+  }
+}
 
 export async function proxySlots(client, proxy) {
   const [implementation, admin] = await Promise.all([

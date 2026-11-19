@@ -6,8 +6,8 @@ import {
   layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
 import {
-  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, VERIFICATION_PATH, immutablesIn, placeImmutables,
-  proxyAdminOf,
+  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, VERIFICATION_PATH, immutablesIn, interfaceOf,
+  placeImmutables, proxyAdminOf,
 } from './stack.mjs'
 
 const REGISTRY = '0x000000000000000000000000000000000000c0DE'
@@ -46,12 +46,30 @@ const prefix = [
 ]
 const deployed = [...prefix, controller('__gap', 55, 0, gap(43))]
 
-const CONTROLLER_ABI = parseAbi(['function sponsor() view returns (address)', 'function setSponsor(address)'])
+const CONTROLLER_ABI = parseAbi([
+  'function sponsor() view returns (address)',
+  'function setSponsor(address)',
+  'event SponsorChanged(address sponsor)',
+])
 const compiledWith = (abi) => ({ abi, deployedBytecode: '0x6000', immutableReferences: {} })
+const currentController = { storageLayout: deployed, immutables: {}, ...interfaceOf(CONTROLLER_ABI) }
+const without = (signature) => CONTROLLER_ABI.filter((item) => item.name !== signature.split('(')[0])
 
 test('an identical rebuild is accepted', () => {
-  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, { storageLayout: deployed, immutables: {} }, []), [])
+  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, currentController, []), [])
 })
+
+for (const [kind, signature] of [['function', 'setSponsor(address)'], ['event', 'SponsorChanged(address)']]) {
+  test(`a candidate without the ${kind} ${signature} of the current implementation is refused`, () => {
+    assert.deepEqual(artifactFailures(compiledWith(without(signature)), new Map(), deployed, currentController, []), [
+      `it lacks the ${kind} ${signature} of the current implementation`,
+    ])
+  })
+
+  test(`a candidate without the ${kind} ${signature}, named in INTENDED, is accepted`, () => {
+    assert.deepEqual(artifactFailures(compiledWith(without(signature)), new Map(), deployed, currentController, [signature]), [])
+  })
+}
 
 test('a variable appended in place of the first slot of the trailing __gap is accepted', () => {
   const appended = [...prefix, controller('nextSponsor', 55, 0, address), controller('__gap', 56, 0, gap(42))]
@@ -188,7 +206,7 @@ test('a different trustedETHController named as an intended change is accepted, 
 })
 
 const withoutController = { ...resolver, immutableReferences: { 11: resolver.immutableReferences[11], 12: resolver.immutableReferences[12], 14: resolver.immutableReferences[14] } }
-const currentResolver = { storageLayout: [], immutables: current }
+const currentResolver = { storageLayout: [], immutables: current, functions: {}, events: {} }
 
 test('a resolver candidate without trustedETHController is refused', () => {
   assert.deepEqual(artifactFailures(withoutController, immutableNames, [], currentResolver, []), [
@@ -202,7 +220,7 @@ test('a resolver candidate without trustedETHController, named as an intended ch
 
 test('an intended change of an immutable that neither implementation has is refused', () => {
   assert.deepEqual(artifactFailures(resolver, immutableNames, [], currentResolver, ['controller']), [
-    'neither it nor the current implementation has an immutable named controller',
+    'INTENDED names controller, neither an immutable nor a function or event of the current implementation',
   ])
 })
 

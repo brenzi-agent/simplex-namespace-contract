@@ -30,8 +30,8 @@ import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, TLD, TRANSPARENT_PROXY, UPGRADEABLE, VERIFICATION_PATH,
-  artifact, constructorArgs, immutableNames, immutablesIn, initializerData, mainnetClient, proxySlots, requireEnv,
-  storageLayout,
+  artifact, constructorArgs, immutableNames, immutablesIn, initializerData, interfaceOf, mainnetClient, proxySlots,
+  requireEnv, storageLayout,
 } from './stack.mjs'
 
 const target = (path, address, args) => ({
@@ -56,6 +56,7 @@ export async function assembleVerification({ client, addresses, deployer, adminS
       ...target(definition.artifact, implementation, definition.args(addresses, setup)),
       storageLayout: storageLayout(compiled),
       immutables: immutablesIn(compiled, immutableNames(compiled), await client.getCode({ address: implementation })),
+      ...interfaceOf(compiled.abi),
     }
     contracts[`${name}Proxy`] = target(TRANSPARENT_PROXY, proxy,
       [implementation, adminSafe, initializerData(name, addresses, setup)])

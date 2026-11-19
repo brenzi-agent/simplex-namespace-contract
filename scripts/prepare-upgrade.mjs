@@ -12,8 +12,8 @@ import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
 import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, PROXY_ADMIN_ABI, REPO_ROOT, TLD, UPGRADEABLE,
-  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames, immutablesIn, mainnetClient,
-  placeImmutables, proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
+  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames, immutablesIn,
+  interfaceOf, mainnetClient, placeImmutables, proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -87,16 +87,32 @@ export function slotFailures(bytecode) {
     .map(([which]) => `its bytecode contains the ERC-1967 ${which} slot`)
 }
 
+export function droppedInterface(current, abi) {
+  const next = interfaceOf(abi)
+  return Object.entries({ functions: 'function', events: 'event' }).flatMap(([field, kind]) =>
+    Object.entries(current[field])
+      .filter(([selector]) => !Object.hasOwn(next[field], selector))
+      .map(([, signature]) => ({ kind, signature })))
+}
+
 export function artifactFailures({ abi, deployedBytecode, immutableReferences }, names, layout, current, intended) {
   const immutables = Object.keys(immutableReferences).map((id) => names.get(Number(id)))
+  const nameable = new Set([
+    ...immutables,
+    ...Object.keys(current.immutables),
+    ...Object.values(current.functions),
+    ...Object.values(current.events),
+  ])
   return [
     ...layoutFailures(current.storageLayout, layout),
     ...interfaceFailures(abi),
     ...slotFailures(deployedBytecode),
     ...Object.keys(current.immutables).filter((name) => !immutables.includes(name) && !intended.includes(name))
       .map((name) => `it has no immutable named ${name}, which the current implementation holds as ${current.immutables[name]}`),
-    ...intended.filter((name) => !immutables.includes(name) && !Object.hasOwn(current.immutables, name))
-      .map((name) => `neither it nor the current implementation has an immutable named ${name}`),
+    ...droppedInterface(current, abi).filter(({ signature }) => !intended.includes(signature))
+      .map(({ kind, signature }) => `it lacks the ${kind} ${signature} of the current implementation`),
+    ...intended.filter((name) => !nameable.has(name))
+      .map((name) => `INTENDED names ${name}, neither an immutable nor a function or event of the current implementation`),
   ]
 }
 
@@ -111,7 +127,8 @@ export function immutableReview(compiled, names, code, current, own, intended) {
         .map((name) => `its immutable ${name} is ${found[name]}, expected ${expected[name] ?? 'none: the current implementation has no such immutable'}`),
       ...(code === placeImmutables(compiled, names, found) ? [] : ['its runtime code differs from the artifact outside its immutables']),
     ],
-    changes: intended.map((name) => ({ name, current: current[name], next: found[name] })),
+    changes: intended.filter((name) => Object.hasOwn(current, name) || Object.hasOwn(found, name))
+      .map((name) => ({ name, current: current[name], next: found[name] })),
   }
 }
 
@@ -212,7 +229,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const admin = await checkedProxyAdmin(client, addresses, verification, name)
   if (admin.refused) return admin
   const { current } = admin
-  const unrecorded = ['storageLayout', 'immutables'].filter((field) => !current[field])
+  const unrecorded = ['storageLayout', 'immutables', 'functions', 'events'].filter((field) => !current[field])
   if (unrecorded.length) return refusal([`the entry of ${admin.implementation} records no ${unrecorded.join(' and no ')}`])
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
@@ -246,12 +263,14 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
     candidate,
     data,
     changes,
+    removed: droppedInterface(current, compiled.abi),
     entry: {
       address: candidate,
       artifact: definition.artifact,
       constructorArgs: constructorArgs(compiled.abi, args),
       storageLayout: layout,
       immutables: immutablesIn(compiled, names, code),
+      ...interfaceOf(compiled.abi),
       buildInfoId: compiled.buildInfoId,
     },
   })
@@ -305,10 +324,11 @@ const ACTIONS = {
     if (prepared.refused) return prepared
     verification.contracts[`${name}@${prepared.candidate}`] = { ...prepared.entry, ensContractsCommit: source.commit }
     writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
-    console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the current immutables`)
+    console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout, the current immutables and the current interface`)
     for (const { name: immutable, current, next } of prepared.changes) {
       console.log(`  intended change of ${immutable}: ${current ?? 'none'} → ${next ?? 'none'}`)
     }
+    for (const { kind, signature } of prepared.removed) console.log(`  intended removal of the ${kind} ${signature}`)
     console.log(`  upgradeAndCall from the ProxyAdmin owner ${prepared.owner} succeeds in a simulation`)
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
     return accepted({ target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, prepared.data] })
