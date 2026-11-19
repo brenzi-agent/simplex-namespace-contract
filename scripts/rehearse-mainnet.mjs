@@ -246,16 +246,13 @@ async function main() {
     const withData = (signature, args = []) => prepareUpgrade(dry, client, 'SimplexController', addresses, verification,
       account.address, { call: { signature, args } })
     const missing = await withData('migrate(uint256)', [1])
-    expect('data naming a function the candidate lacks is refused', missing.refused?.join('; ') === 'it has no function migrate(uint256)',
-      missing.refused?.join('; '))
-    const ownerOnly = await withData('setDefaultResolver(address)', [STRANGER])
-    expect('data that reverts with the ProxyAdmin as caller is refused by the simulation',
-      Boolean(ownerOnly.refused?.some((failure) => failure.includes(' reverts: '))), ownerOnly.refused?.join('; '))
-    const callable = await withData('owner()')
-    expect('data the ProxyAdmin can call is accepted', !callable.refused, callable.refused?.join('; ') ?? callable.data)
-    if (!callable.refused) await upgrade(callable)
-    const afterData = await readBackTwo(client, addresses, inputs, account.address)
-    expect('run 2 read-back passes after the upgrade with data', afterData.length === 0, afterData.join(', '))
+    expect('data naming a function the candidate lacks is refused',
+      Boolean(missing.refused?.includes('it has no function migrate(uint256)')), missing.refused?.join('; '))
+    const unguarded = await withData('owner()')
+    expect('data for a candidate without a _proxyAdmin immutable is refused before its deployment',
+      Boolean(unguarded.refused?.some((failure) => failure.startsWith('DATA owner() requires an immutable _proxyAdmin')))
+        && unguarded.candidate === undefined,
+      unguarded.refused?.join('; '))
 
     console.log(`\n=== Freezes and transfers address the ProxyAdmin of the contract they name ===`)
     for (const [name, { key }] of Object.entries(UPGRADEABLE)) {

@@ -25,12 +25,14 @@ const PROXY_ADMIN_ABI = parseAbi([
   'function transferOwnership(address newOwner)',
   'function upgradeAndCall(address proxy, address implementation, bytes data) payable',
 ])
-const PROXY_ADMIN_PLACEHOLDER = 'proxyAdmin'
+const PROXY_ADMIN_NAME = '_proxyAdmin'
 
 const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
 const endSlot = ({ slot, type }) => BigInt(slot) + BigInt(type.numberOfBytes) / 32n
 const place = ({ slot, offset, type }) => `slot ${slot}, offset ${offset}, ${type.label}`
+const follows = (variable, end) =>
+  BigInt(variable.slot) > BigInt(end.slot) || (variable.slot === end.slot && variable.offset > end.offset)
 const prefixOf = (current = [], next = []) => current.every((value, i) => next[i] === value)
 const samePart = (current, next) => (current === undefined ? next === undefined : next !== undefined && sameType(current, next))
 const sameMembers = (current = [], next = []) => current.length === next.length && current.every((member, i) =>
@@ -49,8 +51,15 @@ function sameType(current, next) {
 
 export function layoutFailures(current, candidate) {
   const gap = isGap(current.at(-1)) ? current.at(-1) : undefined
+  const kept = gap ? current.slice(0, -1) : current
   const byName = new Map(candidate.map((variable) => [qualified(variable), variable]))
-  const moved = (gap ? current.slice(0, -1) : current).flatMap((variable) => {
+  const known = new Set(current.map(qualified))
+  const end = kept.at(-1)
+  const inserted = end
+    ? candidate.filter((variable) => !known.has(qualified(variable)) && !follows(variable, end))
+      .map((variable) => `${qualified(variable)} is new at ${place(variable)}, inside the current layout, which ends at ${place(end)}`)
+    : []
+  const moved = kept.flatMap((variable) => {
     const next = byName.get(qualified(variable))
     if (!next) return [`${qualified(variable)} is gone`]
     if (place(next) !== place(variable)) return [`${qualified(variable)} changed from ${place(variable)} to ${place(next)}`]
@@ -62,7 +71,7 @@ export function layoutFailures(current, candidate) {
   const gapMoved = gap && !(isGap(last) && qualified(last) === qualified(gap) && endSlot(last) === endSlot(gap))
     ? [`the candidate does not end with ${qualified(gap)} ending at slot ${endSlot(gap)}`]
     : []
-  return [...moved, ...gapMoved]
+  return [...moved, ...inserted, ...gapMoved]
 }
 
 export function interfaceFailures(abi) {
@@ -113,8 +122,15 @@ export function ownImmutables(name, addresses, deployer, candidate, proxyAdmin) 
   const fresh = definition.immutables(addresses, { tld: TLD, deployer, self: candidate })
   return {
     ...Object.fromEntries((definition.ownImmutables ?? []).map((immutable) => [immutable, fresh[immutable]])),
-    _proxyAdmin: proxyAdmin,
+    [PROXY_ADMIN_NAME]: proxyAdmin,
   }
+}
+
+export function dataGuardFailures({ immutableReferences }, names, call) {
+  const guarded = Object.keys(immutableReferences).some((id) => names.get(Number(id)) === PROXY_ADMIN_NAME)
+  return call && !guarded
+    ? [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_NAME}, which the candidate lacks: its data function would stay callable by anyone`]
+    : []
 }
 
 export function upgradeData(abi, call) {
@@ -130,12 +146,19 @@ export function upgradeData(abi, call) {
   }
 }
 
-function constructorFailures(abi, args) {
+export function candidateArgs(abi, given, proxyAdmin) {
+  const inputs = abi.find(({ type }) => type === 'constructor')?.inputs ?? []
+  const at = inputs.findIndex(({ name }) => name === PROXY_ADMIN_NAME)
+  const complete = given.length === inputs.length
+  if (at !== -1 && complete && String(given[at]).toLowerCase() !== proxyAdmin.toLowerCase()) {
+    return { refused: [`CTOR_ARGS sets ${PROXY_ADMIN_NAME} to ${given[at]}, not the proxy's ProxyAdmin ${proxyAdmin}`] }
+  }
+  const args = at !== -1 && !complete ? given.toSpliced(at, 0, proxyAdmin) : given
   try {
     constructorArgs(abi, args)
-    return []
+    return { args }
   } catch (error) {
-    return [`CTOR_ARGS ${JSON.stringify(args)} do not encode for its constructor: ${error.shortMessage ?? error.message}`]
+    return { refused: [`the constructor arguments ${JSON.stringify(args)} do not encode: ${error.shortMessage ?? error.message}`] }
   }
 }
 
@@ -190,13 +213,14 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const args = (requestedArgs ?? definition.args(addresses, { tld: TLD }))
-    .map((arg) => (arg === PROXY_ADMIN_PLACEHOLDER ? admin.proxyAdmin : arg))
-  const { data, refused: undecodable = [] } = upgradeData(compiled.abi, call)
+  const { args, refused: argsFailures = [] } =
+    candidateArgs(compiled.abi, requestedArgs ?? definition.args(addresses, { tld: TLD }), admin.proxyAdmin)
+  const { data, refused: dataFailures = [] } = upgradeData(compiled.abi, call)
   const refused = [
     ...artifactFailures(compiled, names, layout, current, intended),
-    ...constructorFailures(compiled.abi, args),
-    ...undecodable,
+    ...argsFailures,
+    ...dataFailures,
+    ...dataGuardFailures(compiled, names, call),
   ]
   if (refused.length) return { refused }
 
