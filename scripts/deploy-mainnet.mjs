@@ -103,6 +103,11 @@ const LOG_RANGE = 10_000n
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
+const v1Files = [
+  v1AddressesPath,
+  join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.journal.jsonl`),
+  join(REPO_ROOT, `verification.mainnet.${TLD}-v1.json`),
+]
 
 /// RFC 4180: a quoted field may hold commas, line breaks and doubled quotes.
 function parseCsv(text) {
@@ -199,10 +204,11 @@ function loadCommunityNames(path) {
 }
 
 function loadV1Addresses() {
-  if (!existsSync(v1AddressesPath)) {
+  const missing = v1Files.filter((path) => !existsSync(path))
+  if (missing.length) {
     console.error(
-      `${v1AddressesPath} is missing. Rename the v1 addresses file, journal and verification\n` +
-        `  file to *.${TLD}-v1.* first (docs/plans/upgradeable-stack.md, section 9).`,
+      `${missing.join(', ')} missing. Rename the v1 addresses file, journal and verification file\n` +
+        `  to *.${TLD}-v1.* first: step 2 of docs/plans/upgradeable-stack.md, section 6.`,
     )
     process.exit(1)
   }
