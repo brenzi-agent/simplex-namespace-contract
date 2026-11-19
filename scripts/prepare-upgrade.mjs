@@ -30,6 +30,21 @@ const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
 const endSlot = ({ slot, type }) => BigInt(slot) + BigInt(type.numberOfBytes) / 32n
 const place = ({ slot, offset, type }) => `slot ${slot}, offset ${offset}, ${type.label}`
+const prefixOf = (current = [], next = []) => current.every((value, i) => next[i] === value)
+const samePart = (current, next) => (current === undefined ? next === undefined : next !== undefined && sameType(current, next))
+const sameMembers = (current = [], next = []) => current.length === next.length && current.every((member, i) =>
+  member.label === next[i].label && place(member) === place(next[i]) && sameType(member.type, next[i].type))
+
+function sameType(current, next) {
+  return current.label === next.label &&
+    current.encoding === next.encoding &&
+    current.numberOfBytes === next.numberOfBytes &&
+    prefixOf(current.enumValues, next.enumValues) &&
+    sameMembers(current.members, next.members) &&
+    samePart(current.key, next.key) &&
+    samePart(current.value, next.value) &&
+    samePart(current.base, next.base)
+}
 
 export function layoutFailures(current, candidate) {
   const gap = isGap(current.at(-1)) ? current.at(-1) : undefined
@@ -38,7 +53,7 @@ export function layoutFailures(current, candidate) {
     const next = byName.get(qualified(variable))
     if (!next) return [`${qualified(variable)} is gone`]
     if (place(next) !== place(variable)) return [`${qualified(variable)} changed from ${place(variable)} to ${place(next)}`]
-    return JSON.stringify(next.type) === JSON.stringify(variable.type)
+    return sameType(variable.type, next.type)
       ? []
       : [`${qualified(variable)}: the layout inside ${variable.type.label} changed`]
   })
