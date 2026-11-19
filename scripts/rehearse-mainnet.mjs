@@ -216,26 +216,46 @@ async function main() {
     console.log(`\n=== prepare-upgrade and a resolver that trusts another controller ===`)
     const verification = await assembleVerification({ client, addresses, deployer: account.address, adminSafe: admin })
     const elsewhere = { ...addresses, ETHRegistrarController: STRANGER }
-    const unnamed = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address, [])
+    const unnamed = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address)
     expect('the change of trustedETHController is refused when it is not named',
       Boolean(unnamed.refused?.some((failure) => failure.includes('trustedETHController'))), unnamed.refused?.join('; '))
     const named = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address,
-      ['trustedETHController'])
+      { intended: ['trustedETHController'] })
     expect('the change of trustedETHController is accepted when it is named, with both values',
       !named.refused && named.changes.length === 1, named.refused?.join('; ') ?? JSON.stringify(named.changes))
 
+    const upgrade = async (prepared) => {
+      verification.contracts[`${prepared.name}@${prepared.candidate}`] = prepared.entry
+      await sendAs(admin, prepared.proxyAdmin, artifact(PROXY_ADMIN_ARTIFACT).abi, 'upgradeAndCall',
+        [prepared.proxy, prepared.candidate, prepared.data])
+      const { implementation } = await proxySlots(client, prepared.proxy)
+      expect(`${prepared.name} proxy upgraded through its ProxyAdmin with data ${prepared.data}`,
+        implementation.toLowerCase() === prepared.candidate.toLowerCase(), implementation)
+    }
+
     console.log(`\n=== prepare-upgrade accepts an identical rebuild, and the admin Safe upgrades ===`)
     for (const name of Object.keys(UPGRADEABLE)) {
-      const prepared = await prepareUpgrade(dry, client, name, addresses, verification, account.address, [])
+      const prepared = await prepareUpgrade(dry, client, name, addresses, verification, account.address)
       expect(`${name} candidate accepted`, !prepared.refused, prepared.refused?.join('; ') ?? prepared.candidate)
-      if (prepared.refused) continue
-      await sendAs(admin, prepared.proxyAdmin, artifact(PROXY_ADMIN_ARTIFACT).abi, 'upgradeAndCall', [prepared.proxy, prepared.candidate, '0x'])
-      const { implementation } = await proxySlots(client, prepared.proxy)
-      expect(`${name} proxy upgraded through its ProxyAdmin`,
-        implementation.toLowerCase() === prepared.candidate.toLowerCase(), implementation)
+      if (!prepared.refused) await upgrade(prepared)
     }
     const afterUpgrades = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes after the upgrades', afterUpgrades.length === 0, afterUpgrades.join(', '))
+
+    console.log(`\n=== prepare-upgrade with upgrade data ===`)
+    const withData = (signature, args = []) => prepareUpgrade(dry, client, 'SimplexController', addresses, verification,
+      account.address, { call: { signature, args } })
+    const missing = await withData('migrate(uint256)', [1])
+    expect('data naming a function the candidate lacks is refused', missing.refused?.join('; ') === 'it has no function migrate(uint256)',
+      missing.refused?.join('; '))
+    const ownerOnly = await withData('setDefaultResolver(address)', [STRANGER])
+    expect('data that reverts with the ProxyAdmin as caller is refused by the simulation',
+      Boolean(ownerOnly.refused?.some((failure) => failure.includes(' reverts: '))), ownerOnly.refused?.join('; '))
+    const callable = await withData('owner()')
+    expect('data the ProxyAdmin can call is accepted', !callable.refused, callable.refused?.join('; ') ?? callable.data)
+    if (!callable.refused) await upgrade(callable)
+    const afterData = await readBackTwo(client, addresses, inputs, account.address)
+    expect('run 2 read-back passes after the upgrade with data', afterData.length === 0, afterData.join(', '))
 
     console.log(`\n=== Freezes and transfers address the ProxyAdmin of the contract they name ===`)
     for (const [name, { key }] of Object.entries(UPGRADEABLE)) {

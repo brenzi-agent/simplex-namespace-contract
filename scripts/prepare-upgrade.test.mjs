@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
+import { ContractFunctionRevertedError, encodeFunctionData, keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
 import {
-  artifactFailures, checkedProxyAdmin, immutableReview, interfaceFailures, layoutFailures, slotFailures, transferCall,
+  artifactFailures, checkedProxyAdmin, immutableReview, interfaceFailures, layoutFailures, ownImmutables, slotFailures,
+  transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
 import {
   ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, immutablesIn, placeImmutables, proxyAdminOf,
@@ -277,4 +278,46 @@ test('a transfer to a timelock that passes its check addresses the ProxyAdmin of
   const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, governance, 'SimplexController', 'timelock', OTHER)
   assert.deepEqual([call.target.proxyAdmin, call.functionName, call.args],
     [proxyAdminOf(deployment.ETHRegistrarController), 'transferOwnership', [TIMELOCK]])
+})
+
+const MIGRATION_ABI = parseAbi(['function migrate(uint256 version)', 'function owner() view returns (address)'])
+
+test('upgrade data is encoded for a function of the candidate', () => {
+  assert.deepEqual(upgradeData(MIGRATION_ABI, { signature: 'migrate(uint256)', args: ['42'] }),
+    { data: encodeFunctionData({ abi: MIGRATION_ABI, functionName: 'migrate', args: [42n] }) })
+})
+
+test('upgrade data for a function the candidate lacks is refused', () => {
+  assert.deepEqual(upgradeData(MIGRATION_ABI, { signature: 'migrate(uint8)', args: [1] }),
+    { refused: ['it has no function migrate(uint8)'] })
+})
+
+const guarded = {
+  contractName: 'SimplexNamePolicy',
+  abi: [],
+  deployedBytecode: `0x${PUSH32}00`,
+  immutableReferences: { 21: [{ start: 1, length: 32 }] },
+}
+const guardedNames = new Map([[21, '_proxyAdmin']])
+
+test("a _proxyAdmin immutable other than the proxy's ProxyAdmin is refused, also when named as an intended change", () => {
+  const proxyAdmin = proxyAdminOf(deployment.SimplexNamePolicy)
+  const code = placeImmutables(guarded, guardedNames, { _proxyAdmin: OTHER })
+  const own = ownImmutables('SimplexNamePolicy', deployment, ADMIN_SAFE, OTHER, proxyAdmin)
+  assert.deepEqual(immutableReview(guarded, guardedNames, code, {}, own, ['_proxyAdmin']).failures, [
+    `its immutable _proxyAdmin is ${word(OTHER)}, expected ${proxyAdmin}`,
+  ])
+})
+
+test('an upgradeAndCall whose simulation reverts is refused', async () => {
+  const target = { proxy: deployment.SimplexNamePolicy, proxyAdmin: proxyAdminOf(deployment.SimplexNamePolicy), owner: ADMIN_SAFE }
+  const client = {
+    simulateContract: async () => {
+      throw new ContractFunctionRevertedError({ abi: [], functionName: 'upgradeAndCall', message: 'not the ProxyAdmin' })
+    },
+  }
+  assert.deepEqual(await upgradeCallFailures(client, target, OTHER, '0x8fd3ab80'), [
+    `upgradeAndCall(${target.proxy}, ${OTHER}, 0x8fd3ab80) from ${ADMIN_SAFE} reverts: ` +
+      'The contract function "upgradeAndCall" reverted with the following reason: not the ProxyAdmin',
+  ])
 })
