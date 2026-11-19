@@ -209,15 +209,18 @@ export function assertBuildFresh() {
   console.log('  build is current')
 }
 
+const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+
+export const ensContractsHead = () => git(ENS_CONTRACTS_DIR, 'rev-parse', 'HEAD')
+
 export function assertTaggedSource(tag) {
-  const git = (...args) => execFileSync('git', ['-C', ENS_CONTRACTS_DIR, ...args], { encoding: 'utf8' }).trim()
-  const commit = git('rev-parse', 'HEAD')
-  const tags = git('tag', '--points-at', 'HEAD').split('\n').filter(Boolean)
+  const commit = ensContractsHead()
+  const tags = git(ENS_CONTRACTS_DIR, 'tag', '--points-at', 'HEAD').split('\n').filter(Boolean)
   if (tag ? !tags.includes(tag) : tags.length === 0) {
     console.error(`ens-contracts is at ${commit}, which ${tag ? `the tag ${tag} does not name` : 'no tag names'}: check out the tagged commit to deploy, and fetch its tag.`)
     process.exit(1)
   }
-  const changes = git('status', '--porcelain')
+  const changes = git(ENS_CONTRACTS_DIR, 'status', '--porcelain')
   if (changes) {
     console.error(`ens-contracts has changes outside the commit ${commit}:\n${changes}`)
     process.exit(1)

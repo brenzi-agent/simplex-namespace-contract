@@ -30,15 +30,9 @@ import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, SOURCE_TAG, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames, immutablesIn,
-  initializerData, interfaceOf, mainnetClient, placeImmutables, proxySlots, requireEnv, storageLayout,
+  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, ensContractsHead, immutableNames,
+  immutablesIn, initializerData, interfaceOf, mainnetClient, placeImmutables, proxySlots, requireEnv, storageLayout,
 } from './stack.mjs'
-
-const target = (path, address, args) => ({
-  address,
-  artifact: path,
-  constructorArgs: constructorArgs(artifact(path).abi, args),
-})
 
 /**
  * Given the deployment addresses, the deploy key and the admin Safe, return the
@@ -46,6 +40,11 @@ const target = (path, address, args) => ({
  * where every input is already in scope.
  */
 export async function assembleVerification({ client, addresses, deployer, adminSafe }) {
+  const ensContractsCommit = ensContractsHead()
+  const target = (path, address, args) => {
+    const { abi, buildInfoId } = artifact(path)
+    return { address, artifact: path, constructorArgs: constructorArgs(abi, args), buildInfoId, ensContractsCommit }
+  }
   const setup = { tld: TLD, deployer, chainlinkEthUsd: addresses.DummyOracle }
   const contracts = {}
   for (const [name, definition] of Object.entries(UPGRADEABLE)) {
