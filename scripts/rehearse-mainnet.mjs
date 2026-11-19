@@ -58,12 +58,13 @@ async function main() {
   const fork = await spawnHardhatFork({ mainnetRpcUrl: rpcUrl, port: 18545, ensContractsDir: ENS_CONTRACTS_DIR })
   try {
     const chain = { ...mainnet, id: fork.chainId }
-    const client = createPublicClient({ chain, transport: http(fork.url, { timeout: 120_000 }) })
+    const transport = http(fork.url, { timeout: 120_000 })
+    const client = createPublicClient({ chain, transport })
     const fund = (address) => fundOnFork({ forkUrl: fork.url, address, weiHex: toHex(parseEther('1000')) })
     const sendAs = async (from, address, abi, functionName, args = []) => {
       await client.request({ method: 'hardhat_impersonateAccount', params: [from] })
       await fund(from)
-      const wallet = createWalletClient({ chain, transport: http(fork.url), account: from })
+      const wallet = createWalletClient({ chain, transport, account: from })
       const receipt = await client.waitForTransactionReceipt({
         hash: await wallet.writeContract({ address, abi, functionName, args }),
       })
@@ -122,7 +123,7 @@ async function main() {
 
     const journalDir = mkdtempSync(join(tmpdir(), 'rehearsal-'))
     const journalPath = join(journalDir, 'journal.jsonl')
-    const walletClient = createWalletClient({ chain, transport: http(fork.url), account })
+    const walletClient = createWalletClient({ chain, transport, account })
     const realRunner = () => createWaitForBaseRunner({
       publicClient: client, walletClient, account,
       maxBaseFeeWei: parseGwei('1000'), bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
