@@ -23,8 +23,15 @@ const V1_ABI = parseAbi([
   'function acceptOwnership()',
 ])
 const SPONSOR_ABI = parseAbi(['function setRegistrarAllowance(address registrar, uint256 allowanceUSD)'])
+const FORK_TAIL = 6000
 
 class Stopped extends Error {}
+
+function causes(error) {
+  if (!(error instanceof Error)) return []
+  const code = error.code === undefined ? '' : ` ${error.code}`
+  return [`${error.name}${code}: ${error.shortMessage ?? error.message}`, ...causes(error.cause)]
+}
 
 const results = []
 function expect(what, ok, detail = '') {
@@ -198,6 +205,12 @@ async function main() {
     const v1Restored = await v1State()
     console.log(v1Restored)
     expect('v1 is in its state before step 7', JSON.stringify(v1Restored) === JSON.stringify(v1Before))
+  } catch (error) {
+    const { exit, stdout, stderr } = fork.state()
+    console.error(`\nThe fork ${exit ? `exited with code ${exit.code} and signal ${exit.signal}` : 'still runs'}.`)
+    console.error(`--- fork stderr, last ${FORK_TAIL} characters ---\n${stderr.slice(-FORK_TAIL) || '(empty)'}`)
+    console.error(`--- fork stdout, last ${FORK_TAIL} characters ---\n${stdout.slice(-FORK_TAIL) || '(empty)'}`)
+    throw error
   } finally {
     fork.stop()
   }
@@ -209,6 +222,7 @@ main().then(
   () => process.exit(0),
   (err) => {
     console.error(err)
+    console.error(`\nCauses:\n  ${causes(err).join('\n  ')}`)
     process.exit(1)
   },
 )

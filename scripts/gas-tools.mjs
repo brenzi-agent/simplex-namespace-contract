@@ -18,8 +18,9 @@
  *
  * Exports:
  *   spawnHardhatFork({mainnetRpcUrl, port, ensContractsDir})
- *     → { url, stop() } — spawns `npx hardhat node --fork`, waits for
- *       the port, returns the local URL and a stop function.
+ *     → { url, chainId, stop(), state() } — spawns `npx hardhat node`, waits
+ *       for the port, returns the local URL, the chain id, a stop function and
+ *       a function that returns the node's exit status, stdout and stderr.
  *
  *   fundOnFork({forkUrl, address, weiHex})
  *     → uses `hardhat_setBalance` so the deployer EOA can pay gas on the fork.
@@ -195,6 +196,8 @@ export async function spawnHardhatFork({ mainnetRpcUrl, port = 8546, ensContract
     },
   )
   proc.on('error', (e) => console.error('hardhat node spawn error:', e))
+  let exit
+  proc.on('exit', (code, signal) => { exit = { code, signal } })
   let stderr = ''
   let stdout = ''
   proc.stdout.on('data', (c) => { stdout += c.toString() })
@@ -222,7 +225,7 @@ export async function spawnHardhatFork({ mainnetRpcUrl, port = 8546, ensContract
         `--- hardhat stderr ---\n${stderr || '(empty)'}`,
     )
   }
-  return { url, chainId, stop }
+  return { url, chainId, stop, state: () => ({ exit, stdout, stderr }) }
 }
 
 export async function fundOnFork({ forkUrl, address, weiHex }) {
