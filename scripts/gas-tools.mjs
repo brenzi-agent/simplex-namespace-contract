@@ -312,7 +312,7 @@ export function createDryRunRunner({ forkUrl, forkChainId, account, alreadyDone 
       // For skipped (alreadyDone) steps, the address comes from elsewhere
       // — runDeploySequence resolves it. We just return a sentinel.
       if (!receipt) return { address: null, abi, _skipped: true }
-      return { address: receipt.contractAddress, abi }
+      return { address: receipt.contractAddress, abi, blockNumber: receipt.blockNumber }
     },
     write: async (contract, fn, args) => {
       const step = nextKey('write', fn)
@@ -384,6 +384,7 @@ export function createWaitForBaseRunner({
       ts: nowIso(), step, callDigest: digest,
       txHash: receipt.transactionHash,
       address: receipt.contractAddress || undefined,
+      blockNumber: receipt.blockNumber.toString(),
       gasUsed: receipt.gasUsed.toString(),
       effectiveGasPrice: receipt.effectiveGasPrice.toString(),
       costWei: cost.toString(),
@@ -596,7 +597,7 @@ export function createWaitForBaseRunner({
       const step = nextKey('deploy', name)
       const data = encodeDeployData({ abi, bytecode, args })
       const e = await runStep(step, { to: null, data })
-      return { address: e.address, abi }
+      return { address: e.address, abi, blockNumber: BigInt(e.blockNumber) }
     },
     write: async (contract, fn, args) => {
       const step = nextKey('write', fn)
