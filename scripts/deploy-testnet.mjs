@@ -168,9 +168,17 @@ async function main() {
   await write(baseRegistrar, 'addController', [controller.address])
   console.log('Controller wired up')
 
+  const settlementImpl = await deploy('SimplexSettlementImpl',
+    'simplex/SimplexSettlement.sol/SimplexSettlement.json',
+    [controller.address, baseRegistrar.address])
+  const settlementProxy = await deploy('SimplexSettlementProxy',
+    'simplex/SimplexSettlementProxy.sol/SimplexSettlementProxy.json',
+    [settlementImpl.address, '0x'])
+  await write(baseRegistrar, 'addController', [settlementProxy.address])
+
   const namePolicyImpl = await deploy('SimplexNamePolicyImpl',
     'simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
-    [controller.address, baseRegistrar.address])
+    [controller.address, baseRegistrar.address, settlementProxy.address])
   const namePolicyProxy = await deploy('SimplexNamePolicyProxy',
     'simplex/SimplexNamePolicyProxy.sol/SimplexNamePolicyProxy.json',
     [namePolicyImpl.address, '0x'])

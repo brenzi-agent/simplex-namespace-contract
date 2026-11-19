@@ -350,9 +350,17 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
 
   await write(baseRegistrar, 'addController', [controller.address])
 
+  const settlementImpl = await deploy('SimplexSettlementImpl',
+    'simplex/SimplexSettlement.sol/SimplexSettlement.json',
+    [controller.address, baseRegistrar.address])
+  const settlementProxy = await deploy('SimplexSettlementProxy',
+    'simplex/SimplexSettlementProxy.sol/SimplexSettlementProxy.json',
+    [settlementImpl.address, '0x'])
+  await write(baseRegistrar, 'addController', [settlementProxy.address])
+
   const namePolicyImpl = await deploy('SimplexNamePolicyImpl',
     'simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
-    [controller.address, baseRegistrar.address])
+    [controller.address, baseRegistrar.address, settlementProxy.address])
   const namePolicyProxy = await deploy('SimplexNamePolicyProxy',
     'simplex/SimplexNamePolicyProxy.sol/SimplexNamePolicyProxy.json',
     [namePolicyImpl.address, '0x'])
@@ -478,6 +486,8 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
     SimplexSponsor: sponsor.address,
     SimplexNamePolicy: namePolicy.address,
     SimplexNamePolicyImpl: namePolicyImpl.address,
+    SimplexSettlement: settlementProxy.address,
+    SimplexSettlementImpl: settlementImpl.address,
     [isTesting ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     // 3rd constructor arg of UniversalResolver — kept so verification
@@ -558,6 +568,14 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     () => read(registrar, [], ADDR, 'namePolicy'))
   await check('name policy is a controller on the registrar', 'true',
     () => read(registrar, ADDR, [{ type: 'bool' }], 'controllers', [addresses.SimplexNamePolicy]))
+  await check('settlement is a controller on the registrar', 'true',
+    () => read(registrar, ADDR, [{ type: 'bool' }], 'controllers', [addresses.SimplexSettlement]))
+  await check('name policy settlement', addresses.SimplexSettlement,
+    () => read(addresses.SimplexNamePolicy, [], ADDR, 'settlement'))
+  await check('settlement controller', controller,
+    () => read(addresses.SimplexSettlement, [], ADDR, 'controller'))
+  await check('settlement registrar', registrar,
+    () => read(addresses.SimplexSettlement, [], ADDR, 'registrar'))
   for (const [kind, { link, hash }] of Object.entries(terms)) {
     await check(`${kind} link`, link,
       () => read(addresses.SimplexNamePolicy, [], [{ type: 'string' }], `${kind}Link`))
@@ -658,10 +676,14 @@ async function verifyWiring(publicClient, addresses, handedOver) {
 
   await check('eth-usd.data.eth resolves to the ETH/USD feed', chainlinkEthUsd,
     () => read(addresses.PublicResolver, [{ type: 'bytes32' }], ADDR, 'addr', [namehash('eth-usd.data.eth')]))
+  const implementationOf = async (proxy) =>
+    getAddress(`0x${(await publicClient.getStorageAt({ address: proxy, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`)
   await check('controller implementation (ERC-1967 slot)', addresses.SimplexControllerImpl,
-    async () => getAddress(`0x${(await publicClient.getStorageAt({ address: controller, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`))
+    () => implementationOf(controller))
   await check('name policy implementation (ERC-1967 slot)', addresses.SimplexNamePolicyImpl,
-    async () => getAddress(`0x${(await publicClient.getStorageAt({ address: addresses.SimplexNamePolicy, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`))
+    () => implementationOf(addresses.SimplexNamePolicy))
+  await check('settlement implementation (ERC-1967 slot)', addresses.SimplexSettlementImpl,
+    () => implementationOf(addresses.SimplexSettlement))
 
   // Ownership. Until the admin accepts, the deploy key holds everything and the
   // admin is only proposed on the two Ownable2Step contracts; after the handover

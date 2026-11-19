@@ -43,6 +43,7 @@ const REPO_ROOT = join(__dirname, '..')
 const ARTIFACTS_ROOT = join(REPO_ROOT, 'ens-contracts', 'artifacts')
 
 const apiKey = process.env.ETHERSCAN_API_KEY
+const only = process.env.ONLY?.split(',')
 const network = process.env.NETWORK || 'sepolia'
 const tld = process.env.SIMPLEX_TLD || 'testing'
 const chainId = process.env.ETHERSCAN_CHAIN_ID || (network === 'mainnet' ? '1' : '11155111')
@@ -208,6 +209,7 @@ async function pollStatus(guid) {
 
 let failures = 0
 for (const t of TARGETS) {
+  if (only && !only.includes(t.label)) continue
   // Wrapper-free v3 leaves removed contracts (NameWrapper, DefaultReverseRegistrar,
   // legacy controllers) at the zero address — nothing is deployed there to verify,
   // and some of their artifacts no longer exist in ens-contracts. Skip them.
