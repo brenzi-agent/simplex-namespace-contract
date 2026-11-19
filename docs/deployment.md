@@ -612,7 +612,7 @@ run 1, so run this script once more after it to write the new ones back. This
 order saves the admin two transactions and leaves the upgrade with the deploy
 key, which holds every role until the handover.
 
-At ens-contracts `908bd43`, the pin of the upgrade below, the settlement is
+At ens-contracts `6f0335b`, the pin of the upgrade below, the settlement is
 taken by the constructor of `SimplexNamePolicy`, so `upgrade-holder-renewal.mjs`
 is run only from a checkout that pins ens-contracts `7ff8c37`, with its
 submodules. The upgrade below starts from the v1 implementations or from these,
