@@ -91,6 +91,14 @@ test('the same stored enum is accepted', () => {
   assert.deepEqual(layoutFailures(policyWith(REASONS), policyWith([...REASONS])), [])
 })
 
+test('a member appended to a stored enum is accepted', () => {
+  assert.deepEqual(layoutFailures(policyWith(REASONS), policyWith([...REASONS, 'Dispute'])), [])
+})
+
+test('a member removed from a stored enum is refused', () => {
+  assert.equal(layoutFailures(policyWith(REASONS), policyWith(REASONS.slice(0, -1))).length, 1)
+})
+
 test('a retyped state variable is refused', () => {
   const retyped = deployed.map((v) => (v.label === 'publicSalesOpen' ? { ...v, type: { ...uint256, numberOfBytes: '1', label: 'uint8' } } : v))
   assert.equal(layoutFailures(deployed, retyped).length, 1)
