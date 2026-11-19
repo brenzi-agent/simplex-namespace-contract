@@ -173,40 +173,46 @@ export async function upgradeCallFailures(client, { proxy, proxyAdmin, owner }, 
   }
 }
 
-export async function checkedProxyAdmin(client, addresses, name) {
+export async function checkedProxyAdmin(client, addresses, verification, name) {
   if (!Object.hasOwn(UPGRADEABLE, name)) {
     return refusal([`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`])
   }
-  const proxy = addresses[UPGRADEABLE[name].key]
+  const { key, artifact: path } = UPGRADEABLE[name]
+  const proxy = addresses[key]
   const { implementation, admin } = await proxySlots(client, proxy)
   if (admin !== proxyAdminOf(proxy)) {
     return refusal([`the admin slot of the ${name} proxy ${proxy} holds ${admin}, not ${proxyAdminOf(proxy)}`])
   }
+  const current = Object.values(verification.contracts).find((entry) =>
+    entry.address.toLowerCase() === implementation.toLowerCase() && entry.artifact === path)
+  if (!current) {
+    return refusal([`${VERIFICATION_PATH} records no ${path} at ${implementation}, the implementation of the ${name} proxy ${proxy}`])
+  }
   const owner = await client.readContract({ address: admin, abi: PROXY_ADMIN_ABI, functionName: 'owner' })
   return owner === zeroAddress
     ? refusal([`the ProxyAdmin ${admin} of ${name} is renounced`])
-    : accepted({ name, proxy, implementation, proxyAdmin: admin, owner })
+    : accepted({ name, proxy, implementation, proxyAdmin: admin, owner, current })
 }
 
-export async function transferCall(client, addresses, governance, name, nextName, deployer) {
+export async function transferCall(client, addresses, verification, governance, name, nextName) {
   const next = governance[nextName]
   if (next?.kind !== 'TimelockController') {
     return refusal([`NEXT must name a TimelockController entry of governance.mainnet.json, not ${nextName}`])
   }
-  const failures = await entryFailures(client, next, deployer)
+  const failures = await entryFailures(client, next, verification.deployer)
   if (failures.length) return refusal(failures.map((failure) => `${nextName} ${next.address} ${failure}`))
-  const target = await checkedProxyAdmin(client, addresses, name)
+  const target = await checkedProxyAdmin(client, addresses, verification, name)
   return target.refused ? target : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
 }
 
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, request = {}) {
   const { intended = [], constructorArgs: requestedArgs, call } = request
   const definition = UPGRADEABLE[name]
-  const admin = await checkedProxyAdmin(client, addresses, name)
+  const admin = await checkedProxyAdmin(client, addresses, verification, name)
   if (admin.refused) return admin
-  const current = Object.values(verification.contracts).find((entry) =>
-    entry.address.toLowerCase() === admin.implementation.toLowerCase() && entry.storageLayout && entry.immutables)
-  if (!current) throw new Error(`${VERIFICATION_PATH} does not record ${admin.implementation}, the implementation of ${name}`)
+  const { current } = admin
+  const unrecorded = ['storageLayout', 'immutables'].filter((field) => !current[field])
+  if (unrecorded.length) return refusal([`the entry of ${admin.implementation} records no ${unrecorded.join(' and no ')}`])
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
@@ -263,7 +269,7 @@ function jsonArrayEnv(name) {
 }
 
 const ACTIONS = {
-  upgrade: async (client, addresses, name) => {
+  upgrade: async (client, addresses, verification, name) => {
     const deployerKey = requireEnv('DEPLOYER_KEY')
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
     const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
@@ -276,7 +282,6 @@ const ACTIONS = {
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
     const source = assertTaggedSource()
     assertBuildFresh()
-    const verification = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
     const runner = createWaitForBaseRunner({
       publicClient: client, walletClient, account,
       maxBaseFeeWei: parseGwei(maxBaseFeeGwei),
@@ -307,14 +312,12 @@ const ACTIONS = {
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
     return accepted({ target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, prepared.data] })
   },
-  freeze: async (client, addresses, name) => {
-    const target = await checkedProxyAdmin(client, addresses, name)
+  freeze: async (client, addresses, verification, name) => {
+    const target = await checkedProxyAdmin(client, addresses, verification, name)
     return target.refused ? target : accepted({ target, functionName: 'renounceOwnership', args: [] })
   },
-  transfer: async (client, addresses, name) => {
-    const { deployer } = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
-    return transferCall(client, addresses, loadGovernance(), name, requireEnv('NEXT'), deployer)
-  },
+  transfer: (client, addresses, verification, name) =>
+    transferCall(client, addresses, verification, loadGovernance(), name, requireEnv('NEXT')),
 }
 
 async function main() {
@@ -324,7 +327,9 @@ async function main() {
     process.exit(1)
   }
   const client = await mainnetClient(requireEnv('MAINNET_RPC_URL'))
-  const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')), requireEnv('CONTRACT'))
+  const addresses = JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8'))
+  const verification = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
+  const call = await action(client, addresses, verification, requireEnv('CONTRACT'))
   if (call.refused) {
     console.error(`${process.env.ACTION} refused:`)
     for (const failure of call.failures) console.error(`  ✗ ${failure}`)

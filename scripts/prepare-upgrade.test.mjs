@@ -6,7 +6,8 @@ import {
   layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
 import {
-  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, immutablesIn, placeImmutables, proxyAdminOf,
+  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, VERIFICATION_PATH, immutablesIn, placeImmutables,
+  proxyAdminOf,
 } from './stack.mjs'
 
 const REGISTRY = '0x000000000000000000000000000000000000c0DE'
@@ -223,21 +224,36 @@ const chain = ({ adminOf = proxyAdminOf, owner = ADMIN_SAFE } = {}) => ({
   readContract: async () => owner,
 })
 
+const recorded = (names) => ({
+  deployer: OTHER,
+  contracts: Object.fromEntries(names.map((name) => [`${name}@${OTHER}`, { address: OTHER, artifact: UPGRADEABLE[name].artifact }])),
+})
+const verification = recorded(Object.keys(UPGRADEABLE))
+
 test('an unknown CONTRACT fails', async () => {
-  assert.deepEqual(await checkedProxyAdmin(chain(), deployment, 'ProxyAdmin'), {
+  assert.deepEqual(await checkedProxyAdmin(chain(), deployment, verification, 'ProxyAdmin'), {
     refused: true,
     failures: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ProxyAdmin`],
   })
 })
 
 test('a proxy whose admin slot is not its CREATE address at nonce 1 is refused', async () => {
-  const target = await checkedProxyAdmin(chain({ adminOf: () => OTHER }), deployment, 'SimplexResolver')
+  const target = await checkedProxyAdmin(chain({ adminOf: () => OTHER }), deployment, verification, 'SimplexResolver')
   assert.equal(target.refused, true)
   assert.match(target.failures.join('; '), /admin slot of the SimplexResolver proxy/)
 })
 
+test('a proxy whose implementation the verification file records for another contract is refused', async () => {
+  const target = await checkedProxyAdmin(chain(), deployment, recorded(['SubnameRegistrar']), 'SimplexResolver')
+  assert.deepEqual(target, {
+    refused: true,
+    failures: [`${VERIFICATION_PATH} records no ${UPGRADEABLE.SimplexResolver.artifact} at ${OTHER}, ` +
+      `the implementation of the SimplexResolver proxy ${deployment.PublicResolver}`],
+  })
+})
+
 test('a renounced ProxyAdmin is refused', async () => {
-  const target = await checkedProxyAdmin(chain({ owner: zeroAddress }), deployment, 'SimplexResolver')
+  const target = await checkedProxyAdmin(chain({ owner: zeroAddress }), deployment, verification, 'SimplexResolver')
   assert.equal(target.refused, true)
   assert.match(target.failures.join('; '), /is renounced/)
 })
@@ -276,7 +292,7 @@ const timelockChain = (code) => {
 }
 
 test('a transfer to a Safe entry is refused', async () => {
-  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, governance, 'SimplexController', 'adminSafe', OTHER)
+  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, verification, governance, 'SimplexController', 'adminSafe')
   assert.deepEqual(call, {
     refused: true,
     failures: ['NEXT must name a TimelockController entry of governance.mainnet.json, not adminSafe'],
@@ -284,13 +300,13 @@ test('a transfer to a Safe entry is refused', async () => {
 })
 
 test('a transfer to a timelock that fails its check is refused', async () => {
-  const call = await transferCall(timelockChain('0x6002'), deployment, governance, 'SimplexController', 'timelock', OTHER)
+  const call = await transferCall(timelockChain('0x6002'), deployment, verification, governance, 'SimplexController', 'timelock')
   assert.equal(call.refused, true)
   assert.match(call.failures.join('; '), /^timelock 0x0+7777 code hash is 0x[0-9a-f]{64}, expected /)
 })
 
 test('a transfer to a timelock that passes its check addresses the ProxyAdmin of the named contract', async () => {
-  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, governance, 'SimplexController', 'timelock', OTHER)
+  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, verification, governance, 'SimplexController', 'timelock')
   assert.deepEqual([call.refused, call.target.proxyAdmin, call.functionName, call.args],
     [false, proxyAdminOf(deployment.ETHRegistrarController), 'transferOwnership', [TIMELOCK]])
 })

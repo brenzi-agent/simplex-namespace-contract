@@ -259,12 +259,16 @@ async function main() {
 
     console.log(`\n=== Freezes and transfers address the ProxyAdmin of the contract they name ===`)
     for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
-      const target = await checkedProxyAdmin(client, addresses, name)
+      const target = await checkedProxyAdmin(client, addresses, verification, name)
       expect(`${name} names its proxy's ProxyAdmin`, !target.refused && target.proxyAdmin === proxyAdminOf(addresses[key]),
         outcome(target, () => `${target.proxyAdmin}, implementation ${target.implementation}`))
     }
-    const unknown = await checkedProxyAdmin(client, addresses, addresses.ETHRegistrarController)
+    const unknown = await checkedProxyAdmin(client, addresses, verification, addresses.ETHRegistrarController)
     expect('a proxy address given as CONTRACT is refused', unknown.refused, outcome(unknown))
+    const swapped = { ...addresses, PublicResolver: addresses.SubnameRegistrar, SubnameRegistrar: addresses.PublicResolver }
+    const redirected = await checkedProxyAdmin(client, swapped, verification, 'SimplexResolver')
+    expect('a freeze of the resolver through an addresses file with swapped keys is refused', redirected.refused,
+      outcome(redirected))
 
     console.log(`\n=== The deploy key restores v1 ===`)
     console.log(await v1State())
