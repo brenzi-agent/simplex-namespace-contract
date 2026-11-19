@@ -13,11 +13,26 @@ import { loadInputs, readBackTwo, runOne } from './deploy-mainnet.mjs'
 import { checkedProxyAdmin, prepareUpgrade } from './prepare-upgrade.mjs'
 import {
   ENS_CONTRACTS_DIR, IMMUTABLE, PROXY_ADMIN_ABI, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf,
-  proxySlots, requireEnv,
+  proxySlots, requireEnv, storageLayout,
 } from './stack.mjs'
 
 const SECTION_8_STEPS = 10
-const V1_RETIREMENT_STEPS = 4
+const SECTION_8_AND_V1_RETIREMENT = [
+  'write:transferOwnership',
+  'write:setOwner',
+  'write:setSubnodeOwner#6',
+  'write:setSubnodeOwner#7',
+  'deploy:Root',
+  'write:setController',
+  'write:transferOwnership#2',
+  'write:setOwner#2',
+  'write:transferOwnership#3',
+  'write:transferOwnership#4',
+  'write:removeController',
+  'write:removeController#2',
+  'write:transferOwnership#5',
+  'write:transferOwnership#6',
+]
 const STRANGER = '0x0000000000000000000000000000000000001234'
 const SPONSOR_ABI = parseAbi(['function setRegistrarAllowance(address registrar, uint256 allowanceUSD)'])
 const FORK_TAIL = 6000
@@ -163,22 +178,47 @@ async function main() {
     expect('the v1 retirement was not sent', JSON.stringify(await v1State()) === JSON.stringify(v1Before))
     const wiringSteps = dry.totals().perStep.length
     await client.request({ method: 'evm_revert', params: [clean] })
-    const unwired = await client.request({ method: 'evm_snapshot', params: [] })
 
-    console.log(`\n=== Run 1 with the admin Safe entry changed to threshold 3 after the last wiring step ===`)
-    const changing = { ...inputs, governance: { ...governance } }
-    let nonceAfterWiring
-    const changed = afterSteps(dryRunner(), wiringSteps, async () => {
-      nonceAfterWiring = await deployKeyNonce()
-      changing.governance.adminSafe = { ...governance.adminSafe, threshold: 3 }
-    })
-    const handOverRefused = await runOne(changed, client, changing, account.address).then(() => undefined, (e) => e.message)
-    expect('run 1 stops before its first transfer to the admin Safe',
-      handOverRefused === 'governance.mainnet.json does not match the chain: transferOwnership to the admin Safe is not sent',
-      handOverRefused)
-    expect('the deploy key sent no transaction of section 8', (await deployKeyNonce()) === nonceAfterWiring,
-      `${nonceAfterWiring} after the wiring`)
-    await client.request({ method: 'evm_revert', params: [unwired] })
+    const interrupted = async (steps, change, runInputs = inputs) => {
+      const snapshot = await client.request({ method: 'evm_snapshot', params: [] })
+      const dryRun = dryRunner()
+      const created = {}
+      let nonceAtChange
+      const runner = afterSteps({
+        deploy: async (name, ...rest) => {
+          const contract = await dryRun.deploy(name, ...rest)
+          created[name] = contract.address
+          return contract
+        },
+        write: dryRun.write,
+      }, steps, async () => {
+        await change(dryRun, created)
+        nonceAtChange = await deployKeyNonce()
+      })
+      const message = await runOne(runner, client, runInputs, account.address).then(() => undefined, (e) => e.message)
+      const unsent = (await deployKeyNonce()) === nonceAtChange
+      await client.request({ method: 'evm_revert', params: [snapshot] })
+      return { message, unsent }
+    }
+
+    for (const [step, call] of [[0, 'transferOwnership'], [2, 'setSubnodeOwner']]) {
+      console.log(`\n=== Run 1 with the admin Safe entry changed to threshold 3 after step ${step} of section 8 ===`)
+      const changing = { ...inputs, governance: { ...governance } }
+      const { message, unsent } = await interrupted(wiringSteps + step, () => {
+        changing.governance.adminSafe = { ...governance.adminSafe, threshold: 3 }
+      }, changing)
+      expect(`run 1 stops before ${call} to the admin Safe`,
+        message === `governance.mainnet.json does not match the chain: ${call} to the admin Safe is not sent`, message)
+      expect('the deploy key sent nothing after the change', unsent)
+    }
+
+    console.log(`\n=== Run 1 with a registrar owner other than the deploy key and the admin Safe ===`)
+    const foreign = await interrupted(wiringSteps, (dryRun, created) => dryRun.write(
+      { address: created.BaseRegistrarImplementationProxy, abi: artifact(UPGRADEABLE.BaseRegistrarImplementation.artifact).abi },
+      'transferOwnership', [STRANGER]))
+    expect('run 1 stops on the read-back', /run-1 read-back check\(s\) FAILED: .*registrar owner is the deploy key/.test(foreign.message ?? ''),
+      foreign.message)
+    expect('the deploy key sent nothing after the change', foreign.unsent)
 
     const journalDir = mkdtempSync(join(tmpdir(), 'rehearsal-'))
     const journalPath = join(journalDir, 'journal.jsonl')
@@ -198,14 +238,17 @@ async function main() {
     }
     for (let k = 1; k <= SECTION_8_STEPS; k++) {
       console.log(`\n=== Run 1, stopped after step ${k} of section 8 ===`)
-      const outcome = await runOne(stopAfter(realRunner(), wiringSteps + k), client, inputs, account.address)
+      const ending = await runOne(stopAfter(realRunner(), wiringSteps + k), client, inputs, account.address)
         .then(() => undefined, (e) => e)
-      expect(`run 1 stops after step ${k} of section 8`, outcome instanceof Stopped, outcome?.message)
+      expect(`run 1 stops after step ${k} of section 8`, ending instanceof Stopped, ending?.message)
       await sentOnce(wiringSteps + k)
     }
     console.log(`\n=== Run 1, resumed to its end ===`)
     const addresses = await runOne(realRunner(), client, inputs, account.address)
-    await sentOnce(wiringSteps + SECTION_8_STEPS + V1_RETIREMENT_STEPS)
+    await sentOnce(wiringSteps + SECTION_8_AND_V1_RETIREMENT.length)
+    const handOverSteps = loadJournal(journalPath).slice(wiringSteps).map(({ step }) => step)
+    expect('the journal holds section 8 and the v1 retirement in their order',
+      JSON.stringify(handOverSteps) === JSON.stringify(SECTION_8_AND_V1_RETIREMENT), handOverSteps.join(', '))
 
     console.log(`\n=== The guardian Safe sets the allowance, the admin Safe accepts ===`)
     await sendAs(governance.guardianSafe.address, addresses.SimplexSponsor, SPONSOR_ABI, 'setRegistrarAllowance',
@@ -218,6 +261,16 @@ async function main() {
 
     console.log(`\n=== prepare-upgrade and a resolver that trusts another controller ===`)
     const verification = await assembleVerification({ client, addresses, deployer: account.address, adminSafe: admin })
+    const creations = new Map(loadJournal(journalPath).filter(({ address }) => address)
+      .map(({ address, txHash }) => [address.toLowerCase(), txHash]))
+    const journalled = Object.entries(verification.contracts).filter(([, { address }]) => creations.has(address.toLowerCase()))
+    const unmatched = []
+    for (const [label, { address, artifact: path, constructorArgs }] of journalled) {
+      const { input } = await client.getTransaction({ hash: creations.get(address.toLowerCase()) })
+      if (input !== `${artifact(path).bytecode}${constructorArgs.slice(2)}`) unmatched.push(label)
+    }
+    expect(`the constructor arguments of the verification file equal the creation inputs of ${journalled.length} journalled deployments`,
+      journalled.length === creations.size && unmatched.length === 0, unmatched.join(', '))
     const elsewhere = { ...addresses, ETHRegistrarController: STRANGER }
     const unnamed = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address)
     expect('the change of trustedETHController is refused when it is not named',
@@ -244,6 +297,22 @@ async function main() {
     }
     const afterUpgrades = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes after the upgrades', afterUpgrades.length === 0, afterUpgrades.join(', '))
+
+    console.log(`\n=== prepare-upgrade and a candidate whose _initialized is not 255 ===`)
+    const { slot: initializedSlot } = storageLayout(artifact(UPGRADEABLE.SimplexController.artifact))
+      .find(({ label }) => label === '_initialized')
+    const opened = await prepareUpgrade({
+      deploy: async (...args) => {
+        const contract = await dry.deploy(...args)
+        await client.request({
+          method: 'hardhat_setStorageAt', params: [contract.address, toHex(BigInt(initializedSlot)), toHex(1n, { size: 32 })],
+        })
+        return contract
+      },
+      write: dry.write,
+    }, client, 'SimplexController', addresses, verification, account.address)
+    expect('a candidate whose _initialized is 1 is refused',
+      opened.refused && opened.failures.includes('its _initialized is 1, not 255'), outcome(opened))
 
     console.log(`\n=== prepare-upgrade with upgrade data ===`)
     const withData = (signature, args = []) => prepareUpgrade(dry, client, 'SimplexController', addresses, verification,
