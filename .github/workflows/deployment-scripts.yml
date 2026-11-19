@@ -97,10 +97,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - tld: testing
-            app: testing-app
-            repository: simplex-network/ens-app-v3
-            project: simplex
           - tld: simplex
             app: simplex-app
             repository: simplex-chat/simplex-domains-app-v3
