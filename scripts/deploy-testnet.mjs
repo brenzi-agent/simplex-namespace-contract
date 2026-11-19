@@ -325,6 +325,8 @@ async function main() {
     ETHRegistrarController: controller.address,
     SimplexSponsor: sponsor.address,
     SimplexNamePolicy: namePolicy.address,
+    SimplexSettlement: settlementProxy.address,
+    SimplexSettlementImpl: settlementImpl.address,
     [isTesting ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     // ChainLink feed (used in place of DummyOracle on Sepolia).

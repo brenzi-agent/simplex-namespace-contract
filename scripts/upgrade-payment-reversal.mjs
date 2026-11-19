@@ -18,12 +18,13 @@ import {
 import { mainnet } from 'viem/chains'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { execFileSync } from 'child_process'
-import { readFileSync, writeFileSync } from 'fs'
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import {
   analyzeAndConfirm, createDryRunRunner, createWaitForBaseRunner,
-  DEFAULTS, fundOnFork, loadJournal, spawnHardhatFork,
+  DEFAULTS, deploymentBlock, eventLogs, fundOnFork, loadJournal, spawnHardhatFork,
 } from './gas-tools.mjs'
 import { assembleVerification } from './build-verification.mjs'
 
@@ -33,12 +34,16 @@ const addressesPath = join(REPO_ROOT, 'deployments.mainnet.simplex.json')
 const verificationPath = join(REPO_ROOT, 'verification.mainnet.simplex.json')
 const journalPath = join(REPO_ROOT, 'deployments.mainnet.simplex.payment-reversal.journal.jsonl')
 const attemptsLogPath = join(REPO_ROOT, 'deployments.mainnet.simplex.payment-reversal.attempts.log')
+const PREVIOUS_COMMIT = '7ff8c3718f77c31d88705bff46fd08c6ca5848b5'
+const PREVIOUS_SOURCE = ['https://github.com/simplex-network/ens-contracts.git', 'pull/49/head']
+const ROLLBACK = 'SimplexControllerRollbackImpl'
 const IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
 const DAY = 86400n
 const YEAR = 365n * DAY
 const REVERSIBLE_DAYS = 180n
 const SETTLEMENT_WINDOW = 30n * DAY
-const [REVERSED_LABEL, SETTLED_LABEL] = ['reversed', 'settled'].map((use) => `card${use}${Date.now().toString(36)}`)
+const [REVERSED_LABEL, SETTLED_LABEL, FINAL_LABEL] = ['cardreversed', 'cardsettled', 'crypto']
+  .map((use) => `${use}${Date.now().toString(36)}`)
 const REHEARSAL_HOLDER = privateKeyToAccount(generatePrivateKey())
 const REHEARSAL_REGISTRAR = getAddress('0x000000000000000000000000000000000000c0de')
 const REHEARSAL_RECIPIENT = getAddress('0x000000000000000000000000000000000000beef')
@@ -74,22 +79,53 @@ for (const [name, value] of Object.entries({ DEPLOYER_KEY, MAINNET_RPC_URL, MAX_
 }
 const account = privateKeyToAccount(DEPLOYER_KEY)
 const maxBaseFeeWei = parseGwei(MAX_BASE_FEE_GWEI)
+const absoluteMaxBaseFeeWei = process.env.ABSOLUTE_MAX_BASE_FEE_GWEI
+  ? parseGwei(process.env.ABSOLUTE_MAX_BASE_FEE_GWEI)
+  : undefined
+const bumpAfterMs = (parseFloat(process.env.BUMP_AFTER_HOURS) || (DEFAULTS.BUMP_AFTER_MS / 3600000)) * 3600 * 1000
+const bumpPct = BigInt(process.env.BUMP_PCT || DEFAULTS.BUMP_PCT)
 const addresses = JSON.parse(readFileSync(addressesPath, 'utf8'))
 const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
 const controller = getAddress(addresses.ETHRegistrarController)
 const registrar = getAddress(addresses.BaseRegistrarImplementation)
 const namePolicy = getAddress(addresses.SimplexNamePolicy)
 
+function controllerBuildAt(commit) {
+  const git = (...args) => execFileSync('git', ['-C', ENS_CONTRACTS_DIR, ...args], { stdio: 'inherit' })
+  try {
+    execFileSync('git', ['-C', ENS_CONTRACTS_DIR, 'cat-file', '-e', `${commit}^{commit}`], { stdio: 'ignore' })
+  } catch {
+    git('fetch', ...PREVIOUS_SOURCE)
+  }
+  const parent = mkdtempSync(join(tmpdir(), 'ens-contracts-'))
+  const dir = join(parent, 'ens-contracts')
+  git('worktree', 'add', '--detach', dir, commit)
+  try {
+    symlinkSync(join(ENS_CONTRACTS_DIR, 'node_modules'), join(dir, 'node_modules'))
+    execFileSync('npx', ['hardhat', 'compile'], { cwd: dir, stdio: 'inherit' })
+    return JSON.parse(readFileSync(
+      join(dir, 'artifacts', 'contracts', 'simplex', 'SimplexController.sol', 'SimplexController.json'),
+      'utf8',
+    ))
+  } finally {
+    git('worktree', 'remove', '--force', dir)
+    rmSync(parent, { recursive: true, force: true })
+  }
+}
+
 execFileSync('npx', ['hardhat', 'compile'], { cwd: ENS_CONTRACTS_DIR, stdio: 'inherit' })
-const build = (...path) => JSON.parse(readFileSync(join(ENS_CONTRACTS_DIR, ...path), 'utf8'))
-const artifact = (dir, name) => build('artifacts', 'contracts', dir, `${name}.sol`, `${name}.json`)
+const artifact = (dir, name) => JSON.parse(readFileSync(
+  join(ENS_CONTRACTS_DIR, 'artifacts', 'contracts', dir, `${name}.sol`, `${name}.json`),
+  'utf8',
+))
 const CONTROLLER = artifact('simplex', 'SimplexController')
 const POLICY = artifact('simplex', 'SimplexNamePolicy')
 const SPONSOR = artifact('simplex', 'SimplexSponsor')
 const SETTLEMENT = artifact('simplex', 'SimplexSettlement')
 const SETTLEMENT_PROXY = artifact('simplex', 'SimplexSettlementProxy')
 const REGISTRAR = artifact('ethregistrar', 'BaseRegistrarImplementation')
-const PREVIOUS_CONTROLLER = build('test', 'simplex', 'fixtures', 'builds', '7ff8c37', 'SimplexController.json')
+const PREVIOUS_CONTROLLER = controllerBuildAt(PREVIOUS_COMMIT)
+const ALLOWANCE_SET = SPONSOR.abi.find((item) => item.type === 'event' && item.name === 'RegistrarAllowanceSet')
 const ERRORS = [CONTROLLER, POLICY, SPONSOR, SETTLEMENT, REGISTRAR]
   .flatMap(({ abi }) => abi.filter((item) => item.type === 'error'))
 const withErrors = (address, { abi }) => ({ address, abi: [...abi, ...ERRORS] })
@@ -122,8 +158,11 @@ const snapshot = (client) => Promise.all(PRESERVED.map(([contract, functionName,
 const implementationOf = async (client, proxy) =>
   getAddress(`0x${(await client.getStorageAt({ address: proxy, slot: IMPLEMENTATION_SLOT })).slice(-40)}`)
 
-const runtimeOf = async (client, address) =>
-  (await client.getCode({ address })).toLowerCase().replaceAll(address.slice(2).toLowerCase(), '')
+async function runtimeOf(client, address) {
+  const code = (await client.getCode({ address })).toLowerCase()
+  const metadata = (parseInt(code.slice(-4), 16) + 2) * 2
+  return code.slice(0, -metadata).replaceAll(address.slice(2).toLowerCase(), '')
+}
 
 const read = (client, contract, functionName, args) => client.readContract({ ...contract, functionName, args })
 
@@ -133,13 +172,24 @@ const ownersOf = async (client) => ({
   guardian: await read(client, controllerContract, 'beneficiary'),
 })
 
-async function deployedRollback(client, previousRuntime) {
-  const candidates = [
-    await implementationOf(client, controller),
-    addresses.SimplexControllerImpl,
-    addresses.SimplexControllerRollbackImpl,
-  ]
-  for (const candidate of candidates.filter(Boolean).map((address) => getAddress(address)))
+async function fundedRegistrars(client, sponsor) {
+  const logs = await eventLogs(client, {
+    address: sponsor,
+    event: ALLOWANCE_SET,
+    fromBlock: await deploymentBlock(client, sponsor, REPO_ROOT),
+    toBlock: await client.getBlockNumber(),
+  })
+  const funded = []
+  for (const registrar of new Set(logs.map((log) => log.args.registrar)))
+    if ((await read(client, withErrors(sponsor, SPONSOR), 'registrarAllowance', [registrar])) > 0n) funded.push(registrar)
+  return funded
+}
+
+async function existingRollback(client, journal, previousRuntime) {
+  const selected = journal.get(`select:${ROLLBACK}`)
+  if (selected) return getAddress(selected.address)
+  if (journal.has(`deploy:${ROLLBACK}`)) return undefined
+  for (const candidate of [await implementationOf(client, controller), getAddress(addresses.SimplexControllerImpl)])
     if ((await runtimeOf(client, candidate)) === previousRuntime) return candidate
 }
 
@@ -150,7 +200,7 @@ async function deployContracts(deploy, rollbackImpl) {
   const policyImpl = await deploy('SimplexNamePolicyImpl', POLICY.abi, POLICY.bytecode, [controller, registrar, settlementProxy.address])
   const sponsor = await deploy('SimplexSponsor', SPONSOR.abi, SPONSOR.bytecode, [controller])
   const rollback = rollbackImpl ??
-    (await deploy('SimplexControllerRollbackImpl', PREVIOUS_CONTROLLER.abi, PREVIOUS_CONTROLLER.bytecode)).address
+    (await deploy(ROLLBACK, PREVIOUS_CONTROLLER.abi, PREVIOUS_CONTROLLER.bytecode)).address
   return {
     settlementImpl: getAddress(settlementImpl.address),
     settlementProxy: getAddress(settlementProxy.address),
@@ -165,25 +215,37 @@ const resumed = (deploy, journal) => (name, abi, bytecode, args) =>
   journal.get(`deploy:${name}`) ?? deploy(name, abi, bytecode, args)
 
 const ownerCalls = ({ settlementProxy, policyImpl, controllerImpl, sponsor }) => [
-  { step: 2, caller: 'registrarOwner', contract: registrarContract, functionName: 'addController', args: [settlementProxy] },
-  { step: 3, caller: 'controllerOwner', contract: policyContract, functionName: 'upgradeTo', args: [policyImpl] },
+  {
+    step: 2,
+    caller: 'registrarOwner',
+    contract: registrarContract,
+    functionName: 'addController',
+    args: [settlementProxy],
+    isDone: (client) => read(client, registrarContract, 'controllers', [settlementProxy]),
+  },
+  {
+    step: 3,
+    caller: 'controllerOwner',
+    contract: policyContract,
+    functionName: 'upgradeTo',
+    args: [policyImpl],
+    isDone: async (client) => (await implementationOf(client, namePolicy)) === policyImpl,
+  },
   {
     step: 7,
     caller: 'controllerOwner',
     contract: controllerContract,
     functionName: 'upgradeToAndCall',
     args: [controllerImpl, encodeFunctionData({ abi: CONTROLLER.abi, functionName: 'setSponsor', args: [sponsor] })],
+    isDone: async (client) => (await implementationOf(client, controller)) === controllerImpl &&
+      (await read(client, controllerContract, 'sponsor')) === sponsor,
   },
 ]
 
 async function pendingOwnerCalls(client, deployed) {
-  const done = [
-    await read(client, registrarContract, 'controllers', [deployed.settlementProxy]),
-    (await implementationOf(client, namePolicy)) === deployed.policyImpl,
-    (await implementationOf(client, controller)) === deployed.controllerImpl &&
-      (await read(client, controllerContract, 'sponsor')) === deployed.sponsor,
-  ]
-  return ownerCalls(deployed).filter((_, i) => !done[i])
+  const pending = []
+  for (const call of ownerCalls(deployed)) if (!(await call.isDone(client))) pending.push(call)
+  return pending
 }
 
 async function checkUpgrade(client, deployed, previousRuntime, more = {}) {
@@ -205,7 +267,7 @@ async function checkUpgrade(client, deployed, previousRuntime, more = {}) {
     'MAX_REVERSIBLE_DAYS() is 180 and SETTLEMENT_WINDOW() 2,592,000':
       (await read(client, settlementContract, 'MAX_REVERSIBLE_DAYS')) === REVERSIBLE_DAYS &&
       (await read(client, settlementContract, 'SETTLEMENT_WINDOW')) === SETTLEMENT_WINDOW,
-    [`the rollback implementation ${deployed.rollbackImpl} is the #49 controller build`]:
+    [`the rollback implementation ${deployed.rollbackImpl} runs the code of ens-contracts ${PREVIOUS_COMMIT.slice(0, 7)}`]:
       (await runtimeOf(client, deployed.rollbackImpl)) === previousRuntime,
     ...more,
   })
@@ -227,9 +289,9 @@ function forkActions(fork, client) {
     return receipt
   }
   return {
-    send: async (from, contract, functionName, args, value) => {
+    send: async (from, contract, functionName, args, options = {}) => {
       const wallet = await walletOf(from)
-      return included(await wallet.writeContract({ ...contract, functionName, args, value }), `${functionName} from ${from}`)
+      return included(await wallet.writeContract({ ...contract, functionName, args, ...options }), `${functionName} from ${from}`)
     },
     deploy: async (from, { abi, bytecode }) => {
       const wallet = await walletOf(from)
@@ -265,10 +327,12 @@ async function rehearse(fork, client, send, { sponsor, settlementProxy }, { cont
   const id = (label) => BigInt(labelhash(label))
   const expiry = (label) => read(client, registrarContract, 'nameExpires', [id(label)])
   const payment = (label) => read(client, settlementContract, 'reversiblePayment', [id(label)])
+  const unsettled = async (label) => (await payment(label)).some(Boolean)
   const skipped = (receipt, eventName) => parseEventLogs({ abi: SETTLEMENT.abi, eventName, logs: receipt.logs })
     .filter((log) => getAddress(log.address) === settlementProxy)
     .map((log) => log.args.label)
   const now = async () => (await client.getBlock()).timestamp
+  const timeOf = async (receipt) => (await client.getBlock({ blockNumber: receipt.blockNumber })).timestamp
   const mineAt = (timestamp) => client.request({ method: 'evm_mine', params: [toHex(timestamp)] })
   const signed = async (primaryType, message) => {
     const nonce = await read(client, sponsorContract, 'nonces', [holder])
@@ -283,9 +347,13 @@ async function rehearse(fork, client, send, { sponsor, settlementProxy }, { cont
   }
   const acceptRenewal = async (label) =>
     send(holder, policyContract, 'acceptGeneralTermsForRenewal', [id(label), await expiry(label), YEAR, terms])
+  const cardRenewal = async () => [
+    REVERSED_LABEL, YEAR, zeroHash, holder, REVERSIBLE_DAYS,
+    ...await signed('RenewName', { label: REVERSED_LABEL, holder, duration: YEAR, reversibleDays: REVERSIBLE_DAYS }),
+  ]
   const renewArgs = [REVERSED_LABEL, YEAR, zeroHash]
 
-  const registrations = [REVERSED_LABEL, SETTLED_LABEL].map((label) => ({
+  const registrations = [REVERSED_LABEL, SETTLED_LABEL, FINAL_LABEL].map((label) => ({
     label, owner: holder, duration: 2n * YEAR, secret: zeroHash, resolver: zeroAddress, data: [], reverseRecord: 0, referrer: zeroHash,
   }))
   for (const registration of registrations)
@@ -293,17 +361,25 @@ async function rehearse(fork, client, send, { sponsor, settlementProxy }, { cont
       [await read(client, controllerContract, 'makeCommitment', [registration]), terms])
   await mineAt((await now()) + (await read(client, controllerContract, 'minCommitmentAge')))
   await send(guardian, sponsorContract, 'setRegistrarAllowance', [REHEARSAL_REGISTRAR, parseEther('1000')])
+  const registered = []
   for (const registration of registrations) {
     const { label, owner, duration, resolver, data } = registration
-    await send(REHEARSAL_REGISTRAR, sponsorContract, 'registerWithCredit', [
+    const reversibleDays = label === FINAL_LABEL ? 0n : REVERSIBLE_DAYS
+    registered.push(await send(REHEARSAL_REGISTRAR, sponsorContract, 'registerWithCredit', [
       registration,
-      REVERSIBLE_DAYS,
-      ...await signed('RegisterName', { label, owner, duration, resolver, data, reversibleDays: REVERSIBLE_DAYS }),
-    ])
+      reversibleDays,
+      ...await signed('RegisterName', { label, owner, duration, resolver, data, reversibleDays }),
+    ]))
   }
   const [until, paid] = await payment(REVERSED_LABEL)
   const firstTerm = (await expiry(REVERSED_LABEL)) === until + SETTLEMENT_WINDOW &&
     paid === until - REVERSIBLE_DAYS * DAY + 2n * YEAR
+  const finalRegistration = (await expiry(FINAL_LABEL)) === (await timeOf(registered[2])) + 2n * YEAR &&
+    !(await unsettled(FINAL_LABEL))
+  const finalExpiry = await expiry(FINAL_LABEL)
+  await acceptRenewal(FINAL_LABEL)
+  await send(REHEARSAL_REGISTRAR, sponsorContract, 'renewWithCredit', [FINAL_LABEL, YEAR, zeroHash, holder, 0n, 0n, 0n, '0x'])
+  const finalRenewal = (await expiry(FINAL_LABEL)) === finalExpiry + YEAR && !(await unsettled(FINAL_LABEL))
 
   const { base } = await read(client, controllerContract, 'rentPrice', [REVERSED_LABEL, YEAR])
   await acceptRenewal(REVERSED_LABEL)
@@ -311,6 +387,7 @@ async function rehearse(fork, client, send, { sponsor, settlementProxy }, { cont
 
   const reversal = await send(guardian, settlementContract, 'reversePayments', [[REVERSED_LABEL]])
   const reversed = (await payment(REVERSED_LABEL))[2] && skipped(reversal, 'NamePaymentReversalSkipped').length === 0
+  const reversedRenewal = await outcome(client, holder, controllerContract, 'renew', renewArgs, base)
   await send(holder, registrarContract, 'approve', [REHEARSAL_RECIPIENT, id(REVERSED_LABEL)])
   await send(REHEARSAL_RECIPIENT, policyContract, 'acceptGeneralTermsForClaim',
     [id(REVERSED_LABEL), holder, await read(client, registrarContract, 'offers', [id(REVERSED_LABEL)]), terms])
@@ -319,46 +396,47 @@ async function rehearse(fork, client, send, { sponsor, settlementProxy }, { cont
 
   const [settleFrom, settledPaid] = await payment(SETTLED_LABEL)
   const reinstatement = await send(controllerOwner, settlementContract, 'reinstatePayments', [[REVERSED_LABEL, SETTLED_LABEL]])
-  const reinstated = (await expiry(REVERSED_LABEL)) === paid && (await payment(REVERSED_LABEL))[0] === 0n
+  const reinstated = (await expiry(REVERSED_LABEL)) === paid && !(await unsettled(REVERSED_LABEL))
   const reinstatementSkipped = skipped(reinstatement, 'NamePaymentReinstatementSkipped')
   const unreversedKept = (await payment(SETTLED_LABEL))[0] === settleFrom
 
-  await mineAt(settleFrom)
-  await send(REHEARSAL_RECIPIENT, settlementContract, 'settle', [SETTLED_LABEL])
-  const settled = (await expiry(SETTLED_LABEL)) === settledPaid
+  await client.request({ method: 'evm_setNextBlockTimestamp', params: [toHex(settleFrom)] })
+  const settlement = await send(REHEARSAL_RECIPIENT, settlementContract, 'settle', [SETTLED_LABEL], { gas: 1_000_000n })
+  const settled = (await timeOf(settlement)) === settleFrom && (await expiry(SETTLED_LABEL)) === settledPaid
 
   const previousExpiry = await expiry(REVERSED_LABEL)
   await acceptRenewal(REVERSED_LABEL)
-  await send(REHEARSAL_REGISTRAR, sponsorContract, 'renewWithCredit', [
-    ...renewArgs,
-    holder,
-    REVERSIBLE_DAYS,
-    ...await signed('RenewName', { label: REVERSED_LABEL, holder, duration: YEAR, reversibleDays: REVERSIBLE_DAYS }),
-  ])
+  await send(REHEARSAL_REGISTRAR, sponsorContract, 'renewWithCredit', await cardRenewal())
   const [renewalUntil, renewalPaid, , renewal] = await payment(REVERSED_LABEL)
   const firstExpiry = renewalUntil + SETTLEMENT_WINDOW > previousExpiry ? renewalUntil + SETTLEMENT_WINDOW : previousExpiry
   const deferred = renewal && renewalPaid === previousExpiry + YEAR && (await expiry(REVERSED_LABEL)) === firstExpiry
 
   const renewalReversal = await send(guardian, settlementContract, 'reversePayments', [[REVERSED_LABEL]])
-  const withheld = (await payment(REVERSED_LABEL))[0] === 0n && (await expiry(REVERSED_LABEL)) === firstExpiry &&
+  const withheld = !(await unsettled(REVERSED_LABEL)) && (await expiry(REVERSED_LABEL)) === firstExpiry &&
     skipped(renewalReversal, 'NamePaymentReversalSkipped').length === 0
   await acceptRenewal(REVERSED_LABEL)
+  const cardOverReversal = await outcome(client, REHEARSAL_REGISTRAR, sponsorContract, 'renewWithCredit', await cardRenewal())
   const renewedAfter = await outcome(client, holder, controllerContract, 'renew', renewArgs, base)
-  await send(holder, controllerContract, 'renew', renewArgs, base)
+  await send(holder, controllerContract, 'renew', renewArgs, { value: base })
 
   return report({
+    'a sponsored registration with 0 reversible days registers its whole term, and reversiblePayment answers zeros':
+      finalRegistration,
+    'a sponsored renewal with 0 reversible days renews its whole term, and reversiblePayment answers zeros': finalRenewal,
     'a sponsored registration with 180 reversible days expires 30 days after reversibleUntil, and its paid expiry is its duration after it':
       firstTerm,
     [`its holder renews it before settlement: ${unsettledRenewal}`]: unsettledRenewal === 'reverts PaymentNotSettled',
     'the guardian reverses its payment, and no label is skipped': reversed,
+    [`its holder renews it after the reversal: ${reversedRenewal}`]: reversedRenewal === 'reverts PaymentReversed',
     [`a claim after the reversal: ${reversedClaim}`]: reversedClaim === 'reverts PaymentReversed',
     'the admin reinstates it, which extends it to its paid expiry and ends the entry': reinstated,
     [`the same batch skips the unreversed registration: NamePaymentReinstatementSkipped(${reinstatementSkipped.join(', ')}), and its entry stays`]:
       reinstatementSkipped.length === 1 && reinstatementSkipped[0] === SETTLED_LABEL && unreversedKept,
-    'anyone settles the other registration at its reversibleUntil, which extends it to its paid expiry': settled,
+    'anyone settles the other registration at exactly its reversibleUntil, which extends it to its paid expiry': settled,
     'a sponsored renewal with 180 reversible days keeps the expiry at E and defers its year': deferred,
     "the guardian reverses the renewal's payment: the name keeps E, and reversiblePayment answers zeros": withheld,
-    [`the holder renews after that reversal: ${renewedAfter}`]:
+    [`a card renewal while that reversal is in effect: ${cardOverReversal}`]: cardOverReversal === 'reverts RenewalReversed',
+    [`the holder renews with 0 reversible days after that reversal: ${renewedAfter}`]:
       renewedAfter === 'succeeds' && (await expiry(REVERSED_LABEL)) === firstExpiry + YEAR,
   })
 }
@@ -376,7 +454,7 @@ const recorded = (deployed) => Object.fromEntries(Object.entries({
   SimplexNamePolicyImpl: deployed.policyImpl,
   SimplexSettlement: deployed.settlementProxy,
   SimplexSettlementImpl: deployed.settlementImpl,
-  SimplexControllerRollbackImpl: deployed.rollbackImpl,
+  [ROLLBACK]: deployed.rollbackImpl,
 }).map(([name, address]) => [name, address.toLowerCase()]))
 
 const recordVerification = (deployed) => record(verificationPath, (file) => {
@@ -390,10 +468,7 @@ const recordVerification = (deployed) => record(verificationPath, (file) => {
     smpxNftAddr: verification.smpxNftAddr,
   })
   for (const name of VERIFIED) file.contracts[name] = contracts[name]
-  file.contracts.SimplexControllerRollbackImpl = {
-    ...contracts.SimplexControllerImpl,
-    address: upgraded.SimplexControllerRollbackImpl,
-  }
+  file.contracts[ROLLBACK] = { ...contracts.SimplexControllerImpl, address: upgraded[ROLLBACK] }
 })
 
 async function main() {
@@ -415,8 +490,11 @@ async function main() {
     for (const address of [account.address, ...Object.values(owners), REHEARSAL_HOLDER.address, REHEARSAL_REGISTRAR, REHEARSAL_RECIPIENT])
       await fundOnFork({ forkUrl: fork.url, address, weiHex: toHex(parseEther('1000')) })
     console.log('\n--- Rehearsal on a fork of mainnet ---')
+    const sponsorInUse = await read(client, controllerContract, 'sponsor')
+    const funded = await fundedRegistrars(client, sponsorInUse)
+    console.log(`  the sponsor in use ${sponsorInUse} holds a non-zero allowance for: ${funded.join(', ') || 'no registrar'}`)
     previousRuntime = await runtimeOf(client, await deploy(REHEARSAL_REGISTRAR, PREVIOUS_CONTROLLER))
-    rollbackImpl = await deployedRollback(client, previousRuntime)
+    rollbackImpl = await existingRollback(client, journal, previousRuntime)
     const dry = createDryRunRunner({ forkUrl: fork.url, forkChainId: fork.chainId, account })
     const before = await snapshot(client)
     const deployed = await deployContracts(resumed(dry.deploy, journal), rollbackImpl)
@@ -450,16 +528,28 @@ async function main() {
     console.error('The controller has a pending owner, or the deploy key still owns the registry root: complete the ownership handover first.')
     process.exit(1)
   }
+  const owners = await ownersOf(publicClient)
+  const sponsorInUse = await read(publicClient, controllerContract, 'sponsor')
+  const journaledSponsor = journal.get('deploy:SimplexSponsor')?.address
+  if (owners.controllerOwner === account.address && sponsorInUse !== (journaledSponsor && getAddress(journaledSponsor))) {
+    const funded = await fundedRegistrars(publicClient, sponsorInUse)
+    if (funded.length) {
+      console.error(`The sponsor in use ${sponsorInUse} holds a non-zero allowance for ${funded.join(', ')}, and the deploy key would switch the sponsor in step 7:`)
+      console.error('the store registers the orders signed for it, and the guardian sets those allowances to 0, first.')
+      process.exit(1)
+    }
+  }
   await analyzeAndConfirm({
     publicClient, account, maxBaseFeeWei, dryRunTotals: dryTotals, journalPath,
-    label: '.simplex payment-reversal upgrade', bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
+    label: '.simplex payment-reversal upgrade', bumpAfterMs, bumpPct,
   })
+  if (rollbackImpl && !journal.has(`select:${ROLLBACK}`))
+    appendFileSync(journalPath, `${JSON.stringify({ ts: new Date().toISOString(), step: `select:${ROLLBACK}`, address: rollbackImpl.toLowerCase() })}\n`)
   const real = createWaitForBaseRunner({
-    publicClient, walletClient, account, maxBaseFeeWei,
-    bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT, journalPath, attemptsLogPath,
+    publicClient, walletClient, account, maxBaseFeeWei, bumpAfterMs, bumpPct,
+    journalPath, attemptsLogPath, absoluteMaxBaseFeeWei,
   })
   const deployed = await deployContracts(real.deploy, rollbackImpl)
-  const owners = await ownersOf(publicClient)
   for (const { caller, contract, functionName, args } of await pendingOwnerCalls(publicClient, deployed))
     if (owners[caller] === account.address) await real.write(contract, functionName, args)
   const pending = await pendingOwnerCalls(publicClient, deployed)
@@ -467,7 +557,7 @@ async function main() {
     recordVerification(deployed)
     console.log('Commit the journal and the verification file, and verify the new contracts on Etherscan before the owners sign:')
     console.log(`  ONLY=${VERIFIED.join(',')} ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs`)
-    console.log(`and SimplexControllerRollbackImpl ${deployed.rollbackImpl} from ens-contracts 7ff8c37, as docs/deployment.md states.`)
+    console.log(`and ${ROLLBACK} ${deployed.rollbackImpl} from ens-contracts ${PREVIOUS_COMMIT}, as docs/deployment.md states.`)
     console.log('\nIn this order, the steps of docs/plans/payment-reversal.md, section 8:')
     for (const { step, caller, contract, functionName, args } of pending) {
       if (step === 7) {
