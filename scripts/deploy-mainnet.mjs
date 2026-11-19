@@ -229,7 +229,7 @@ export function loadInputs() {
  * runner (forked node) to capture gas, then the real wait-for-base runner
  * against mainnet.
  */
-async function deployAndWire({ deploy, write }, { governance, reservedByReason, terms, communityNames }, deployer) {
+async function deployAndWire({ deploy, write }, { governance, reservedByReason, terms, communityNames }, deployer, client) {
   const setup = { tld: TLD, deployer, chainlinkEthUsd }
   const addresses = {}
   const upgradeable = {}
@@ -332,6 +332,7 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   // owner-callable only while it is unset and beneficiary-callable thereafter, so
   // doing it here is what makes revenue and the registrar kill switch independent
   // of the admin key from the first block. Skipping it leaves `withdraw` reverting.
+  await requireGovernance(client, { guardianSafe: governance.guardianSafe }, deployer, 'setBeneficiary to the guardian Safe')
   await write(controller, 'setBeneficiary', [governance.guardianSafe.address])
 
   return { addresses, upgradeable, priceOracle }
@@ -639,7 +640,7 @@ async function requireGovernance(client, governance, deployer, withheld) {
 
 export async function runOne(runner, client, inputs, deployer) {
   await requireGovernance(client, inputs.governance, deployer, 'any transaction of this run')
-  const deployed = await deployAndWire(runner, inputs, deployer)
+  const deployed = await deployAndWire(runner, inputs, deployer, client)
   const failures = await readBackOne(client, deployed, inputs, deployer)
   if (failures.length) {
     throw new Error(
