@@ -1,0 +1,191 @@
+#!/usr/bin/env node
+import { createPublicClient, getAddress, http, isHex, keccak256, parseAbi, toHex, zeroAddress } from 'viem'
+import { mainnet } from 'viem/chains'
+import { existsSync, readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath, pathToFileURL } from 'url'
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const GOVERNANCE_PATH = join(REPO_ROOT, 'governance.mainnet.json')
+const VERIFICATION_PATH = join(REPO_ROOT, 'verification.mainnet.simplex.json')
+
+const SAFE_PROXY_CODE_HASH = '0x4e381985ca68b3e5d27b4425fa581c19cf33146d3f887a3cfca96f55528ea46f'
+const SAFE_SINGLETON = '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
+const SAFE_FALLBACK_HANDLER = '0x3EfCBb83A4A7AfcB4F68D501E2c2203a38be77f4'
+const SAFE_VERSION = '1.5.0'
+const SAFE_SINGLETON_SLOT = toHex(0, { size: 32 })
+const SAFE_GUARD_SLOT = keccak256(toHex('guard_manager.guard.address'))
+const SAFE_FALLBACK_HANDLER_SLOT = keccak256(toHex('fallback_manager.handler.address'))
+const SAFE_MODULES_START = '0x0000000000000000000000000000000000000001'
+const SAFE_ABI = parseAbi([
+  'function VERSION() view returns (string)',
+  'function getThreshold() view returns (uint256)',
+  'function getOwners() view returns (address[])',
+  'function getModulesPaginated(address start, uint256 pageSize) view returns (address[] array, address next)',
+  'function nonce() view returns (uint256)',
+])
+const TIMELOCK_ABI = parseAbi([
+  'function getMinDelay() view returns (uint256)',
+  'function getRoleAdmin(bytes32 role) view returns (bytes32)',
+  'function hasRole(bytes32 role, address account) view returns (bool)',
+])
+const TIMELOCK_ROLES = {
+  proposers: keccak256(toHex('PROPOSER_ROLE')),
+  executors: keccak256(toHex('EXECUTOR_ROLE')),
+  cancellers: keccak256(toHex('CANCELLER_ROLE')),
+}
+const REQUIRED = { adminSafe: 'Safe', guardianSafe: 'Safe', registrarWallet: 'EOA' }
+
+function checksummed(where, value) {
+  let address
+  try { address = getAddress(value) } catch {}
+  if (address !== value) throw new Error(`${where}: ${JSON.stringify(value)} is not a checksummed address`)
+  return address
+}
+
+function addresses(where, values) {
+  if (!Array.isArray(values) || values.length === 0) throw new Error(`${where}: expected a list of addresses`)
+  return values.map((value, i) => checksummed(`${where}[${i}]`, value))
+}
+
+function count(where, value) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${where}: ${JSON.stringify(value)} is not a count`)
+  return value
+}
+
+const sorted = (list) => list.map(getAddress).sort()
+
+const show = (value) => (Array.isArray(value) ? `[${value.join(', ')}]` : String(value))
+
+const mismatches = (pairs) => Object.entries(pairs)
+  .filter(([, [got, expected]]) => show(got) !== show(expected))
+  .map(([what, [got, expected]]) => `${what} is ${show(got)}, expected ${show(expected)}`)
+
+async function safeFailures(client, { address, threshold, owners }, code) {
+  if (keccak256(code) !== SAFE_PROXY_CODE_HASH) return [`code hash is ${keccak256(code)}, not that of SafeProxy ${SAFE_VERSION}`]
+  const slot = async (slot) => getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
+  const read = (functionName, args) => client.readContract({ address, abi: SAFE_ABI, functionName, args })
+  const [singleton, guard, fallbackHandler, version, actualThreshold, actualOwners, [modules], nonce] = await Promise.all([
+    slot(SAFE_SINGLETON_SLOT),
+    slot(SAFE_GUARD_SLOT),
+    slot(SAFE_FALLBACK_HANDLER_SLOT),
+    read('VERSION'),
+    read('getThreshold'),
+    read('getOwners'),
+    read('getModulesPaginated', [SAFE_MODULES_START, 10n]),
+    read('nonce'),
+  ])
+  return [
+    ...mismatches({
+      singleton: [singleton, SAFE_SINGLETON],
+      VERSION: [version, SAFE_VERSION],
+      threshold: [actualThreshold, threshold],
+      owners: [sorted(actualOwners), sorted(owners)],
+      modules: [modules, []],
+      guard: [guard, zeroAddress],
+      'fallback handler': [fallbackHandler, SAFE_FALLBACK_HANDLER],
+    }),
+    ...(nonce >= 1n ? [] : [`nonce is ${nonce}, so the Safe has executed no transaction`]),
+  ]
+}
+
+async function timelockFailures(client, entry, code, deployKey) {
+  const { address, codeHash, minDelay } = entry
+  if (keccak256(code) !== codeHash) return [`code hash is ${keccak256(code)}, expected ${codeHash}`]
+  const read = (functionName, args) => client.readContract({ address, abi: TIMELOCK_ABI, functionName, args })
+  const adminRole = await read('getRoleAdmin', [TIMELOCK_ROLES.proposers])
+  const members = Object.entries(TIMELOCK_ROLES).flatMap(([roles, role]) => entry[roles].map((account) => [roles, role, account]))
+  const accounts = [...new Set([...members.map(([, , account]) => account), ...(deployKey ? [deployKey] : [])])]
+  const [delay, held, admins] = await Promise.all([
+    read('getMinDelay'),
+    Promise.all(members.map(([, role, account]) => read('hasRole', [role, account]))),
+    Promise.all(accounts.map((account) => read('hasRole', [adminRole, account]))),
+  ])
+  return [
+    ...mismatches({ 'minimum delay': [delay, minDelay] }),
+    ...members.filter((member, i) => !held[i]).map(([roles, , account]) => `${account} is not among the ${roles}`),
+    ...accounts.filter((account, i) => admins[i]).map((account) => `${account} holds the admin role`),
+  ]
+}
+
+const KINDS = {
+  Safe: {
+    parse: (where, { address, threshold, owners }) => ({
+      address: checksummed(`${where}.address`, address),
+      threshold: count(`${where}.threshold`, threshold),
+      owners: addresses(`${where}.owners`, owners),
+    }),
+    failures: (client, entry, code) => (code ? safeFailures(client, entry, code) : ['has no code']),
+  },
+  TimelockController: {
+    parse: (where, { address, codeHash, minDelay, proposers, executors, cancellers }) => {
+      if (!isHex(codeHash) || codeHash.length !== 66) throw new Error(`${where}.codeHash: expected 32 bytes of hex`)
+      return {
+        address: checksummed(`${where}.address`, address),
+        codeHash,
+        minDelay: count(`${where}.minDelay`, minDelay),
+        proposers: addresses(`${where}.proposers`, proposers),
+        executors: addresses(`${where}.executors`, executors),
+        cancellers: addresses(`${where}.cancellers`, cancellers),
+      }
+    },
+    failures: (client, entry, code, deployKey) => (code ? timelockFailures(client, entry, code, deployKey) : ['has no code']),
+  },
+  EOA: {
+    parse: (where, { address, allowance, placeholder }) => {
+      if (!/^\d+$/.test(allowance)) throw new Error(`${where}.allowance: expected attoUSD as a decimal string`)
+      return { address: checksummed(`${where}.address`, address), allowance: BigInt(allowance), placeholder }
+    },
+    failures: async (client, entry, code) => (code ? [`has code ${code.slice(0, 18)}…`] : []),
+  },
+}
+
+export function loadGovernance(path = GOVERNANCE_PATH) {
+  const governance = Object.fromEntries(Object.entries(JSON.parse(readFileSync(path, 'utf8'))).map(([name, entry]) => {
+    if (!KINDS[entry.kind]) throw new Error(`${path}: ${name}.kind must be one of ${Object.keys(KINDS).join(', ')}`)
+    return [name, { kind: entry.kind, ...KINDS[entry.kind].parse(`${path}: ${name}`, entry) }]
+  }))
+  for (const [name, kind] of Object.entries(REQUIRED))
+    if (governance[name]?.kind !== kind) throw new Error(`${path}: ${name} must be an entry of kind ${kind}`)
+  return governance
+}
+
+export async function entryFailures(client, entry, deployKey) {
+  const code = await client.getCode({ address: entry.address })
+  return KINDS[entry.kind].failures(client, entry, code, deployKey)
+}
+
+export async function checkGovernance(client, governance, deployKey) {
+  let passed = true
+  for (const [name, entry] of Object.entries(governance)) {
+    const failures = await entryFailures(client, entry, deployKey)
+    console.log(`  ${failures.length ? '✗' : '✓'} ${name} ${entry.address}${failures.map((failure) => `\n      ${failure}`).join('')}`)
+    passed &&= failures.length === 0
+  }
+  return passed
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const rpcUrl = process.env.MAINNET_RPC_URL
+  if (!rpcUrl) {
+    console.error('MAINNET_RPC_URL is required')
+    process.exit(1)
+  }
+  const governance = loadGovernance()
+  const names = process.argv.slice(2)
+  const unknown = names.filter((name) => !governance[name])
+  if (unknown.length) {
+    console.error(`not in ${GOVERNANCE_PATH}: ${unknown.join(', ')}`)
+    process.exit(1)
+  }
+  const deployKey = existsSync(VERIFICATION_PATH) ? JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8')).deployer : undefined
+  const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
+  const entries = names.length ? Object.fromEntries(names.map((name) => [name, governance[name]])) : governance
+  checkGovernance(client, entries, deployKey).then(
+    (passed) => process.exit(passed ? 0 : 1),
+    (err) => {
+      console.error(err)
+      process.exit(1)
+    },
+  )
+}
