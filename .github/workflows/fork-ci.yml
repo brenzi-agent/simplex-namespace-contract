@@ -4,6 +4,9 @@ on:
   push:
     branches: ['ci/**']
 
+permissions:
+  contents: read
+
 jobs:
   upgradeable-stack:
     runs-on: ubuntu-latest
@@ -43,10 +46,10 @@ jobs:
           node scripts/journal-check.mjs 2>&1 | tee journal-check.log
           ! grep -q 'Assertion failed' journal-check.log
 
-      - name: Governance entries against mainnet
+      - name: Governance Safes against mainnet
         env:
           MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
-        run: node scripts/governance-check.mjs
+        run: node scripts/governance-check.mjs adminSafe guardianSafe
 
       - name: Start a local Hardhat node
         working-directory: ens-contracts
