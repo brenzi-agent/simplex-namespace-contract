@@ -339,6 +339,7 @@ export function createWaitForBaseRunner({
   maxBaseFeeWei, bumpAfterMs, bumpPct,
   journalPath, attemptsLogPath,
   absoluteMaxBaseFeeWei, confirmations = DEFAULT_CONFIRMATIONS,
+  pollReceiptMs = POLL_RECEIPT_INTERVAL_MS,
 }) {
   // L25: the stall bump is unbounded on its own — 20% every 24h compounds past
   // any budget if the chain simply stays expensive. The run stops rather than
@@ -428,7 +429,7 @@ export function createWaitForBaseRunner({
       const head = await publicClient.getBlockNumber()
       const depth = head - BigInt(receipt.blockNumber) + 1n
       if (depth >= BigInt(confirmations)) return receipt
-      await sleep(POLL_RECEIPT_INTERVAL_MS)
+      await sleep(pollReceiptMs)
       // Re-read: a reorg can drop the tx entirely, in which case the caller
       // must go back to waiting rather than journal it.
       const again = await publicClient
@@ -445,7 +446,7 @@ export function createWaitForBaseRunner({
 
   async function waitForInclusion(step, hash, deadline) {
     while (Date.now() < deadline) {
-      await sleep(POLL_RECEIPT_INTERVAL_MS)
+      await sleep(pollReceiptMs)
       const receipt = await publicClient.getTransactionReceipt({ hash }).catch(() => null)
       if (receipt) {
         const settled = await awaitConfirmations(step, receipt)
