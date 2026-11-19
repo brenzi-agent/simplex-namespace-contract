@@ -653,8 +653,7 @@ DEPLOYER_KEY=0x… MAINNET_RPC_URL=https://… MAX_BASE_FEE_GWEI=0.05 \
 
 `ABSOLUTE_MAX_BASE_FEE_GWEI`, `BUMP_AFTER_HOURS` and `BUMP_PCT` are read as by
 `deploy-mainnet.mjs`. The upgrade is first rehearsed on a fork of mainnet, with
-the owners' and the guardian's calls signed by impersonation. The registrars
-with a non-zero allowance on the sponsor in use are listed, and these are
+the owners' and the guardian's calls signed by impersonation. These are
 checked:
 
 - the 12 controller and policy settings of the upgrade above, read back
@@ -742,8 +741,9 @@ then sends steps 2, 3 and 7 itself, each only while it still owns the registrar
 or the controller, without the Etherscan check before signing, so steps 4 to 6
 follow step 7. Step 7 voids the orders signed for the sponsor in use, so the
 run is refused while that sponsor holds a non-zero allowance for any registrar,
-read from its `RegistrarAllowanceSet` events: the store registers those orders,
-and the guardian sets those allowances to 0, first. The handover run from tag
+read from its `RegistrarAllowanceSet` events, which `MAINNET_RPC_URL` then has to
+serve from the sponsor's deployment on: the store registers those orders, and
+the guardian sets those allowances to 0, first. The handover run from tag
 `simplex-mainnet-v1` then reports the controller's sponsor and both
 implementation slots as failed, and rewrites both files with the addresses of
 run 1, so the script is run once more after it to write the new ones back; the
@@ -784,7 +784,8 @@ RPC_URL=https://… SETTLER_KEY=0x… node scripts/settle-due.mjs
 The settlement's address is read from the name policy in `ADDRESSES` (default
 `deployments.mainnet.simplex.json`), and its `NamePaymentReversible` events
 from `FROM_BLOCK`, by default the block of the settlement's deployment in a
-committed journal, else block 0. `settle(label)` is called, with the label from
+committed journal, else block 0; `RPC_URL` has to serve `eth_getLogs` over that
+range. `settle(label)` is called, with the label from
 `registrar.labelOf`, for each name whose payment `reversiblePayment` reports
 due, with its `reversibleUntil` passed and not reversed. With
 `MAX_BASE_FEE_GWEI` set, nothing is sent while the base fee is above it, and
