@@ -44,9 +44,10 @@
  */
 import { encodeDeployData, encodeFunctionData, formatEther, formatGwei, http, createPublicClient, createWalletClient, parseGwei, keccak256, concatHex, toHex} from 'viem'
 import { mainnet } from 'viem/chains'
-import { appendFileSync, existsSync, readFileSync } from 'fs'
+import { appendFileSync, existsSync, readdirSync, readFileSync } from 'fs'
 import { spawn } from 'child_process'
 import { createServer } from 'net'
+import { join } from 'path'
 import readline from 'readline'
 
 const POLL_BASE_INTERVAL_MS = 12_000     // ~one mainnet block
@@ -70,6 +71,30 @@ const nowIso = () => new Date().toISOString()
 export function loadJournal(path) {
   if (!existsSync(path)) return []
   return readFileSync(path, 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+}
+
+export async function deploymentBlock(client, address, journalDir) {
+  const entry = readdirSync(journalDir)
+    .filter((file) => file.endsWith('.journal.jsonl'))
+    .flatMap((file) => loadJournal(join(journalDir, file)))
+    .find((step) => step.txHash && step.address?.toLowerCase() === address.toLowerCase())
+  return entry ? (await client.getTransactionReceipt({ hash: entry.txHash })).blockNumber : 0n
+}
+
+export async function eventLogs(client, { address, event, fromBlock, toBlock }) {
+  const logs = []
+  let span = 100_000n
+  while (fromBlock <= toBlock) {
+    const last = fromBlock + span - 1n < toBlock ? fromBlock + span - 1n : toBlock
+    try {
+      logs.push(...await client.getLogs({ address, event, fromBlock, toBlock: last }))
+      fromBlock = last + 1n
+    } catch (err) {
+      if (span === 1n) throw err
+      span /= 2n
+    }
+  }
+  return logs
 }
 
 /// Step keys name the operation, never its position. A positional counter
@@ -644,7 +669,7 @@ export async function analyzeAndConfirm({
     const tail = journal.slice(-3)
     for (const e of tail) {
       const addrFrag = e.address ? `  → ${e.address}` : ''
-      console.log(`      ${e.step.padEnd(10)} ${e.txHash.slice(0, 14)}…${addrFrag}`)
+      console.log(`      ${e.step.padEnd(10)} ${e.txHash ? `${e.txHash.slice(0, 14)}…` : 'selected'}${addrFrag}`)
     }
     if (journal.length > 3) console.log(`      ... and ${journal.length - 3} earlier`)
   }
