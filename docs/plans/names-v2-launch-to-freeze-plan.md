@@ -67,8 +67,8 @@ multi-signer rotation are deferred to GOV8, not abandoned.
 | Deploy key | nothing | nothing |
 | Admin key | upgrade the controller and the name policy; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setGeneralTerms`; `namePolicy.setCommunityTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
 | Guardian key | `namePolicy.addReservedNames`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
-| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderGeneralTermsWithSig`, `commitUnderCommunityTermsWithSig`, `acceptGeneralTermsForClaimWithSig`, `acceptCommunityTermsForClaimWithSig` | same |
-| Anyone | `commit`; `commitUnderGeneralTerms`; `commitUnderCommunityTerms`; `acceptGeneralTermsForClaim`; `acceptCommunityTermsForClaim`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
+| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit` (with the holder's acceptance for that renewal); and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderGeneralTermsWithSig`, `commitUnderCommunityTermsWithSig`, `acceptGeneralTermsForClaimWithSig`, `acceptCommunityTermsForClaimWithSig`, `acceptGeneralTermsForRenewalWithSig`, `acceptCommunityTermsForRenewalWithSig` | same |
+| Anyone | `commit`; `commitUnderGeneralTerms`; `commitUnderCommunityTerms`; `acceptGeneralTermsForClaim`; `acceptCommunityTermsForClaim`; `acceptGeneralTermsForRenewal`; `acceptCommunityTermsForRenewal`; payable `register`; payable `renew` of a name they hold; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
 
 Until GOV8 every call in this table takes effect when it is signed. After GOV8 the admin's
 calls wait seven days and the guardian's stay immediate.
@@ -112,8 +112,8 @@ also price renewals out of reach and collect names as they lapse, either by poin
 curve. The second adds nothing, since an arbitrary oracle can already do anything a curve
 change can. Before GOV8 there is no warning: the change takes effect when signed. What limits
 the damage is slow and public. Every name keeps its remaining term plus 90 days of grace, and
-renewal of an unreserved name is permissionless throughout, so anyone can renew anyone's name
-at the old price as soon as the change is noticed. That is months of visible behaviour rather
+the holder of an unreserved name can renew it throughout, at the old price as soon as the
+change is noticed. That is months of visible behaviour rather
 than seven days of notice. GOV8 buys the notice back.
 
 ## 6. Why it is built this way

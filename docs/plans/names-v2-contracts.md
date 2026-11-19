@@ -11,6 +11,10 @@ Amended by [`recipient-consent.md`](./recipient-consent.md): the sponsored path
 `approveWithSig` plus the recipient's `claimWithSig`. The rest of this plan is the
 record of names-v2 as built.
 
+Amended by holder-only renewal: only the holder renews, and each renewal consumes the
+holder's acceptance of the current terms of the name's kind for that renewal. Statements
+below that anyone may renew describe the design before it.
+
 ## 1. Table of contents
 
 1. Table of contents

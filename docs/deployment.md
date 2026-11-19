@@ -17,7 +17,7 @@ the historical playbook lives in [`legacy/sepolia-deployment.md`](./legacy/sepol
 | TLD        | Contracts | dApp | Notes |
 |------------|-----------|------|-------|
 | `.testing` | **Live on mainnet** — addresses in [`deployments.mainnet.testing.json`](../deployments.mainnet.testing.json) | **Live** on GitHub Pages — [`testing-names.simplex.chat`](https://testing-names.simplex.chat) | NFT gate **disabled** (lifted on-chain 2026-07-09 via `disableNftGate`, one-way); `minCharLength = 6`; registration is **open and free** (all-zero price oracle). Controller ownership handoff to the cold owner is **still pending** — see [below](#completing-the-ownership-handover). |
-| `.simplex` | **Not deployed** | — | Planned: same stack, **no** NFT gate, the real USD price curve. dApp will likely be **self-hosted + IPFS** (see [dApp hosting](#dapp-hosting)). |
+| `.simplex` | **Deployed on mainnet**, handover pending — addresses in [`deployments.mainnet.simplex.json`](../deployments.mainnet.simplex.json) | — | Same stack, **no** NFT gate, the real USD price curve, public sales closed. dApp will likely be **self-hosted + IPFS** (see [dApp hosting](#dapp-hosting)). |
 
 The live `.testing` controller is the proxy at
 `0xeeb9b6bf5fb68fb726005f7ba549c2f4b32f2dad` (`ETHRegistrarController` in the
@@ -269,7 +269,9 @@ once the handover is complete; the deployer EOA until then).
 From a wallet controlling `OWNER_ADDRESS`, submit `acceptOwnership()` at the
 controller proxy (stored as `ETHRegistrarController` in the addresses file) and
 at the price oracle (`SimplexPriceOracle`; `.testing`'s oracle has no owner).
-Then run `deploy-mainnet.mjs` again with the same env vars: it reads both owners
+Then run `deploy-mainnet.mjs` again with the same env vars, from a checkout of
+the deployment's tag (`simplex-mainnet-v1` for `.simplex`) with its submodules,
+since the journal's call digests are of that build: it reads both owners
 and makes the single-step handovers only if both are `OWNER_ADDRESS`, so the
 admin has proven it can sign before anything irreversible is sent.
 
@@ -460,8 +462,8 @@ key. `setPriceOracle` deliberately survives `freeze()`.
     batch of 200).
   - `removeCommunityNames(string[])`, `setGeneralTerms(string link)` and
     `setCommunityTerms(string link)` — owner-only. After a new link, an
-    acceptance of that kind not yet used at registration or claim must be made
-    again; existing holders are not asked to accept it. Publish a new version by
+    acceptance of that kind not yet used at registration, claim or renewal must
+    be made again; existing holders accept it at their next renewal. Publish a new version by
     committing the file, tagging it `general-terms-vN` or `community-terms-vN`,
     waiting for the git.simplex.chat mirror, running `scripts/terms-check.mjs`,
     and only then calling the setter through the timelock.
@@ -500,6 +502,16 @@ The registrar refuses a client's registration whose owner is the registrar's own
 address: no signature is checked then, so the client would choose the name and
 records the registrar holds.
 
+To renew, the registrar relays the holder's EIP-712
+`AcceptGeneralTermsForRenewal` or `AcceptCommunityTermsForRenewal` signature
+(domain `SimplexNamePolicy`) with `acceptGeneralTermsForRenewalWithSig` or
+`acceptCommunityTermsForRenewalWithSig`, then calls
+`sponsor.renewWithCredit(label, duration, referrer, holder)` with the same
+duration. When the relay reverts `InvalidNonce` because someone submitted the
+signature first, the registrar reads
+`acceptedRenewalTerms(tokenId, holder, nameExpires(tokenId), duration)` and
+renews if it holds the current hash.
+
 ### Upgrading the controller (UUPS)
 
 Deploy a fresh implementation, then have the owner submit `upgradeTo(newImpl)`
@@ -512,6 +524,62 @@ for the `__gap` / append-only invariants and the pre-upgrade checklist.
 > `impls.${network}.json`) is currently **Sepolia-wired** (reads
 > `SEPOLIA_RPC_URL`); generalise it for mainnet or deploy the implementation
 > directly.
+
+### Holder-only renewal on the deployed `.simplex`
+
+`scripts/upgrade-holder-renewal.mjs` brings a deployed `.simplex` stack to the
+rule that only the holder renews, after accepting the current terms of the
+name's kind for that renewal. Run it after the ownership handover. It deploys
+the `SimplexNamePolicy` and `SimplexController` implementations and a new
+`SimplexSponsor` from any funded key, which gains no role, and prints the two
+calls the controller owner then submits, in this order:
+
+1. `upgradeTo(<policy implementation>)` on the name policy proxy;
+2. `upgradeToAndCall(<controller implementation>, <setSponsor(<sponsor>) calldata>)`
+   on the controller proxy, which switches the controller and the sponsor in one
+   transaction.
+
+```sh
+DEPLOYER_KEY=0x… MAINNET_RPC_URL=https://… MAX_BASE_FEE_GWEI=0.05 \
+  node scripts/upgrade-holder-renewal.mjs
+```
+
+The script first rehearses on a fork of mainnet, signing the owner's calls by
+impersonation: the upgrade, a read-back of 12 controller and policy settings
+that must not change, and a name registered with `registerReserved` that a
+non-holder cannot renew (`NotHolder`), its holder cannot renew before accepting
+(`TermsNotAccepted`), and its holder then renews once on each path. Nothing is
+sent to mainnet unless the rehearsal passes, and the script stops before
+mainnet while the controller has a pending owner or the deploy key still owns
+the registry root.
+
+The first run on mainnet writes the three addresses to
+`verification.mainnet.simplex.json` and prints each owner call with its
+calldata. Commit that file with the journal, and run
+`ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs`
+before the owner signs, so that the owner signs only implementations whose
+source Etherscan shows: the three new contracts must report OK, and the ten
+verified before report "already verified" as failures. Run the script again
+after the owner's calls are mined: it checks both calls and the new sponsor's
+controller, and writes the three addresses to `deployments.mainnet.simplex.json`.
+After that, `build-verification.mjs` would derive the proxies' constructor
+arguments from the new implementation addresses, so the verification file is
+not regenerated with it.
+
+Commit the addresses file, and tag the deployed ens-contracts commit
+`simplex-mainnet-v2`. The guardian grants allowances on the new sponsor after
+the names service points its sponsor address at it.
+
+The alternative order upgrades before the handover, while the deploy key still
+owns the controller: run the script with `BEFORE_HANDOVER=yes` and the deploy
+key as `DEPLOYER_KEY`. It then sends the owner's two calls itself, without the
+Etherscan check before signing, and writes the three addresses to both files;
+verify the contracts afterwards. The handover run from tag
+`simplex-mainnet-v1` then also reports the controller's sponsor and both
+implementation slots as failed, and rewrites both files with the addresses of
+run 1, so run this script once more after it to write the new ones back. This
+order saves the admin two transactions and leaves the upgrade with the deploy
+key, which holds every role until the handover.
 
 ---
 
