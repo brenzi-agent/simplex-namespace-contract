@@ -181,6 +181,7 @@ jobs:
       - name: Settle every due payment
         env:
           SETTLER_KEY: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
+          MAX_BASE_FEE_GWEI: '100'
         run: |
           node scripts/settle-due.mjs | tee settlement.log
           grep -q '✓ cardpayment' settlement.log
