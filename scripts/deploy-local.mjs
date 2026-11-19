@@ -18,7 +18,7 @@ import {
   SIMPLEX_PRICE_ORACLE_ARTIFACT,
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
-import { UPGRADEABLE, deployBehindProxy } from './stack.mjs'
+import { UPGRADEABLE, deployBehindProxy, deployImmutable } from './stack.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ARTIFACTS = join(__dirname, '..', 'ens-contracts', 'artifacts', 'contracts')
@@ -74,6 +74,11 @@ async function main() {
   const proxied = async (name) => {
     const contract = await deployBehindProxy(deployRaw, name, deployed, setup, account.address)
     deployed[UPGRADEABLE[name].key] = contract.address
+    return contract
+  }
+  const immutable = async (name) => {
+    const contract = await deployImmutable(deployRaw, name, deployed, setup)
+    deployed[name] = contract.address
     return contract
   }
 
@@ -137,9 +142,7 @@ async function main() {
   // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
   // and the owner's signature check. Only this contract may call the controller's
   // sponsored entry points. The guardian funds registrars here.
-  const sponsor = await deploy('SimplexSponsor',
-    'simplex/SimplexSponsor.sol/SimplexSponsor.json',
-    [controller.address])
+  const sponsor = await immutable('SimplexSponsor')
   await write(controller, 'setSponsor', [sponsor.address])
 
   // local dev: one key plays both roles, and sales are open so the payable path works
@@ -156,9 +159,7 @@ async function main() {
   await write(baseRegistrar, 'setNamePolicy', [namePolicy.address])
 
   // On-chain NFT metadata: deploy the renderer and point the registrar's tokenURI at it.
-  const metadataRenderer = await deploy('MetadataRenderer',
-    'simplex/MetadataRenderer.sol/MetadataRenderer.json',
-    [`.${tld}`])
+  const metadataRenderer = await immutable('MetadataRenderer')
   await write(baseRegistrar, 'setMetadataRenderer', [metadataRenderer.address])
   // Cap label length at the DNS octet limit (63 bytes). Bounds labelOf storage
   // and on-chain SVG/JSON render size. (security.md L4)
@@ -184,12 +185,9 @@ async function main() {
   }
 
   // UniversalResolver (needed by the frontend for name lookups)
-  const dummyGateway = await deploy('DummyGatewayProvider',
-    'mocks/DummyGatewayProvider.sol/DummyGatewayProvider.json')
+  await immutable('DummyGatewayProvider')
 
-  const universalResolver = await deploy('UniversalResolver',
-    'universalResolver/UniversalResolver.sol/UniversalResolver.json',
-    [account.address, ensRegistry.address, dummyGateway.address])
+  const universalResolver = await immutable('UniversalResolver')
 
   const multicall3 = await deploy('Multicall3',
     'mocks/Multicall3.sol/Multicall3.json')

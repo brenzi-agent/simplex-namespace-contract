@@ -66,8 +66,7 @@ console.log(`Chain: ${network} (chainId=${chainId})`)
 let TARGETS
 if (meta.contracts) {
   // Comprehensive format — iterate over the dict. Artifact paths in the
-  // verification file are stored with the `contracts/` prefix (which is
-  // the subdir inside ens-contracts/artifacts/).
+  // verification file are relative to ens-contracts/artifacts/.
   TARGETS = Object.entries(meta.contracts).map(([name, entry]) => ({
     label: name,
     address: entry.address,
