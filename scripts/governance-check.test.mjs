@@ -38,6 +38,10 @@ test('the admin Safe as deployed is accepted', async () => {
   assert.deepEqual(await safeFailures({}), [])
 })
 
+test('a Safe that lists its owners in another order is accepted', async () => {
+  assert.deepEqual(await safeFailures({ getOwners: [...adminSafe.owners].reverse() }), [])
+})
+
 for (const [refused, changes, failure] of [
   ['a different threshold', { getThreshold: 1n }, /^threshold is 1, expected 2$/],
   ['different owners', { getOwners: [...adminSafe.owners.slice(1), OTHER] }, /^owners is \[0x0+bEEF, /],

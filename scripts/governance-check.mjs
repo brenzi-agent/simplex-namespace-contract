@@ -53,7 +53,7 @@ function count(where, value) {
   return value
 }
 
-const sorted = (list) => list.map(getAddress).sort()
+const sorted = (list) => list.map((address) => getAddress(address)).sort()
 
 const show = (value) => (Array.isArray(value) ? `[${value.join(', ')}]` : String(value))
 
