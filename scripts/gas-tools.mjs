@@ -60,6 +60,8 @@ const DEFAULT_CONFIRMATIONS = 3
 /// How far the stall bump may compound above the configured cap before the run
 /// gives up. 4× is roughly seven 20% bumps, i.e. a week of sustained stalling.
 const DEFAULT_ABSOLUTE_CAP_MULTIPLE = 4n
+const SLOT_SECONDS = 12n
+const JOURNAL_DELAY_SECONDS = 86_400n
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const fmtGwei = (wei) => Number(formatGwei(wei)).toFixed(4)
@@ -78,7 +80,13 @@ export async function deploymentBlock(client, address, journalDir) {
     .filter((file) => file.endsWith('.journal.jsonl'))
     .flatMap((file) => loadJournal(join(journalDir, file)))
     .find((step) => step.txHash && step.address?.toLowerCase() === address.toLowerCase())
-  return entry ? (await client.getTransactionReceipt({ hash: entry.txHash })).blockNumber : 0n
+  if (!entry) return 0n
+  const receipt = await client.getTransactionReceipt({ hash: entry.txHash }).catch(() => null)
+  if (receipt) return receipt.blockNumber
+  const latest = await client.getBlock()
+  const journalled = BigInt(Math.floor(Date.parse(entry.ts) / 1000)) - JOURNAL_DELAY_SECONDS
+  const slots = (latest.timestamp - journalled) / SLOT_SECONDS + 1n
+  return latest.number > slots ? latest.number - slots : 0n
 }
 
 export async function eventLogs(client, { address, event, fromBlock, toBlock }) {
