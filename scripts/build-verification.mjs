@@ -182,12 +182,28 @@ export function assembleVerification({
         [addresses.ETHRegistrarController],
       ),
     },
+    SimplexSettlementImpl: {
+      address: addresses.SimplexSettlementImpl,
+      artifact: 'contracts/simplex/SimplexSettlement.sol/SimplexSettlement.json',
+      constructorArgs: encodeAbiParameters(
+        [{ type: 'address' }, { type: 'address' }],
+        [addresses.ETHRegistrarController, addresses.BaseRegistrarImplementation],
+      ),
+    },
+    SimplexSettlementProxy: {
+      address: addresses.SimplexSettlement,
+      artifact: 'contracts/simplex/SimplexSettlementProxy.sol/SimplexSettlementProxy.json',
+      constructorArgs: encodeAbiParameters(
+        [{ type: 'address' }, { type: 'bytes' }],
+        [addresses.SimplexSettlementImpl, '0x'],
+      ),
+    },
     SimplexNamePolicyImpl: {
       address: addresses.SimplexNamePolicyImpl,
       artifact: 'contracts/simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
       constructorArgs: encodeAbiParameters(
-        [{ type: 'address' }, { type: 'address' }],
-        [addresses.ETHRegistrarController, addresses.BaseRegistrarImplementation],
+        [{ type: 'address' }, { type: 'address' }, { type: 'address' }],
+        [addresses.ETHRegistrarController, addresses.BaseRegistrarImplementation, addresses.SimplexSettlement],
       ),
     },
     SimplexNamePolicyProxy: {
