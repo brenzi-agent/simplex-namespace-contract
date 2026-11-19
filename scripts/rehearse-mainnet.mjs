@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { createPublicClient, createWalletClient, http, parseAbi, parseEther, parseGwei, toHex } from 'viem'
+import {
+  BaseError, HttpRequestError, TimeoutError, createPublicClient, createWalletClient, http, parseAbi, parseEther, parseGwei, toHex,
+} from 'viem'
 import { mainnet } from 'viem/chains'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { mkdtempSync } from 'fs'
@@ -32,6 +34,9 @@ function causes(error) {
   const code = error.code === undefined ? '' : ` ${error.code}`
   return [`${error.name}${code}: ${error.shortMessage ?? error.message}`, ...causes(error.cause)]
 }
+
+const transportFailure = (error) => error instanceof BaseError && Boolean(error.walk(
+  (cause) => cause instanceof TimeoutError || (cause instanceof HttpRequestError && cause.status === undefined)))
 
 const results = []
 function expect(what, ok, detail = '') {
@@ -68,13 +73,33 @@ async function main() {
     const transport = http(fork.url, { timeout: 120_000 })
     const client = createPublicClient({ chain, transport })
     const fund = (address) => fundOnFork({ forkUrl: fork.url, address, weiHex: toHex(parseEther('1000')) })
+    const landed = async (from, nonce, before) => {
+      if (await client.getTransactionCount({ address: from, blockTag: 'pending' }) === nonce) return undefined
+      const latest = await client.getBlockNumber({ cacheTime: 0 })
+      for (let number = before + 1n; number <= latest; number++) {
+        const { transactions } = await client.getBlock({ blockNumber: number, includeTransactions: true })
+        const sent = transactions.find((tx) => tx.from.toLowerCase() === from.toLowerCase() && tx.nonce === nonce)
+        if (sent) return sent.hash
+      }
+      throw new Error(`the transaction of ${from} with nonce ${nonce} is missing from blocks ${before + 1n} to ${latest}`)
+    }
     const sendAs = async (from, address, abi, functionName, args = []) => {
       await client.request({ method: 'hardhat_impersonateAccount', params: [from] })
       await fund(from)
+      await client.simulateContract({ account: from, address, abi, functionName, args })
+      const nonce = await client.getTransactionCount({ address: from, blockTag: 'pending' })
+      const before = await client.getBlockNumber({ cacheTime: 0 })
       const wallet = createWalletClient({ chain, transport, account: from })
-      const receipt = await client.waitForTransactionReceipt({
-        hash: await wallet.writeContract({ address, abi, functionName, args }),
+      const send = () => wallet.writeContract({ address, abi, functionName, args })
+      const hash = await send().catch(async (error) => {
+        if (!transportFailure(error)) throw error
+        console.log(`  ↻ ${functionName} from ${from}: ${causes(error).join(' ← ')}`)
+        const sent = await landed(from, nonce, before)
+        if (sent) return sent
+        console.log(`  ↻ ${functionName} from ${from} did not land; sent once more`)
+        return send()
       })
+      const receipt = await client.waitForTransactionReceipt({ hash })
       if (receipt.status !== 'success') throw new Error(`${functionName} from ${from} reverted`)
     }
     const v1State = async () => {
