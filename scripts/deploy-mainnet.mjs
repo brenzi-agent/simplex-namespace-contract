@@ -63,7 +63,6 @@ import {
 import { mainnet } from 'viem/chains'
 import { normalize } from 'viem/ens'
 import { privateKeyToAccount } from 'viem/accounts'
-import { execFileSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
@@ -80,8 +79,8 @@ import {
 } from './simplex-price-curve.mjs'
 import {
   ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, OWNABLE_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  VERIFICATION_PATH, artifact, assertBuildFresh, deployBehindProxy, deployImmutable, mainnetClient, proxyAdminOf,
-  proxySlots, runtimeCode, storedValue,
+  V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy, deployImmutable,
+  logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
 } from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
@@ -100,16 +99,14 @@ const COMMUNITY_BATCH = 100
 // The labels users can register: simplex-app src/hooks/useValidate.ts ALLOWED_LABEL_REGEX.
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
-const LOG_RANGE = 10_000n
-const V1_ABI = parseAbi([
-  'function controllers(address) view returns (bool)',
-  'function removeController(address)',
-  'function transferOwnership(address)',
-  'function pendingOwner() view returns (address)',
-])
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
+const v1Files = [
+  v1AddressesPath,
+  join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.journal.jsonl`),
+  join(REPO_ROOT, `verification.mainnet.${TLD}-v1.json`),
+]
 
 /// RFC 4180: a quoted field may hold commas, line breaks and doubled quotes.
 function parseCsv(text) {
@@ -206,10 +203,11 @@ function loadCommunityNames(path) {
 }
 
 function loadV1Addresses() {
-  if (!existsSync(v1AddressesPath)) {
+  const missing = v1Files.filter((path) => !existsSync(path))
+  if (missing.length) {
     console.error(
-      `${v1AddressesPath} is missing. Rename the v1 addresses file, journal and verification\n` +
-        `  file to *.${TLD}-v1.* first (docs/plans/upgradeable-stack.md, section 9).`,
+      `${missing.join(', ')} missing. Rename the v1 addresses file, journal and verification file\n` +
+        `  to *.${TLD}-v1.* first: step 2 of docs/plans/upgradeable-stack.md, section 6.`,
     )
     process.exit(1)
   }
@@ -339,18 +337,23 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   return { addresses, upgradeable, priceOracle }
 }
 
-async function handOver({ deploy, write }, { addresses, upgradeable, priceOracle }, admin) {
+async function handOver({ deploy, write }, { addresses, upgradeable, priceOracle }, client, adminSafe, deployer) {
   const { ENSRegistry: ensRegistry, BaseRegistrarImplementation: baseRegistrar, SimplexController: controller } = upgradeable
-  await write(baseRegistrar, 'transferOwnership', [admin])
+  const admin = adminSafe.address
+  const transferToAdminSafe = async (contract, functionName, args) => {
+    await requireGovernance(client, { adminSafe }, deployer, `${functionName} to the admin Safe`)
+    await write(contract, functionName, args)
+  }
+  await transferToAdminSafe(baseRegistrar, 'transferOwnership', [admin])
   // The registry assigns a node to someone other than the caller only under
   // the root or a TLD. data.eth is neither, so the deploy key sets the owner
   // of eth-usd.data.eth to zero; data.eth's new owner can take it back.
   await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
-  await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), admin])
-  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), admin])
+  await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), admin])
+  await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), admin])
   const root = await deployImmutable(deploy, 'Root', addresses, {})
-  await write(root, 'setController', [admin, true])
-  await write(root, 'transferOwnership', [admin])
+  await transferToAdminSafe(root, 'setController', [admin, true])
+  await transferToAdminSafe(root, 'transferOwnership', [admin])
   await write(ensRegistry, 'setOwner', [zeroHash, root.address])
   await write(controller, 'transferOwnership', [admin])
   await write(priceOracle, 'transferOwnership', [admin])
@@ -432,14 +435,8 @@ const BYTES32 = [{ type: 'bytes32' }]
 const BOOL = [{ type: 'bool' }]
 
 async function controllersAdded(client, registrar, fromBlock) {
-  const head = await client.getBlockNumber()
-  const added = []
-  for (let from = fromBlock; from <= head; from += LOG_RANGE) {
-    const to = from + LOG_RANGE - 1n < head ? from + LOG_RANGE - 1n : head
-    const logs = await client.getLogs({ address: registrar, event: CONTROLLER_ADDED, fromBlock: from, toBlock: to })
-    added.push(...logs.map(({ args }) => args.controller))
-  }
-  return added
+  const logs = await logsSince(client, { address: registrar, event: CONTROLLER_ADDED }, fromBlock)
+  return logs.map(({ args }) => args.controller)
 }
 
 /// L29: the journal proves each transaction was mined, not that the stack is
@@ -611,9 +608,24 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
   await check('universal resolver registry', registry, () => read(addresses.UniversalResolver, [], ADDR, 'registry'))
   await check('registry resolver of the TLD node', addresses.PublicResolver,
     () => read(registry, BYTES32, ADDR, 'resolver', [TLD_NODE]))
-  const sortedList = (list) => list.map((address) => address.toLowerCase()).sort().join(', ')
-  await check('controllers added on the registrar', sortedList([controller, addresses.SimplexNamePolicy]),
-    async () => sortedList(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)))
+  await check('controllers added on the registrar', sortedAddresses([controller, addresses.SimplexNamePolicy]).join(', '),
+    async () => sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)).join(', '))
+
+  const handedOver = await read(registrar, [], ADDR, 'owner')
+    .then((owner) => owner.toLowerCase() === governance.adminSafe.address.toLowerCase(), () => false)
+  if (handedOver) {
+    console.log(`  · the admin Safe owns the registrar: section 8 began after a passing read-back, so the deploy key's roles are not read`)
+  } else {
+    await check('registrar owner is the deploy key', deployer, () => read(registrar, [], ADDR, 'owner'))
+    for (const name of ['', 'eth', 'data.eth', 'eth-usd.data.eth']) {
+      await check(`registry owner of ${name || 'the root node'} is the deploy key`, deployer,
+        () => read(registry, BYTES32, ADDR, 'owner', [namehash(name)]))
+    }
+    for (const [what, at] of [['controller', controller], ['oracle', addresses.SimplexPriceOracle]]) {
+      await check(`${what} owner is the deploy key`, deployer, () => read(at, [], ADDR, 'owner'))
+      await check(`${what} pendingOwner`, zeroAddress, () => read(at, [], ADDR, 'pendingOwner'))
+    }
+  }
 
   return failures
 }
@@ -636,8 +648,7 @@ export async function runOne(runner, client, inputs, deployer) {
     )
   }
   console.log(`  all run-1 read-back checks passed`)
-  await requireGovernance(client, inputs.governance, deployer, 'the handover')
-  const root = await handOver(runner, deployed, inputs.governance.adminSafe.address)
+  const root = await handOver(runner, deployed, client, inputs.governance.adminSafe, deployer)
   await retireV1(runner.write, inputs.v1)
   return addressesFile({ ...deployed.addresses, Root: root })
 }
@@ -689,36 +700,6 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
   return failures
 }
 
-function assertTaggedSources() {
-  const git = (...args) => execFileSync('git', ['-C', ENS_CONTRACTS_DIR, ...args], { encoding: 'utf8' }).trim()
-  let tagged
-  try {
-    tagged = git('rev-parse', '--verify', '--quiet', `refs/tags/${SOURCE_TAG}^{commit}`)
-  } catch {
-    console.error(`ens-contracts has no tag ${SOURCE_TAG}: tag the commit run 1 deploys, and fetch the tag.`)
-    process.exit(1)
-  }
-  const head = git('rev-parse', 'HEAD')
-  if (head !== tagged) {
-    console.error(`ens-contracts is at ${head}, but ${SOURCE_TAG} is ${tagged}: check out the tagged commit.`)
-    process.exit(1)
-  }
-  const changes = git('status', '--porcelain')
-  if (changes) {
-    console.error(`ens-contracts has changes outside ${SOURCE_TAG}:\n${changes}`)
-    process.exit(1)
-  }
-}
-
-function requireEnv(name, hint = '') {
-  const value = process.env[name]
-  if (!value) {
-    console.error(`ERROR: ${name} env var is required.${hint}`)
-    process.exit(1)
-  }
-  return value
-}
-
 // Track the spawned fork at module scope so cleanup handlers can reach it.
 let activeFork = null
 function cleanupFork() {
@@ -747,7 +728,7 @@ async function runOneOnMainnet(rpcUrl, inputs) {
 
   // Cheap and first: a stale build must not cost a fork spawn, let alone a
   // transaction.
-  assertTaggedSources()
+  assertTaggedSource(SOURCE_TAG)
   assertBuildFresh()
 
   // A populated addresses file with no journal beside it means a previous

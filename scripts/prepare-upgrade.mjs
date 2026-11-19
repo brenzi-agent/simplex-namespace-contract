@@ -8,12 +8,12 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { createWaitForBaseRunner, DEFAULTS } from './gas-tools.mjs'
+import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
 import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, REPO_ROOT, TLD, UPGRADEABLE, VERIFICATION_PATH,
-  artifact, assertBuildFresh, constructorArgs, immutableNames, immutablesIn, mainnetClient, placeImmutables,
-  proxyAdminOf, proxySlots, storageLayout, storedValue,
+  artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames, immutablesIn, mainnetClient,
+  placeImmutables, proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -79,13 +79,16 @@ export function slotFailures(bytecode) {
     .map(([which]) => `its bytecode contains the ERC-1967 ${which} slot`)
 }
 
-export function artifactFailures({ abi, deployedBytecode, immutableReferences }, names, layout, currentLayout, intended) {
+export function artifactFailures({ abi, deployedBytecode, immutableReferences }, names, layout, current, intended) {
   const immutables = Object.keys(immutableReferences).map((id) => names.get(Number(id)))
   return [
-    ...layoutFailures(currentLayout, layout),
+    ...layoutFailures(current.storageLayout, layout),
     ...interfaceFailures(abi),
     ...slotFailures(deployedBytecode),
-    ...intended.filter((name) => !immutables.includes(name)).map((name) => `it has no immutable named ${name}`),
+    ...Object.keys(current.immutables).filter((name) => !immutables.includes(name) && !intended.includes(name))
+      .map((name) => `it has no immutable named ${name}, which the current implementation holds as ${current.immutables[name]}`),
+    ...intended.filter((name) => !immutables.includes(name) && !Object.hasOwn(current.immutables, name))
+      .map((name) => `neither it nor the current implementation has an immutable named ${name}`),
   ]
 }
 
@@ -104,7 +107,10 @@ export function immutableReview(compiled, names, code, current, own, intended) {
   }
 }
 
-async function checkedProxyAdmin(client, addresses, name) {
+export async function checkedProxyAdmin(client, addresses, name) {
+  if (!Object.hasOwn(UPGRADEABLE, name)) {
+    return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`] }
+  }
   const proxy = addresses[UPGRADEABLE[name].key]
   const { implementation, admin } = await proxySlots(client, proxy)
   if (admin !== proxyAdminOf(proxy)) {
@@ -116,12 +122,15 @@ async function checkedProxyAdmin(client, addresses, name) {
     : { name, proxy, implementation, proxyAdmin: admin, owner }
 }
 
-export async function proxyAdminTarget(client, addresses, target) {
-  const proxies = Object.entries(UPGRADEABLE).map(([name, { key }]) => [name, addresses[key]])
-  const named = proxies.find(([, proxy]) => proxyAdminOf(proxy).toLowerCase() === target.toLowerCase())
-  return named
-    ? checkedProxyAdmin(client, addresses, named[0])
-    : { refused: [`${target} is not the ProxyAdmin of any of the six proxies of ${ADDRESSES_PATH}`] }
+export async function transferCall(client, addresses, governance, name, nextName, deployer) {
+  const next = governance[nextName]
+  if (next?.kind !== 'TimelockController') {
+    return { refused: [`NEXT must name a TimelockController entry of governance.mainnet.json, not ${nextName}`] }
+  }
+  const failures = await entryFailures(client, next, deployer)
+  if (failures.length) return { refused: failures.map((failure) => `${nextName} ${next.address} ${failure}`) }
+  const target = await checkedProxyAdmin(client, addresses, name)
+  return target.refused ? target : { target, functionName: 'transferOwnership', args: [next.address] }
 }
 
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, intended) {
@@ -134,7 +143,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const refused = artifactFailures(compiled, names, layout, current.storageLayout, intended)
+  const refused = artifactFailures(compiled, names, layout, current, intended)
   if (refused.length) return { refused }
 
   const args = definition.args(addresses, { tld: TLD })
@@ -157,27 +166,20 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
       constructorArgs: constructorArgs(compiled.abi, args),
       storageLayout: layout,
       immutables: immutablesIn(compiled, names, code),
+      buildInfoId: compiled.buildInfoId,
     },
   }
 }
 
-function requireEnv(...names) {
-  const missing = names.filter((name) => !process.env[name])
-  if (missing.length) {
-    console.error(`ERROR: ${missing.join(', ')} env var(s) required.`)
-    process.exit(1)
-  }
-  return names.map((name) => process.env[name])
-}
-
 const ACTIONS = {
-  upgrade: async (client, addresses) => {
-    const name = process.env.CONTRACT
-    if (!UPGRADEABLE[name]) return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}`] }
-    const [deployerKey, rpcUrl, maxBaseFeeGwei] = requireEnv('DEPLOYER_KEY', 'MAINNET_RPC_URL', 'MAX_BASE_FEE_GWEI')
+  upgrade: async (client, addresses, name) => {
+    const deployerKey = requireEnv('DEPLOYER_KEY')
+    const rpcUrl = requireEnv('MAINNET_RPC_URL')
+    const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
     const intended = (process.env.INTENDED ?? '').split(',').filter(Boolean)
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
+    const source = assertTaggedSource()
     assertBuildFresh()
     const verification = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
     const runner = createWaitForBaseRunner({
@@ -186,33 +188,35 @@ const ACTIONS = {
       bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
       journalPath, attemptsLogPath,
     })
-    const prepared = await prepareUpgrade(runner, client, name, addresses, verification, account.address, intended)
+    const confirmed = {
+      ...runner,
+      deploy: async (step, abi, bytecode, args) => {
+        if (!runner.completedSteps().has(`deploy:${step}`)) {
+          console.log(`\nThe deploy key ${account.address} deploys the ${name} candidate ${step}, built from ens-contracts ` +
+            `${source.commit} (${source.tags.join(', ')}), at a base fee of at most ${maxBaseFeeGwei} gwei.`)
+          if (!(await promptYesNo('Proceed? [y/N] '))) throw new Error(`the ${name} candidate was not deployed`)
+        }
+        return runner.deploy(step, abi, bytecode, args)
+      },
+    }
+    const prepared = await prepareUpgrade(confirmed, client, name, addresses, verification, account.address, intended)
     if (prepared.refused) return prepared
-    verification.contracts[`${name}@${prepared.candidate}`] = prepared.entry
+    verification.contracts[`${name}@${prepared.candidate}`] = { ...prepared.entry, ensContractsCommit: source.commit }
     writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
     console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the current immutables`)
     for (const { name: immutable, current, next } of prepared.changes) {
-      console.log(`  intended change of ${immutable}: ${current} → ${next}`)
+      console.log(`  intended change of ${immutable}: ${current ?? 'none'} → ${next ?? 'none'}`)
     }
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
     return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, '0x'] }
   },
-  freeze: async (client, addresses) => {
-    const [proxyAdmin] = requireEnv('PROXY_ADMIN')
-    const target = await proxyAdminTarget(client, addresses, proxyAdmin)
+  freeze: async (client, addresses, name) => {
+    const target = await checkedProxyAdmin(client, addresses, name)
     return target.refused ? target : { target, functionName: 'renounceOwnership', args: [] }
   },
-  transfer: async (client, addresses) => {
-    const [proxyAdmin, nextName] = requireEnv('PROXY_ADMIN', 'NEXT')
-    const next = loadGovernance()[nextName]
-    if (next?.kind !== 'Safe' && next?.kind !== 'TimelockController') {
-      return { refused: [`NEXT must name a Safe or TimelockController entry of governance.mainnet.json, not ${nextName}`] }
-    }
+  transfer: async (client, addresses, name) => {
     const { deployer } = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
-    const failures = await entryFailures(client, next, deployer)
-    if (failures.length) return { refused: failures.map((failure) => `${nextName} ${next.address} ${failure}`) }
-    const target = await proxyAdminTarget(client, addresses, proxyAdmin)
-    return target.refused ? target : { target, functionName: 'transferOwnership', args: [next.address] }
+    return transferCall(client, addresses, loadGovernance(), name, requireEnv('NEXT'), deployer)
   },
 }
 
@@ -222,16 +226,16 @@ async function main() {
     console.error(`ACTION must be one of ${Object.keys(ACTIONS).join(', ')} (got ${JSON.stringify(process.env.ACTION)})`)
     process.exit(1)
   }
-  const [rpcUrl] = requireEnv('MAINNET_RPC_URL')
-  const client = await mainnetClient(rpcUrl)
-  const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')))
+  const client = await mainnetClient(requireEnv('MAINNET_RPC_URL'))
+  const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')), requireEnv('CONTRACT'))
   if (call.refused) {
     console.error(`${process.env.ACTION} refused:`)
     for (const failure of call.refused) console.error(`  ✗ ${failure}`)
     process.exit(1)
   }
-  const { target: { name, proxy, proxyAdmin, owner }, functionName, args } = call
-  console.log(`\nThe ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy ${proxy}:`)
+  const { target: { name, proxy, implementation, proxyAdmin, owner }, functionName, args } = call
+  console.log(`\nThe implementation slot of the ${name} proxy ${proxy} holds ${implementation}.`)
+  console.log(`The ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy:`)
   console.log(`  ${functionName}(${args.join(', ')})`)
   console.log(`  calldata ${encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })}`)
 }

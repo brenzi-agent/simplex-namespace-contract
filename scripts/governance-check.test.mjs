@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { keccak256, pad, toHex, zeroAddress } from 'viem'
-import { entryFailures, loadGovernance } from './governance-check.mjs'
+import { checkGovernance, entryFailures, loadGovernance } from './governance-check.mjs'
 
 const SAFE_PROXY_CODE = '0x608060405260005463a619486e60003560e01c14156024578060601b606c5260206060f35b3660008037600080366000845af43d6000803e806040573d6000fd5b3d6000f3fea2646970667358221220e61834ebd2d8cd909d362bf67c47ef58fd665df38e6dd036ce65611101d072e964736f6c63430007060033'
 const SINGLETON = '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
@@ -9,6 +9,7 @@ const FALLBACK_HANDLER = '0x3EfCBb83A4A7AfcB4F68D501E2c2203a38be77f4'
 const GUARD_SLOT = BigInt(keccak256(toHex('guard_manager.guard.address')))
 const FALLBACK_HANDLER_SLOT = BigInt(keccak256(toHex('fallback_manager.handler.address')))
 const OTHER = '0x000000000000000000000000000000000000bEEF'
+const SECOND = '0x0000000000000000000000000000000000005678'
 const DEPLOY_KEY = '0x38D19404644fe24EE7d638229a732CbE8275E333'
 
 const { adminSafe } = loadGovernance()
@@ -26,6 +27,8 @@ const deployedSafe = {
 const clientOf = (state) => ({
   getCode: async () => state.code,
   getStorageAt: async ({ slot }) => pad(state.slots.get(BigInt(slot)) ?? zeroAddress),
+  getBlockNumber: async () => 1n,
+  getLogs: async () => (typeof state.logs === 'function' ? state.logs() : state.logs),
   readContract: async ({ functionName, args }) =>
     typeof state[functionName] === 'function' ? state[functionName](...args) : state[functionName],
 })
@@ -75,6 +78,11 @@ test('a placeholder registrar wallet is refused', async () => {
     ['is a placeholder: not chosen yet'])
 })
 
+test('the governance check fails when an entry before the last one fails', async () => {
+  const client = { ...clientOf({}), getCode: async ({ address }) => (address === OTHER ? '0xef0100' : undefined) }
+  assert.equal(await checkGovernance(client, { first: wallet, last: { ...wallet, address: SECOND } }), false)
+})
+
 const TIMELOCK_CODE = '0x6001'
 const ROLE = (name) => keccak256(toHex(name))
 const ADMIN_ROLE = pad('0x00', { size: 32 })
@@ -82,6 +90,7 @@ const timelock = {
   kind: 'TimelockController',
   address: OTHER,
   codeHash: keccak256(TIMELOCK_CODE),
+  deployBlock: 1,
   minDelay: 604800,
   proposers: [adminSafe.address],
   executors: [adminSafe.address],
@@ -92,11 +101,13 @@ const roles = new Set([
   `${ROLE('EXECUTOR_ROLE')}:${timelock.executors[0]}`,
   `${ROLE('CANCELLER_ROLE')}:${timelock.cancellers[0]}`,
 ])
+const granted = (account) => ({ args: { role: ADMIN_ROLE, account, sender: account } })
 const deployedTimelock = {
   code: TIMELOCK_CODE,
+  logs: [granted(timelock.address)],
   getMinDelay: 604800n,
   getRoleAdmin: () => ADMIN_ROLE,
-  hasRole: (role, account) => roles.has(`${role}:${account}`),
+  hasRole: (role, account) => (role === ADMIN_ROLE && account === timelock.address) || roles.has(`${role}:${account}`),
 }
 const timelockFailures = (changes) => entryFailures(clientOf({ ...deployedTimelock, ...changes }), timelock, DEPLOY_KEY)
 
@@ -108,6 +119,12 @@ for (const [refused, changes, failure] of [
   ['a different minimum delay', { getMinDelay: 86400n }, /^minimum delay is 86400, expected 604800$/],
   ['a canceller without its role', { hasRole: (role, account) => role === ROLE('CANCELLER_ROLE') ? false : roles.has(`${role}:${account}`) }, /^0xE662.* is not among the cancellers$/],
   ['the admin role held by the deploy key', { hasRole: (role, account) => (role === ADMIN_ROLE && account === DEPLOY_KEY) || roles.has(`${role}:${account}`) }, /^0x38D1.* holds the admin role$/],
+  ['the admin role held by an account its logs name', {
+    logs: [granted(timelock.address), granted(SECOND)],
+    hasRole: (role, account) => (role === ADMIN_ROLE && account === SECOND) || roles.has(`${role}:${account}`),
+  }, /^0x0+5678 holds the admin role$/],
+  ['logs that cannot be read', { logs: () => { throw new Error('range too large') } }, /^its RoleGranted logs from block 1 could not be read: range too large$/],
+  ['a deployment block later than its deployment', { logs: [] }, /^the grant of the admin role to itself is missing from its RoleGranted logs from block 1: /],
   ['other code', { code: '0x6002' }, /^code hash is /],
 ]) {
   test(`a timelock with ${refused} is refused`, async () => {

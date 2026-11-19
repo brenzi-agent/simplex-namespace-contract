@@ -26,8 +26,43 @@ export const VERIFICATION_PATH = join(REPO_ROOT, `verification.mainnet.${TLD}.js
 export const ERC1967_IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
 export const ERC1967_ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103'
 export const TRANSPARENT_PROXY = '@openzeppelin/contracts-v5/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json'
-export const PROXY_ADMIN = '@openzeppelin/contracts-v5/proxy/transparent/ProxyAdmin.sol/ProxyAdmin.json'
+export const PROXY_ADMIN_ARTIFACT = '@openzeppelin/contracts-v5/proxy/transparent/ProxyAdmin.sol/ProxyAdmin.json'
 export const OWNABLE_ABI = parseAbi(['function owner() view returns (address)'])
+export const V1_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function pendingOwner() view returns (address)',
+  'function controllers(address) view returns (bool)',
+  'function addController(address)',
+  'function removeController(address)',
+  'function transferOwnership(address)',
+  'function acceptOwnership()',
+])
+
+export function requireEnv(name, hint = '') {
+  const value = process.env[name]
+  if (!value) {
+    console.error(`ERROR: ${name} env var is required.${hint}`)
+    process.exit(1)
+  }
+  return value
+}
+
+export const sortedAddresses = (list) => list.map((address) => getAddress(address)).sort()
+
+export const addressAt = async (client, address, slot) =>
+  getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
+
+const LOG_RANGE = 10_000n
+
+export async function logsSince(client, filter, fromBlock) {
+  const head = await client.getBlockNumber()
+  const logs = []
+  for (let from = fromBlock; from <= head; from += LOG_RANGE) {
+    const to = from + LOG_RANGE - 1n < head ? from + LOG_RANGE - 1n : head
+    logs.push(...(await client.getLogs({ ...filter, fromBlock: from, toBlock: to })))
+  }
+  return logs
+}
 
 export async function mainnetClient(rpcUrl) {
   const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
@@ -168,6 +203,22 @@ export function assertBuildFresh() {
   console.log('  build is current')
 }
 
+export function assertTaggedSource(tag) {
+  const git = (...args) => execFileSync('git', ['-C', ENS_CONTRACTS_DIR, ...args], { encoding: 'utf8' }).trim()
+  const commit = git('rev-parse', 'HEAD')
+  const tags = git('tag', '--points-at', 'HEAD').split('\n').filter(Boolean)
+  if (tag ? !tags.includes(tag) : tags.length === 0) {
+    console.error(`ens-contracts is at ${commit}, which ${tag ? `the tag ${tag} does not name` : 'no tag names'}: check out the tagged commit to deploy, and fetch its tag.`)
+    process.exit(1)
+  }
+  const changes = git('status', '--porcelain')
+  if (changes) {
+    console.error(`ens-contracts has changes outside the commit ${commit}:\n${changes}`)
+    process.exit(1)
+  }
+  return { commit, tags }
+}
+
 export const artifact = (path) => JSON.parse(readFileSync(join(ARTIFACTS, path), 'utf8'))
 
 export function constructorArgs(abi, args) {
@@ -202,8 +253,10 @@ export async function deployBehindProxy(deploy, name, addresses, setup, initialO
 export const proxyAdminOf = (proxy) => getContractAddress({ from: proxy, nonce: 1n })
 
 export async function proxySlots(client, proxy) {
-  const read = async (slot) => getAddress(`0x${(await client.getStorageAt({ address: proxy, slot })).slice(-40)}`)
-  const [implementation, admin] = await Promise.all([read(ERC1967_IMPLEMENTATION_SLOT), read(ERC1967_ADMIN_SLOT)])
+  const [implementation, admin] = await Promise.all([
+    addressAt(client, proxy, ERC1967_IMPLEMENTATION_SLOT),
+    addressAt(client, proxy, ERC1967_ADMIN_SLOT),
+  ])
   return { implementation, admin }
 }
 

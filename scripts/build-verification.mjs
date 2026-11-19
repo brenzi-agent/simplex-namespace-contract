@@ -29,8 +29,9 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
-  ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN, TLD, TRANSPARENT_PROXY, UPGRADEABLE, VERIFICATION_PATH,
-  artifact, constructorArgs, immutableNames, immutablesIn, initializerData, mainnetClient, proxySlots, storageLayout,
+  ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, TLD, TRANSPARENT_PROXY, UPGRADEABLE, VERIFICATION_PATH,
+  artifact, constructorArgs, immutableNames, immutablesIn, initializerData, mainnetClient, proxySlots, requireEnv,
+  storageLayout,
 } from './stack.mjs'
 
 const target = (path, address, args) => ({
@@ -58,7 +59,7 @@ export async function assembleVerification({ client, addresses, deployer, adminS
     }
     contracts[`${name}Proxy`] = target(TRANSPARENT_PROXY, proxy,
       [implementation, adminSafe, initializerData(name, addresses, setup)])
-    contracts[`${name}ProxyAdmin`] = target(PROXY_ADMIN, admin, [adminSafe])
+    contracts[`${name}ProxyAdmin`] = target(PROXY_ADMIN_ARTIFACT, admin, [adminSafe])
   }
   for (const [name, { artifact: path, args }] of Object.entries(IMMUTABLE)) {
     contracts[name] = target(path, addresses[name], args(addresses, setup))
@@ -82,11 +83,7 @@ async function lookupDeployerFromJournal(rpcUrl) {
 }
 
 async function cli() {
-  const rpcUrl = process.env.MAINNET_RPC_URL
-  if (!rpcUrl) {
-    console.error('ERROR: MAINNET_RPC_URL env var is required.')
-    process.exit(1)
-  }
+  const rpcUrl = requireEnv('MAINNET_RPC_URL')
   if (!existsSync(ADDRESSES_PATH)) {
     console.error(`ERROR: ${ADDRESSES_PATH} not found.`)
     process.exit(1)
