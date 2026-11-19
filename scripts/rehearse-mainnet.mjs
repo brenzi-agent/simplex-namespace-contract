@@ -12,8 +12,8 @@ import { assembleVerification } from './build-verification.mjs'
 import { loadInputs, readBackTwo, runOne } from './deploy-mainnet.mjs'
 import { checkedProxyAdmin, prepareUpgrade } from './prepare-upgrade.mjs'
 import {
-  ENS_CONTRACTS_DIR, PROXY_ADMIN_ARTIFACT, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf, proxySlots,
-  requireEnv,
+  ENS_CONTRACTS_DIR, IMMUTABLE, PROXY_ADMIN_ABI, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf,
+  proxySlots, requireEnv,
 } from './stack.mjs'
 
 const SECTION_8_STEPS = 10
@@ -145,7 +145,7 @@ async function main() {
         const contract = await dry.deploy(name, abi, bytecode, args)
         deployed[name] = contract.address
         if (name === 'SimplexNamePolicyProxy') {
-          await sendAs(admin, proxyAdminOf(contract.address), artifact(PROXY_ADMIN_ARTIFACT).abi, 'transferOwnership', [STRANGER])
+          await sendAs(admin, proxyAdminOf(contract.address), PROXY_ADMIN_ABI, 'transferOwnership', [STRANGER])
         }
         return contract
       },
@@ -154,7 +154,8 @@ async function main() {
     const stopped = await runOne(tampered, client, inputs, account.address).then(() => undefined, (e) => e.message)
     expect('run 1 stops on the read-back', /run-1 read-back check\(s\) FAILED: .*SimplexNamePolicy ProxyAdmin owner is the admin Safe/.test(stopped ?? ''), stopped)
     const registrarOwner = await client.readContract({
-      address: deployed.BaseRegistrarImplementationProxy, abi: V1_ABI, functionName: 'owner',
+      address: deployed.BaseRegistrarImplementationProxy, abi: artifact(UPGRADEABLE.BaseRegistrarImplementation.artifact).abi,
+      functionName: 'owner',
     })
     expect('section 8 was not sent: the deploy key still owns the registrar', registrarOwner === account.address, registrarOwner)
     expect('the v1 retirement was not sent', JSON.stringify(await v1State()) === JSON.stringify(v1Before))
@@ -207,8 +208,8 @@ async function main() {
     console.log(`\n=== The guardian Safe sets the allowance, the admin Safe accepts ===`)
     await sendAs(governance.guardianSafe.address, addresses.SimplexSponsor, SPONSOR_ABI, 'setRegistrarAllowance',
       [registrarWallet.address, registrarWallet.allowance])
-    await sendAs(admin, addresses.ETHRegistrarController, V1_ABI, 'acceptOwnership')
-    await sendAs(admin, addresses.SimplexPriceOracle, V1_ABI, 'acceptOwnership')
+    await sendAs(admin, addresses.ETHRegistrarController, artifact(UPGRADEABLE.SimplexController.artifact).abi, 'acceptOwnership')
+    await sendAs(admin, addresses.SimplexPriceOracle, artifact(IMMUTABLE.SimplexPriceOracle.artifact).abi, 'acceptOwnership')
 
     const runTwo = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes', runTwo.length === 0, runTwo.join(', '))
@@ -226,7 +227,7 @@ async function main() {
 
     const upgrade = async (prepared) => {
       verification.contracts[`${prepared.name}@${prepared.candidate}`] = prepared.entry
-      await sendAs(admin, prepared.proxyAdmin, artifact(PROXY_ADMIN_ARTIFACT).abi, 'upgradeAndCall',
+      await sendAs(admin, prepared.proxyAdmin, PROXY_ADMIN_ABI, 'upgradeAndCall',
         [prepared.proxy, prepared.candidate, prepared.data])
       const { implementation } = await proxySlots(client, prepared.proxy)
       expect(`${prepared.name} proxy upgraded through its ProxyAdmin with data ${prepared.data}`,

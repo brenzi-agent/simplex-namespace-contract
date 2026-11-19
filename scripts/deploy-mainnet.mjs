@@ -78,7 +78,7 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 import {
-  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, OWNABLE_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
   V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy, deployImmutable,
   logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
 } from './stack.mjs'
@@ -587,7 +587,7 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
     await check(`${name} proxy admin slot`, proxyAdmin,
       async () => (await proxySlots(client, proxy)).admin)
     await check(`${name} ProxyAdmin owner is the admin Safe`, governance.adminSafe.address,
-      () => client.readContract({ address: proxyAdmin, abi: OWNABLE_ABI, functionName: 'owner' }))
+      () => client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' }))
   }
   await check('registrar ens', registry, () => read(registrar, [], ADDR, 'ens'))
   await check('registrar baseNode', TLD_NODE, () => read(registrar, [], BYTES32, 'baseNode'))
@@ -663,7 +663,7 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
 
   for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
     await owner(`${name} ProxyAdmin owner`, admin, async () => client.readContract({
-      address: (await proxySlots(client, addresses[key])).admin, abi: OWNABLE_ABI, functionName: 'owner',
+      address: (await proxySlots(client, addresses[key])).admin, abi: PROXY_ADMIN_ABI, functionName: 'owner',
     }))
   }
   await owner('controller owner', admin, () => read(addresses.ETHRegistrarController, [], ADDR, 'owner'))

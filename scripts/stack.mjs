@@ -27,7 +27,12 @@ export const ERC1967_IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca
 export const ERC1967_ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103'
 export const TRANSPARENT_PROXY = '@openzeppelin/contracts-v5/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json'
 export const PROXY_ADMIN_ARTIFACT = '@openzeppelin/contracts-v5/proxy/transparent/ProxyAdmin.sol/ProxyAdmin.json'
-export const OWNABLE_ABI = parseAbi(['function owner() view returns (address)'])
+export const PROXY_ADMIN_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function renounceOwnership()',
+  'function transferOwnership(address newOwner)',
+  'function upgradeAndCall(address proxy, address implementation, bytes data) payable',
+])
 export const V1_ABI = parseAbi([
   'function owner() view returns (address)',
   'function pendingOwner() view returns (address)',
