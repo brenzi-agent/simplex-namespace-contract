@@ -48,7 +48,7 @@ const CONTROLLER_ABI = parseAbi(['function sponsor() view returns (address)', 'f
 const compiledWith = (abi) => ({ abi, deployedBytecode: '0x6000', immutableReferences: {} })
 
 test('an identical rebuild is accepted', () => {
-  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, deployed, []), [])
+  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, { storageLayout: deployed, immutables: {} }, []), [])
 })
 
 test('a variable appended in place of the first slot of the trailing __gap is accepted', () => {
@@ -178,8 +178,23 @@ test('a different trustedETHController named as an intended change is accepted, 
   })
 })
 
-test('an intended change of an immutable the artifact lacks is refused', () => {
-  assert.deepEqual(artifactFailures(resolver, immutableNames, [], [], ['controller']), ['it has no immutable named controller'])
+const withoutController = { ...resolver, immutableReferences: { 11: resolver.immutableReferences[11], 12: resolver.immutableReferences[12], 14: resolver.immutableReferences[14] } }
+const currentResolver = { storageLayout: [], immutables: current }
+
+test('a resolver candidate without trustedETHController is refused', () => {
+  assert.deepEqual(artifactFailures(withoutController, immutableNames, [], currentResolver, []), [
+    `it has no immutable named trustedETHController, which the current implementation holds as ${word(CONTROLLER)}`,
+  ])
+})
+
+test('a resolver candidate without trustedETHController, named as an intended change, is accepted', () => {
+  assert.deepEqual(artifactFailures(withoutController, immutableNames, [], currentResolver, ['trustedETHController']), [])
+})
+
+test('an intended change of an immutable that neither implementation has is refused', () => {
+  assert.deepEqual(artifactFailures(resolver, immutableNames, [], currentResolver, ['controller']), [
+    'neither it nor the current implementation has an immutable named controller',
+  ])
 })
 
 test('an immutable of the implementation itself takes its own value, not the current one', () => {

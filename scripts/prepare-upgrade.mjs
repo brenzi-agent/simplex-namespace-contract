@@ -79,13 +79,16 @@ export function slotFailures(bytecode) {
     .map(([which]) => `its bytecode contains the ERC-1967 ${which} slot`)
 }
 
-export function artifactFailures({ abi, deployedBytecode, immutableReferences }, names, layout, currentLayout, intended) {
+export function artifactFailures({ abi, deployedBytecode, immutableReferences }, names, layout, current, intended) {
   const immutables = Object.keys(immutableReferences).map((id) => names.get(Number(id)))
   return [
-    ...layoutFailures(currentLayout, layout),
+    ...layoutFailures(current.storageLayout, layout),
     ...interfaceFailures(abi),
     ...slotFailures(deployedBytecode),
-    ...intended.filter((name) => !immutables.includes(name)).map((name) => `it has no immutable named ${name}`),
+    ...Object.keys(current.immutables).filter((name) => !immutables.includes(name) && !intended.includes(name))
+      .map((name) => `it has no immutable named ${name}, which the current implementation holds as ${current.immutables[name]}`),
+    ...intended.filter((name) => !immutables.includes(name) && !Object.hasOwn(current.immutables, name))
+      .map((name) => `neither it nor the current implementation has an immutable named ${name}`),
   ]
 }
 
@@ -140,7 +143,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const refused = artifactFailures(compiled, names, layout, current.storageLayout, intended)
+  const refused = artifactFailures(compiled, names, layout, current, intended)
   if (refused.length) return { refused }
 
   const args = definition.args(addresses, { tld: TLD })
@@ -189,7 +192,7 @@ const ACTIONS = {
     writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
     console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the current immutables`)
     for (const { name: immutable, current, next } of prepared.changes) {
-      console.log(`  intended change of ${immutable}: ${current} → ${next}`)
+      console.log(`  intended change of ${immutable}: ${current ?? 'none'} → ${next ?? 'none'}`)
     }
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
     return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, '0x'] }
