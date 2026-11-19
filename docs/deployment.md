@@ -485,17 +485,21 @@ key. `setPriceOracle` deliberately survives `freeze()`.
     until the controller is frozen. Keeps both lists, the acceptances and the
     nonces. The new implementation must be built for the same controller,
     registrar and settlement, or the upgrade reverts `ImplementationMismatch`.
-- `SimplexSettlement` reads its keys from the controller, as the policy does. Its
-  calls take the labels of names whose card payment can still be reversed
-  ([`plans/payment-reversal.md`](./plans/payment-reversal.md)):
+- The keys of `SimplexSettlement` are read from the controller, as the policy's
+  are. Its calls take the labels of names whose card payment can still be
+  reversed ([`plans/payment-reversal.md`](./plans/payment-reversal.md)):
   - `reversePayments(string[])` — owner **or beneficiary**, before each
-    payment's `reversibleUntil`. Skips, with `NamePaymentReversalSkipped`, a
-    name out of effect, reversed already or past its deadline.
-  - `reinstatePayments(string[])` — owner-only, up to `E` + 90 days; adds the
-    withheld term at once. Skips, with `NamePaymentReinstatementSkipped`, a
-    name out of effect or not reversed.
+    payment's `reversibleUntil`. A name out of effect, reversed already or
+    past its deadline is skipped, with `NamePaymentReversalSkipped`. After a
+    registration's reversal, its renewal and its claims revert
+    `PaymentReversed`; while a renewal's reversal is in effect, a card renewal
+    of the name reverts `RenewalReversed`, and a renewal with 0 reversible days
+    ends the reversal.
+  - `reinstatePayments(string[])` — owner-only, up to `E` + 90 days; the
+    withheld term is added at once. A name out of effect or not reversed is
+    skipped, with `NamePaymentReinstatementSkipped`.
   - `settle(string)` — anyone, from `reversibleUntil` up to `E` + 90 days;
-    `scripts/settle-due.mjs` settles every due payment (see
+    every due payment is settled by `scripts/settle-due.mjs` (see
     [Settling due card payments](#settling-due-card-payments)).
   - `upgradeTo(address)` on the settlement proxy (UUPS) — the controller's
     owner, until the controller is frozen. Keeps the entries. The new
@@ -608,62 +612,77 @@ run 1, so run this script once more after it to write the new ones back. This
 order saves the admin two transactions and leaves the upgrade with the deploy
 key, which holds every role until the handover.
 
-At ens-contracts `70a71ce`, the pin of the upgrade below, `SimplexNamePolicy`
-takes the settlement in its constructor, so `upgrade-holder-renewal.mjs` runs
-only from a checkout that pins ens-contracts `7ff8c37`, with its submodules. The upgrade below starts from the
-v1 implementations or from these, and replaces this one when it runs first.
-After it, the controller is rolled back to the v1 implementation
-`0x0b1120b6a28b88fefa382ca35f6ed601b689eddb` only while no reversible payment
-is in effect, because v1 calls no `consumeRenewal` (decision D16); the
-[rollback](#rollback-of-reversible-card-payments) below goes to the #49
-implementation.
+At ens-contracts `908bd43`, the pin of the upgrade below, the settlement is
+taken by the constructor of `SimplexNamePolicy`, so `upgrade-holder-renewal.mjs`
+is run only from a checkout that pins ens-contracts `7ff8c37`, with its
+submodules. The upgrade below starts from the v1 implementations or from these,
+and replaces this one when it is run first. After it, the controller is rolled
+back to the v1 implementation `0x0b1120b6a28b88fefa382ca35f6ed601b689eddb` only
+while no reversible payment is in effect, since no `consumeRenewal` is called
+by v1 (decision D16); the [rollback](#rollback-of-reversible-card-payments)
+below is made to the #49 implementation.
 
 ### Reversible card payments on the deployed `.simplex`
 
-`scripts/upgrade-payment-reversal.mjs` brings a deployed `.simplex` stack to
-card payments that the guardian or the admin can reverse
-([`plans/payment-reversal.md`](./plans/payment-reversal.md), section 8). Run it
-after the ownership handover. From any funded key, which gains no role, it
-deploys:
+With `scripts/upgrade-payment-reversal.mjs`, a deployed `.simplex` stack is
+upgraded to card payments that the guardian or the admin can reverse
+([`plans/payment-reversal.md`](./plans/payment-reversal.md), section 8). It is
+run after the ownership handover, from any funded key, which gains no role.
+These are deployed:
 
 - `SimplexSettlement(controllerProxy, registrar)` and `SimplexSettlementProxy`;
 - the `SimplexController` implementation;
 - the `SimplexNamePolicy` implementation, built for the settlement proxy;
 - `SimplexSponsor(controllerProxy)`;
-- the #49 controller implementation, the build
-  `ens-contracts/test/simplex/fixtures/builds/7ff8c37/SimplexController.json`,
-  for a rollback, unless the controller already runs it.
+- for a rollback, the `SimplexController` of ens-contracts `7ff8c37`, the head
+  of #49, compiled in a temporary worktree of the submodule, unless the
+  controller's implementation or the recorded `SimplexControllerImpl` has its
+  code, the metadata and the immutables aside. The implementation chosen or
+  deployed is recorded in the journal and kept by later runs.
+
+When `7ff8c37` is missing from the submodule, it is fetched with
+`git -C ens-contracts fetch https://github.com/simplex-network/ens-contracts.git pull/49/head`,
+the command for fetching it by hand too. Once #49 is merged, its merge commit
+replaces `7ff8c37` in the script and here, as long as its `contracts/` are
+those of `7ff8c37`.
 
 ```sh
 DEPLOYER_KEY=0x… MAINNET_RPC_URL=https://… MAX_BASE_FEE_GWEI=0.05 \
   node scripts/upgrade-payment-reversal.mjs
 ```
 
-The script first rehearses on a fork of mainnet, signing the owners' and the
-guardian's calls by impersonation. It checks:
+`ABSOLUTE_MAX_BASE_FEE_GWEI`, `BUMP_AFTER_HOURS` and `BUMP_PCT` are read as by
+`deploy-mainnet.mjs`. The upgrade is first rehearsed on a fork of mainnet, with
+the owners' and the guardian's calls signed by impersonation. The registrars
+with a non-zero allowance on the sponsor in use are listed, and these are
+checked:
 
 - the 12 controller and policy settings of the upgrade above, read back
   unchanged;
-- the five read-backs listed below, and that the rollback implementation is
-  the #49 build;
+- the five read-backs listed below, and that the rollback implementation has
+  the code of `7ff8c37`;
+- a sponsored registration and a sponsored renewal with 0 reversible days,
+  each of the whole term, with zeros from `reversiblePayment`;
 - a sponsored registration with 180 reversible days, which expires 30 days
   after `reversibleUntil`;
-- its holder's renewal before settlement, which reverts `PaymentNotSettled`;
-- the guardian's reversal, after which a claim reverts `PaymentReversed`;
+- its holder's renewal, which reverts `PaymentNotSettled` before settlement
+  and `PaymentReversed` after the guardian's reversal, and a claim after the
+  reversal, which reverts `PaymentReversed`;
 - the admin's reinstatement, which extends the name to its paid expiry, in a
-  batch that skips an unreversed name with `NamePaymentReinstatementSkipped`;
-- a settlement at `reversibleUntil`, which extends a second name to its paid
-  expiry;
-- a sponsored renewal with 180 reversible days, the guardian's reversal of its
-  payment, which leaves the expiry at `E`, and a renewal after that reversal.
+  batch in which an unreversed name is skipped with
+  `NamePaymentReinstatementSkipped`;
+- a settlement at exactly `reversibleUntil`, which extends a second name to its
+  paid expiry;
+- a sponsored renewal with 180 reversible days and the guardian's reversal of
+  its payment, after which the expiry stays at `E`, a card renewal reverts
+  `RenewalReversed`, and a renewal with 0 reversible days is made.
 
-Nothing is sent to mainnet unless the rehearsal passes, and the script stops
-before mainnet while the controller has a pending owner or the deploy key
-still owns the registry root.
+Nothing is sent to mainnet unless the rehearsal passes, nor while the
+controller has a pending owner or the deploy key still owns the registry root.
 
-The first run on mainnet writes the new addresses to
-`verification.mainnet.simplex.json` and prints the calls with their callers and
-calldata. Step 1 is the deployment; the rest follow in this order:
+On the first run on mainnet, the new addresses are written to
+`verification.mainnet.simplex.json`, and the calls are printed with their
+callers and calldata. Step 1 is the deployment; the rest follow in this order:
 
 | # | Caller | Call |
 |---|---|---|
@@ -685,9 +704,12 @@ ONLY=SimplexSettlementImpl,SimplexSettlementProxy,SimplexControllerImpl,SimplexN
 ```
 
 The rollback implementation, `SimplexControllerRollbackImpl` in the
-verification file, is verified from its own build:
+verification file, is verified from the commit it was compiled from; an
+implementation chosen rather than deployed, such as the controller's after
+#18, was verified with #18:
 
 ```sh
+git -C ens-contracts fetch https://github.com/simplex-network/ens-contracts.git pull/49/head
 git -C ens-contracts checkout 7ff8c3718f77c31d88705bff46fd08c6ca5848b5
 (cd ens-contracts && npx hardhat compile)
 ONLY=SimplexControllerRollbackImpl ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex \
@@ -695,8 +717,8 @@ ONLY=SimplexControllerRollbackImpl ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX
 git submodule update ens-contracts
 ```
 
-Run the script again after the owners' calls are mined. It reads back on
-mainnet:
+Run the script again after the owners' calls are mined. These are read back
+on mainnet:
 
 - `controller.sponsor()` is the new sponsor, whose `controller()` is the
   controller proxy;
@@ -707,43 +729,48 @@ mainnet:
 - `registrar.controllers(settlementProxy)` is true;
 - `MAX_REVERSIBLE_DAYS()` is 180 and `SETTLEMENT_WINDOW()` 2,592,000.
 
-It then writes `SimplexSettlement`, `SimplexSettlementImpl`,
-`SimplexControllerImpl`, `SimplexNamePolicyImpl`, `SimplexSponsor` and
-`SimplexControllerRollbackImpl` to `deployments.mainnet.simplex.json`. Commit
-the addresses file, and tag the deployed ens-contracts commit with the next
-`simplex-mainnet-v*` tag. Card payments for names are enabled by a store
-setting of their own only after step 8 and the client releases of the plan's
-section 10 (decision D14).
+Then `SimplexSettlement`, `SimplexSettlementImpl`, `SimplexControllerImpl`,
+`SimplexNamePolicyImpl`, `SimplexSponsor` and `SimplexControllerRollbackImpl`
+are written to `deployments.mainnet.simplex.json`. Commit the addresses file,
+and tag the deployed ens-contracts commit with the next `simplex-mainnet-v*`
+tag. Card payments for names are enabled by a store setting of their own only
+after step 8 and the client releases of the plan's section 10 (decision D14).
 
-The alternative order upgrades before the handover, as above: run the script
-with `BEFORE_HANDOVER=yes` and the deploy key as `DEPLOYER_KEY`. It then sends
-steps 2, 3 and 7 itself, without the Etherscan check before signing, so steps 4
-to 6 follow step 7; that order applies only while the old sponsor holds no
-allowance. The handover run from tag `simplex-mainnet-v1` then reports the
-controller's sponsor and both implementation slots as failed, and rewrites both
-files with the addresses of run 1, so run this script once more after it to
-write the new ones back.
+The alternative order upgrades before the handover, as above: the script is run
+with `BEFORE_HANDOVER=yes` and the deploy key as `DEPLOYER_KEY`. The deploy key
+then sends steps 2, 3 and 7 itself, each only while it still owns the registrar
+or the controller, without the Etherscan check before signing, so steps 4 to 6
+follow step 7. Step 7 voids the orders signed for the sponsor in use, so the
+run is refused while that sponsor holds a non-zero allowance for any registrar,
+read from its `RegistrarAllowanceSet` events: the store registers those orders,
+and the guardian sets those allowances to 0, first. The handover run from tag
+`simplex-mainnet-v1` then reports the controller's sponsor and both
+implementation slots as failed, and rewrites both files with the addresses of
+run 1, so the script is run once more after it to write the new ones back; the
+rollback implementation is kept from the journal.
 
 ### Rollback of reversible card payments
 
-The policy is fixed forward only: its upgrade refuses an implementation built
-for another settlement. While any reversible payment is in effect:
+The policy is fixed forward only: an implementation built for another
+settlement is refused by its upgrade. While any reversible payment is in
+effect:
 
 1. The operators stop card payments for names.
-2. Any key deploys a sponsor of the #49 interface, the build
-   `ens-contracts/test/simplex/fixtures/builds/7ff8c37/SimplexSponsor.json`,
-   with the controller proxy as its argument. The guardian sets the store's
-   allowance on it.
+2. An operator deploys, from any funded key, a `SimplexSponsor` compiled from
+   ens-contracts `7ff8c37`, with the controller proxy as its argument. The
+   guardian sets the store's allowance on it.
 3. The controller owner calls
-   `controller.upgradeToAndCall(<SimplexControllerRollbackImpl>, <setSponsor(<that sponsor>) calldata>)`.
-   Never the v1 implementation while an entry is in effect (D16).
-4. The new policy and `SimplexSettlement` stay: entries settle, and renewals
-   and claims stay checked.
-5. The registrar owner calls `registrar.removeController(<settlement proxy>)`
-   once every entry is settled or lapsed.
+   `controller.upgradeToAndCall(<SimplexControllerRollbackImpl>, <setSponsor(<that sponsor>) calldata>)`,
+   never with the v1 implementation while an entry is in effect (D16).
+4. The new policy and `SimplexSettlement` stay: entries are settled, and
+   renewals and claims stay checked.
+5. The operators switch the store service and the names page back to that
+   sponsor and the #49 types.
 
-With every entry settled or lapsed, `reversiblePayment` returns zeros, and the
-new policy behaves as the #49 policy.
+With every entry settled or lapsed, zeros are returned by `reversiblePayment`,
+and the checks of the new policy are those of the #49 policy. `SimplexSettlement`
+stays a registrar controller, so a reinstatement or a settlement can still be
+made.
 
 ### Settling due card payments
 
@@ -754,13 +781,15 @@ Anyone else can, with any funded key:
 RPC_URL=https://… SETTLER_KEY=0x… node scripts/settle-due.mjs
 ```
 
-The script reads the settlement from the name policy in `ADDRESSES` (default
-`deployments.mainnet.simplex.json`) and its `NamePaymentReversible` events from
-`FROM_BLOCK`, by default the block of the settlement's deployment in a committed
-journal, else block 0. For each name whose payment `reversiblePayment` reports
-due, with its `reversibleUntil` passed and not reversed, it calls
-`settle(label)` with the label from `registrar.labelOf`. It reports each
-settlement, and exits non-zero when one fails.
+The settlement's address is read from the name policy in `ADDRESSES` (default
+`deployments.mainnet.simplex.json`), and its `NamePaymentReversible` events
+from `FROM_BLOCK`, by default the block of the settlement's deployment in a
+committed journal, else block 0. `settle(label)` is called, with the label from
+`registrar.labelOf`, for each name whose payment `reversiblePayment` reports
+due, with its `reversibleUntil` passed and not reversed. With
+`MAX_BASE_FEE_GWEI` set, nothing is sent while the base fee is above it, and
+each transaction offers that fee with no priority fee. Each settlement is
+reported, and the exit status is non-zero when one fails.
 
 ---
 

@@ -89,7 +89,7 @@ only caller of those paths and the only party that can refuse before it has paid
 These powers outlive GOV9 because losing them would be worse than keeping them.
 `registerReserved` and `addReservedNames` keep brand outreach open with no end date.
 `addController` is the only repair path if the frozen controller has a bug.
-`reversePayments` and `reinstatePayments` keep card disputes answerable.
+Card disputes stay answerable with `reversePayments` and `reinstatePayments`.
 `setMetadataRenderer` updates NFT artwork, since the renderer is immutable and is replaced
 rather than edited.
 
@@ -122,9 +122,10 @@ than seven days of notice. GOV8 buys the notice back.
 A third path follows from reversible card payments
 ([`payment-reversal.md`](./payment-reversal.md)). A name paid by card is extended only to `E`
 until its payment is settled, and the guardian or the admin can reverse the payment before
-its `reversibleUntil`. The name of a reversed registration then lapses after `E` + 90 days,
-and the deferred term of a reversed renewal is withheld. The admin can also end an entry by
-adding a registrar controller that renews the name, and can remove `SimplexSettlement` as a
+its `reversibleUntil`. The name of a reversed registration then lapses after `E` + 90 days.
+The deferred term of a reversed renewal is withheld, and a card renewal of the name is refused
+while that reversal is in effect. The admin can also end an entry by adding a registrar
+controller and renewing the name through it, and can remove `SimplexSettlement` as a
 registrar controller, after which every unsettled registration lapses after `E` + 90 days.
 No key takes a name from its holder before its registration expires: `E` for an unsettled
 reversible registration, while `SimplexSettlement` is a registrar controller.
@@ -225,8 +226,9 @@ from configuration we ship, so switching them is a release, not a migration user
 remaining expiry, its `simplex.contact` and `simplex.channel` records, and any subnames.
 `registerReserved` is owner-callable forever and takes an arbitrary owner and duration, so
 the new deployment re-mints the snapshot directly, with no user action and no signature.
-A name with an unsettled card payment is re-minted for its paid term, which ends the store's
-reversal window for it; a name with a reversed renewal is re-minted to `E`.
+A name with a reversed renewal is re-minted to `E`, and a name with an unsettled card payment
+to its paid expiry, which ends the store's reversal window for it, each for at least 730 days,
+the shortest term `registerReserved` takes.
 Subnames are the exception: only a name's holder can create them, and a name the admin holds
 reaches its holder only when the holder claims it, so re-creating them needs a purpose-built
 migration controller or the holders' signatures.
@@ -290,7 +292,8 @@ Caller: **deploy key**, alone.
    `deploy-mainnet.mjs` supports that through `MAX_BASE_FEE_GWEI`.
 7. Leave `publicSalesOpen == false`.
 
-The settlement proxy precedes the policy, whose constructor binds it for good:
+The settlement proxy is deployed before the policy, to which it is bound for good by the
+policy's constructor:
 
 ```mermaid
 flowchart LR

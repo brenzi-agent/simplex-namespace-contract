@@ -335,10 +335,10 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 | `removeCommunityNames`, `setGeneralTerms(string)`, `setCommunityTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration, claim or renewal must be made again; the other kind's acceptances stay valid, and existing holders accept the new link at their next renewal. |
 | `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. The controller's setter also reverts for a policy whose `settlement()` is not the current policy's; the registrar's checks only the target's `registrar()`. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
 | `SimplexNamePolicy` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the lists, acceptances and nonces. The new implementation must be built for the same controller, registrar and settlement (`ImplementationMismatch`), so the policy is fixed forward only. The policy is a registrar controller, so until the freeze an upgrade can mint any available name; the admin can already add a controller. |
-| `SimplexSettlement.reversePayments(string[])` | owner **or** beneficiary | Before each payment's `reversibleUntil`; survives `freeze()`. The name of a reversed registration cannot be claimed or renewed, and lapses 90 days after `E`; the deferred term of a reversed renewal is withheld. A name out of effect, reversed already or past its deadline is skipped with `NamePaymentReversalSkipped`. |
-| `SimplexSettlement.reinstatePayments(string[])` | owner only | Up to `E` + 90 days; survives `freeze()`. Adds the withheld term at once and ends the entry, so a reinstated payment cannot be reversed again. A name out of effect or not reversed is skipped with `NamePaymentReinstatementSkipped`. |
-| `SimplexSettlement.settle(string)` | anyone | From `reversibleUntil` up to `E` + 90 days; adds the deferred term of a payment that is not reversed. |
-| `SimplexSettlement` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the entries. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The settlement is a registrar controller, so until the freeze an upgrade can mint and renew any name; the admin can already add a controller. |
+| `SimplexSettlement.reversePayments(string[])` | owner **or** beneficiary | Before each payment's `reversibleUntil`; survives `freeze()`. A claim or a renewal of the name of a reversed registration reverts `PaymentReversed`, and the name lapses 90 days after `E`. The deferred term of a reversed renewal is withheld, and a card renewal of the name reverts `RenewalReversed` while the reversal is in effect; a renewal with 0 reversible days ends it. A name out of effect, reversed already or past its deadline is skipped with `NamePaymentReversalSkipped`. |
+| `SimplexSettlement.reinstatePayments(string[])` | owner only | Up to `E` + 90 days; survives `freeze()`. The withheld term is added at once and the entry ended, so a reinstated payment cannot be reversed again. A name out of effect or not reversed is skipped with `NamePaymentReinstatementSkipped`. |
+| `SimplexSettlement.settle(string)` | anyone | From `reversibleUntil` up to `E` + 90 days; the deferred term of a payment that is not reversed is added. |
+| `SimplexSettlement` upgrade (UUPS) | controller owner, until the controller is frozen | The entries are kept. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The settlement is a registrar controller, so until the freeze any name can be minted and renewed through an upgrade; the admin can already add a controller. |
 | `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, `acceptGeneralTermsForRenewal`, `acceptCommunityTermsForRenewal`, and their `WithSig` variants | any address for itself, or anyone holding its signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, and for a renewal, by the name, the expiry the acceptance names and the duration, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD for the whole duration. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature, which covers the reversible days. Renewing names the holder, whose acceptance for that renewal the name policy consumes; a renewal with reversible days for anyone but the caller needs the holder's `RenewName` signature. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
@@ -618,13 +618,14 @@ payment before `reversibleUntil`
 Accepted:
 
 - **A buyer who disputes a registration holds the name until `E`.** After the
-  reversal its renewal and claims are refused, and the names resolver withholds
-  its records (D4); other on-chain readers show them until the name is
-  available, after `E` + 90 days.
+  reversal its renewal and its claims revert `PaymentReversed`, and the names
+  resolver withholds its records (D4); other on-chain readers show them until
+  the name is available, after `E` + 90 days.
 - **A holder who disputes a card renewal keeps the name until `E`**, and renews,
   moves and edits it as before (D19). The holder gains at most the reversible
-  days plus 30 days beyond the previous expiry, and the grace days elapsed; the
-  store refuses that holder's next card renewal of the name.
+  days plus 30 days beyond the previous expiry, and the grace days elapsed; a
+  card renewal of the name reverts `RenewalReversed` while the reversed renewal
+  is in effect, so the name is renewed with 0 reversible days.
 - **A recipient who claims before the reversal loses the name at `E`**, or a
   renewal's deferred term. Clients show the reversal deadline, `E`, the paid
   expiry and what a reversal takes, and ask for the recipient's
@@ -643,24 +644,26 @@ Accepted:
   renewal keeps `E`, and repoints the registrar's name policy without a check
   of its `settlement()`. Each is behind the timelock from GOV8; a reinstatement
   lands up to `E` + 90 days, after the 7-day delay. The controller's pointer is
-  checked (D18).
+  checked (D18), and card payments for names stop before a
+  `removeController(settlement)`.
 - **`SimplexSettlement` is a registrar controller**, trusted as the name policy
-  is. Its upgrades end at `freeze()` only because its implementation checks
-  `controller.frozen()`; an implementation without that check keeps a power to
-  mint and renew any name, so the freeze recipe reads its implementation slot
-  (launch-to-freeze plan, A7).
+  is. Its upgrades end at `freeze()` only because `controller.frozen()` is
+  checked by its implementation; an implementation without that check keeps a
+  power to mint and renew any name, so its implementation slot is read in the
+  freeze recipe (launch-to-freeze plan, A7).
 - **With a fault in `SimplexSettlement.reversiblePayment`, every holder transfer
-  and renewal reverts**, since the name policy calls it on both. An upgrade
-  repairs it until `freeze()`; after it, `registrar.setNamePolicy(0)` restores
-  transfers without the terms check, and an added registrar controller renews.
+  and renewal reverts**, since it is called by the name policy on both. It is
+  repaired by an upgrade until `freeze()`; after it, transfers are restored by
+  `registrar.setNamePolicy(0)`, without the terms check, and renewals by an
+  added registrar controller.
 - **The registrar key registers or renews with reversible days only when the
   buyer or holder signed them** (D0). A registration to its own address, or a
   renewal of its own name, is unsigned, as a registration to itself is today.
 - **An honest buyer's name lapses after `E` + 90 days if nobody settles it.**
   Anyone settles (D13): the store service, `scripts/settle-due.mjs` and the
   dApp.
-- **The chain shows which registrations and renewals were paid by card**,
-  through their reversible days, and each reversal (D3). Crypto and code
+- **Which registrations and renewals were paid by card is public on chain**,
+  through their reversible days, as is each reversal (D3). Crypto and code
   orders are registered and renewed with 0 days.
 - **A registration's dispute still open at `E` + 90 days frees the name.** The
   guardian reserves it privately before then; on a won dispute the admin
@@ -674,13 +677,15 @@ Accepted:
   loses the rest of the paid term. Such a rollback is excluded while any entry
   is in effect (D16).
 - **A payment withdrawn after a reinstatement, or reversed after
-  `reversibleUntil`, is the store's loss.** 180 days after the registration or
-  renewal reach Stripe's usual 120 days after the payment.
-- **The snapshot-and-redeploy fallback re-mints an unsettled name as final**,
-  which ends the store's reversal window for it.
+  `reversibleUntil`, is the store's loss.** The 180 days, counted from the
+  registration or renewal, cover Stripe's usual 120 days after the payment.
+- **In the snapshot-and-redeploy fallback, an unsettled name is re-minted as
+  final**, to its paid expiry and for at least 730 days, which ends the store's
+  reversal window for it.
 - **A reversed renewal awaiting its dispute is ended by the holder's next
-  renewal**, and its reinstatement with it; the store reinstates before
-  relaying that renewal when the dispute is won by then.
+  renewal**, made with 0 reversible days, and its reinstatement with it; the
+  store reinstates before relaying that renewal when the dispute is won by
+  then.
 - **A holder whose registration's dispute is won loses resolution from the
   reversal to the reinstatement**, 2 to 3 months, as the names resolver
   withholds the records (D4); the store tells the holder.
@@ -769,8 +774,8 @@ a name someone holds. `reclaim` requires `_isApprovedOrOwner` and points the nod
 at the holder only; `approveWithSig` requires the holder's signature and a
 grace-aware `ownerOf`, and only the recipient, or a controller, can complete the transfer.
 A name with an unsettled reversible payment is held until `E`, its expiry on
-chain: a reversal withholds the rest of the paid term, and leaves the name with
-its holder until then.
+chain: after a reversal, the rest of the paid term is withheld, and the name
+stays with its holder until then.
 
 ### Adversarial review (three expert personas + independent refutation)
 
