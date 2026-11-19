@@ -80,7 +80,7 @@ import {
 import {
   ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, OWNABLE_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
   V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy, deployImmutable,
-  mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
+  logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
 } from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
@@ -99,7 +99,6 @@ const COMMUNITY_BATCH = 100
 // The labels users can register: simplex-app src/hooks/useValidate.ts ALLOWED_LABEL_REGEX.
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
-const LOG_RANGE = 10_000n
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
@@ -436,14 +435,8 @@ const BYTES32 = [{ type: 'bytes32' }]
 const BOOL = [{ type: 'bool' }]
 
 async function controllersAdded(client, registrar, fromBlock) {
-  const head = await client.getBlockNumber()
-  const added = []
-  for (let from = fromBlock; from <= head; from += LOG_RANGE) {
-    const to = from + LOG_RANGE - 1n < head ? from + LOG_RANGE - 1n : head
-    const logs = await client.getLogs({ address: registrar, event: CONTROLLER_ADDED, fromBlock: from, toBlock: to })
-    added.push(...logs.map(({ args }) => args.controller))
-  }
-  return added
+  const logs = await logsSince(client, { address: registrar, event: CONTROLLER_ADDED }, fromBlock)
+  return logs.map(({ args }) => args.controller)
 }
 
 /// L29: the journal proves each transaction was mined, not that the stack is

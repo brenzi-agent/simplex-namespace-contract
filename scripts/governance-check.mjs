@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createPublicClient, getAddress, http, isHex, keccak256, parseAbi, toHex, zeroAddress } from 'viem'
+import { createPublicClient, getAddress, http, isHex, keccak256, parseAbi, parseAbiItem, toHex, zeroAddress } from 'viem'
 import { mainnet } from 'viem/chains'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { REPO_ROOT, VERIFICATION_PATH, addressAt, requireEnv, sortedAddresses } from './stack.mjs'
+import { REPO_ROOT, VERIFICATION_PATH, addressAt, logsSince, requireEnv, sortedAddresses } from './stack.mjs'
 
 const GOVERNANCE_PATH = join(REPO_ROOT, 'governance.mainnet.json')
 
@@ -33,6 +33,7 @@ const TIMELOCK_ROLES = {
   executors: keccak256(toHex('EXECUTOR_ROLE')),
   cancellers: keccak256(toHex('CANCELLER_ROLE')),
 }
+const ROLE_GRANTED = parseAbiItem('event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)')
 const REQUIRED = { adminSafe: 'Safe', guardianSafe: 'Safe', registrarWallet: 'EOA' }
 
 function checksummed(where, value) {
@@ -86,12 +87,23 @@ async function safeFailures(client, { address, threshold, owners }, code) {
 }
 
 async function timelockFailures(client, entry, code, deployKey) {
-  const { address, codeHash, minDelay } = entry
+  const { address, codeHash, minDelay, deployBlock } = entry
   if (keccak256(code) !== codeHash) return [`code hash is ${keccak256(code)}, expected ${codeHash}`]
   const read = (functionName, args) => client.readContract({ address, abi: TIMELOCK_ABI, functionName, args })
   const adminRole = await read('getRoleAdmin', [TIMELOCK_ROLES.proposers])
+  let granted
+  try {
+    granted = (await logsSince(client, { address, event: ROLE_GRANTED, args: { role: adminRole } }, BigInt(deployBlock)))
+      .map(({ args }) => getAddress(args.account))
+  } catch (error) {
+    return [`its RoleGranted logs from block ${deployBlock} could not be read: ${error.shortMessage ?? error.message}`]
+  }
+  if (!granted.includes(address)) {
+    return [`the grant of the admin role to itself is missing from its RoleGranted logs from block ${deployBlock}: deployBlock is later than its deployment`]
+  }
   const members = Object.entries(TIMELOCK_ROLES).flatMap(([roles, role]) => entry[roles].map((account) => [roles, role, account]))
-  const accounts = [...new Set([...members.map(([, , account]) => account), ...(deployKey ? [deployKey] : [])])]
+  const accounts = [...new Set([...members.map(([, , account]) => account), ...granted, ...(deployKey ? [deployKey] : [])]
+    .map((account) => getAddress(account)))].filter((account) => account !== address)
   const [delay, held, admins] = await Promise.all([
     read('getMinDelay'),
     Promise.all(members.map(([, role, account]) => read('hasRole', [role, account]))),
@@ -114,11 +126,12 @@ const KINDS = {
     failures: (client, entry, code) => (code ? safeFailures(client, entry, code) : ['has no code']),
   },
   TimelockController: {
-    parse: (where, { address, codeHash, minDelay, proposers, executors, cancellers }) => {
+    parse: (where, { address, codeHash, deployBlock, minDelay, proposers, executors, cancellers }) => {
       if (!isHex(codeHash) || codeHash.length !== 66) throw new Error(`${where}.codeHash: expected 32 bytes of hex`)
       return {
         address: checksummed(`${where}.address`, address),
         codeHash,
+        deployBlock: count(`${where}.deployBlock`, deployBlock),
         minDelay: count(`${where}.minDelay`, minDelay),
         proposers: addresses(`${where}.proposers`, proposers),
         executors: addresses(`${where}.executors`, executors),

@@ -230,7 +230,7 @@ test('a renounced ProxyAdmin is refused', async () => {
   assert.match(target.refused.join('; '), /is renounced/)
 })
 
-const TIMELOCK = '0x000000000000000000000000000000000000fA11'
+const TIMELOCK = '0x0000000000000000000000000000000000007777'
 const TIMELOCK_CODE = '0x6001'
 const ADMIN_ROLE = pad('0x00', { size: 32 })
 const governance = {
@@ -239,6 +239,7 @@ const governance = {
     kind: 'TimelockController',
     address: TIMELOCK,
     codeHash: keccak256(TIMELOCK_CODE),
+    deployBlock: 1,
     minDelay: 604800,
     proposers: [ADMIN_SAFE],
     executors: [ADMIN_SAFE],
@@ -256,7 +257,8 @@ const timelockChain = (code) => {
   return {
     ...chain(),
     getCode: async () => code,
-    getLogs: async () => [],
+    getBlockNumber: async () => 1n,
+    getLogs: async () => [{ args: { role: ADMIN_ROLE, account: TIMELOCK, sender: TIMELOCK } }],
     readContract: async ({ functionName, args = [] }) => reads[functionName](...args),
   }
 }
@@ -268,7 +270,7 @@ test('a transfer to a Safe entry is refused', async () => {
 
 test('a transfer to a timelock that fails its check is refused', async () => {
   const call = await transferCall(timelockChain('0x6002'), deployment, governance, 'SimplexController', 'timelock', OTHER)
-  assert.match(call.refused.join('; '), /^timelock 0x0+fA11 code hash is 0x[0-9a-f]{64}, expected /)
+  assert.match(call.refused.join('; '), /^timelock 0x0+7777 code hash is 0x[0-9a-f]{64}, expected /)
 })
 
 test('a transfer to a timelock that passes its check addresses the ProxyAdmin of the named contract', async () => {

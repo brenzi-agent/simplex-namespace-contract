@@ -52,6 +52,18 @@ export const sortedAddresses = (list) => list.map((address) => getAddress(addres
 export const addressAt = async (client, address, slot) =>
   getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
 
+const LOG_RANGE = 10_000n
+
+export async function logsSince(client, filter, fromBlock) {
+  const head = await client.getBlockNumber()
+  const logs = []
+  for (let from = fromBlock; from <= head; from += LOG_RANGE) {
+    const to = from + LOG_RANGE - 1n < head ? from + LOG_RANGE - 1n : head
+    logs.push(...(await client.getLogs({ ...filter, fromBlock: from, toBlock: to })))
+  }
+  return logs
+}
+
 export async function mainnetClient(rpcUrl) {
   const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
   // MAINNET_RPC_URL pointing at a testnet would deploy the whole stack to the
