@@ -46,7 +46,7 @@ A renewal is extended the same way: `renewWithCredit` adds its whole term at onc
 | D6 | Who reverses | the guardian or the admin, before `reversibleUntil` | the owner, 18 Nov |
 | D7 | Who reinstates | the admin; the payment is settled at once by a reinstatement | the owner, 18 Nov |
 | D15 | Reversible days of a card payment | 180 | pending the owner |
-| D19 | A reversed renewal | its deferred term withheld; the name keeps `E`, and its renewals, claims and records stay as before; the admin reinstates the term until the expiry changes or a new reversible renewal replaces the entry | pending the owner |
+| D19 | A reversed renewal | its deferred term withheld; the name keeps `E`, and its renewals, claims and records stay as before; the admin reinstates the term until the expiry changes; a card renewal of the name is refused while the reversed renewal is in effect | pending the owner |
 | D14 | Start of card sales | card payments for names enabled by a store setting of their own, after the releases of the dApp, simplex.domains and the names resolver of section 10; the app's claim flow, not built yet, ships with the acknowledgement | pending the owner |
 | D8 | Form and bound of the reversible days | a whole number of days, at most `MAX_REVERSIBLE_DAYS`, the largest value D15 allows: 180 with its applied option; 0 registers or renews the whole term | decided, with D15 |
 | D9 | Settlement window | 30 days at least between `reversibleUntil` and `E`; both stored in each entry | decided |
@@ -70,8 +70,7 @@ stateDiagram-v2
   reversible --> renewalReversed: a renewal's payment, guardian or admin, reversePayments, before reversibleUntil
   reversed --> final: admin, reinstatePayments, up to E + 90 days, expiry = paid expiry
   renewalReversed --> final: admin, reinstatePayments, up to E + 90 days while the expiry is E, expiry = paid expiry
-  renewalReversed --> final: any renewal with reversibleDays = 0, entry ignored
-  renewalReversed --> reversible: renewWithCredit with reversibleDays > 0, entry replaced
+  renewalReversed --> final: any renewal with reversibleDays = 0, entry ignored; with reversibleDays > 0, refused
   reversible --> final: anyone, settle, from reversibleUntil up to E + 90 days, expiry = paid expiry
   reversible --> final: a renewal by another registrar controller the admin adds, or through a controller without consumeRenewal, entry ignored, remaining lost
   reversed --> final: a renewal by another registrar controller the admin adds, or through a controller without consumeRenewal, entry ignored
@@ -104,10 +103,10 @@ The expiry is changed by settlement, by reinstatement, by every later registrati
 | reversible, before `reversibleUntil` | `PaymentNotSettled` | allowed; clients ask for an acknowledgement | `ReversiblePeriodNotEnded` | guardian or admin | skipped |
 | reversible, `reversibleUntil` to `E` | `PaymentNotSettled` | allowed; clients settle first | anyone | skipped | skipped |
 | reversible, after `E`, up to `E` + 90 days | `PaymentNotSettled` | refused by `ownerOf` | anyone | skipped | skipped |
-| reversed, up to `E` | `PaymentNotSettled` | `PaymentReversed` | `PaymentReversed` | skipped | admin |
-| reversed, after `E`, up to `E` + 90 days | `PaymentNotSettled` | refused by `ownerOf` | `PaymentReversed` | skipped | admin |
-| renewal reversed, up to `E` | as #49; ends the entry | as #49 | `PaymentReversed` | skipped | admin |
-| renewal reversed, after `E`, up to `E` + 90 days | as #49; ends the entry | refused by `ownerOf` | `PaymentReversed` | skipped | admin |
+| reversed, up to `E` | `PaymentReversed` | `PaymentReversed` | `PaymentReversed` | skipped | admin |
+| reversed, after `E`, up to `E` + 90 days | `PaymentReversed` | refused by `ownerOf` | `PaymentReversed` | skipped | admin |
+| renewal reversed, up to `E` | with 0 days as #49, ending the entry; with reversible days `RenewalReversed` | as #49 | `PaymentReversed` | skipped | admin |
+| renewal reversed, after `E`, up to `E` + 90 days | with 0 days as #49, ending the entry; with reversible days `RenewalReversed` | refused by `ownerOf` | `PaymentReversed` | skipped | admin |
 | lapsed, after `E` + 90 days | refused by the registrar's `renew` | — | `NotReversible` | skipped | skipped |
 | final | as #49 | as #49 | `NotReversible` | skipped | skipped |
 
@@ -136,6 +135,7 @@ SimplexController._renewCore(label, labelhash, duration, cost, referrer, horizon
 
 SimplexSettlement.open(id, reversibleDays, duration, renewal)           controller only, proxy only
   reversibleDays <= MAX_REVERSIBLE_DAYS                                 else ReversibleDaysTooMany(reversibleDays)
+  current entry out of effect, or not reversed                          else RenewalReversed(labelhash)
   start = renewal ? registrar.nameExpires(id) : block.timestamp
   reversibleUntil = block.timestamp + reversibleDays * 1 days
   firstExpiry = max(reversibleUntil + SETTLEMENT_WINDOW, start)
@@ -180,6 +180,7 @@ SimplexNamePolicy constructor(controller, registrar, settlement)
 
 SimplexNamePolicy.consumeRenewal(label, labelhash, duration, holder)
   ... as #49, the holder check first
+  !settlement.reversiblePayment(id).reversed                            else PaymentReversed(label)
   settlement.reversiblePayment(id).reversibleUntil == 0                 else PaymentNotSettled(label)
   ... as #49
 
@@ -212,7 +213,7 @@ SimplexSponsor._consumeIntent(signer, structHash, nonce, deadline, sig) the name
 
 Example after the change: a two-year registration with 180 reversible days expires on day 210 until it is settled, and is extended to day 730 by settlement from day 180. Disputed on day 30 and reversed, it stays with its holder until day 210, without renewal or onward claim, and, with D4, without records from the names resolver; it is available after day 300. Without D4, the names resolver answers its records through the grace period ([`snrc-resolve.py:1237`](https://github.com/simplex-chat/simplexmq/blob/9c4a814fdab9f7350b5f259bb5afe5145b5bd383/scripts/resolver/service/snrc-resolve.py#L1237)), and SimpleX users see the reversal only after day 300.
 
-Example of a renewal: a name expiring on day 60 is renewed by card for a year with 180 reversible days on day 0. Its expiry is extended to day 210, and to day 425 by settlement from day 180. Disputed and reversed on day 30, the name keeps day 210, and its holder can renew it again, move it, and edit its records; the store refuses that holder's next card renewal of it. A name expiring on day 400 is not extended on day 0; its year is added at settlement.
+Example of a renewal: a name expiring on day 60 is renewed by card for a year with 180 reversible days on day 0. Its expiry is extended to day 210, and to day 425 by settlement from day 180. Disputed and reversed on day 30, the name keeps day 210, and its holder can renew it again without reversible days, move it, and edit its records; a card renewal of it is refused until day 300, or until a reinstatement or another renewal. A name expiring on day 400 is not extended on day 0; its year is added at settlement.
 
 A renewal can always defer part of its term: an extension is at most 180 + 30 days, plus up to 90 days of grace, below `MIN_RENEWAL_DURATION`, 365 days.
 
@@ -317,11 +318,11 @@ sequenceDiagram
 | Who or what | Power after the change | Bound |
 |---|---|---|
 | a buyer who disputes a registration, or a card thief | holds the name until `E` | renewal refused; after the reversal, claims refused and records withheld by the names resolver; available after `E` + 90 days; other on-chain readers show its records until then |
-| a holder who disputes a card renewal | keeps the name until `E`, and renews, moves and edits it as before (D19) | gains at most `reversibleDays` + 30 days beyond its expiry, plus the grace days elapsed; the store refuses that holder's next card renewal of the name |
+| a holder who disputes a card renewal | keeps the name until `E`, and renews, moves and edits it as before (D19) | gains at most `reversibleDays` + 30 days beyond its expiry, plus the grace days elapsed; a card renewal of the name is refused while the reversed renewal is in effect |
 | a card thief's modified names page | signs `RegisterName` or `RenewName` with `reversibleDays = 0` | the store refuses a reveal or a renewal signed over another value than its stored one |
 | a third party who claims before the reversal | loses the name at `E`, or a renewal's deferred term | the recipient acknowledges the reversal deadline before the claim (D1) |
 | the guardian | reverses any unsettled reversible payment before `reversibleUntil` | one hardware wallet until GOV8; kept after `freeze()`; a registration reinstated by the admin is settled, and cannot be reversed again; while the guardian and the admin are one key, the split separates nothing; the store alerts on a reversal the operators did not request |
-| the admin | reverses; reinstates; upgrades `SimplexSettlement` until `freeze()`; adds a registrar controller, by whose renewal an entry is ended and its `remaining` lost; removes `SimplexSettlement` as a registrar controller, also after `freeze()`, after which every unsettled registration lapses after `E` + 90 days, and every unsettled renewal keeps `E`; repoints the registrar's name policy, also after `freeze()`, without a check of its `settlement()` | as every admin power, behind the timelock from GOV8; a reinstatement lands up to `E` + 90 days, after the 7-day delay; the controller's pointer is checked (D18) |
+| the admin | reverses; reinstates; upgrades `SimplexSettlement` until `freeze()`; adds a registrar controller, by whose renewal an entry is ended and its `remaining` lost; removes `SimplexSettlement` as a registrar controller, also after `freeze()`, after which every unsettled registration lapses after `E` + 90 days, and every unsettled renewal keeps `E`; repoints the registrar's name policy, also after `freeze()`, without a check of its `settlement()` | as every admin power, behind the timelock from GOV8; a reinstatement lands up to `E` + 90 days, after the 7-day delay; the controller's pointer is checked (D18); card payments for names stop before a `removeController(settlement)` |
 | `SimplexSettlement` | a registrar controller, bounded by its code | the same trust as the name policy, which is a registrar controller behind a UUPS proxy too |
 | a fault in `SimplexSettlement.reversiblePayment` | all holder transfers and renewals of all names revert, as the name policy calls it on both | repaired by an upgrade until `freeze()`; after it, transfers by `registrar.setNamePolicy(0)`, without the terms check, and renewals by an added registrar controller |
 | the registrar key | registers or renews with reversible days only when the buyer or holder signed them (D0) | a registration to its own address, or a renewal of its own name, is unsigned, as a registration to itself today |
@@ -393,7 +394,8 @@ flowchart LR
   - `ImplementationMismatch()`;
   - `NotReversible(string)`;
   - `ReversiblePeriodNotEnded(string)`;
-  - `PaymentReversed(string)`.
+  - `PaymentReversed(string)`;
+  - `RenewalReversed(bytes32)`.
 
 `SimplexNamePolicy`, upgraded in place, storage unchanged:
 
@@ -493,14 +495,14 @@ flowchart TD
   r1["1. card payments for names stopped"] --> r2["2. a sponsor of the #49 interface deployed; the guardian sets the store's allowance on it"]
   r2 --> r3["3. controller: upgradeToAndCall(#49 implementation, setSponsor(that sponsor)); never v1 while an entry is in effect (D16)"]
   r3 --> r4["4. the new policy and SimplexSettlement kept: entries settle, renewals and claims stay checked"]
-  r4 --> r5["5. removeController(settlement), once every entry is settled or lapsed"]
+  r4 --> r5["5. the store service and the names page back on that sponsor and the #49 types"]
 ```
 
-With every entry settled or lapsed, `reversiblePayment` returns zeros, and the new policy behaves as the #49 policy. The policy is fixed forward only.
+With every entry settled or lapsed, `reversiblePayment` returns zeros, and the new policy behaves as the #49 policy. The policy is fixed forward only. `SimplexSettlement` stays a registrar controller, so a reinstatement or a settlement can still be made.
 
 The freeze recipe, launch-to-freeze A7: the settlement proxy's implementation slot is read as the policy's, and a simulated `settlement.upgradeTo` reverts `Frozen`.
 
-The snapshot-and-redeploy fallback of the launch-to-freeze plan, §7: a name with a reversed registration is reserved and not re-minted, as a disputed name past its expiry; a name with a reversed renewal is re-minted to `E`; an unsettled name is re-minted for its paid term.
+The snapshot-and-redeploy fallback of the launch-to-freeze plan, §7: a name with a reversed registration is reserved and not re-minted, as a disputed name past its expiry; a name with a reversed renewal is re-minted to `E`, and an unsettled name to its paid expiry, each for at least 730 days, the shortest term `registerReserved` takes.
 
 ## 9. Requirements for the store service
 
@@ -541,7 +543,7 @@ sequenceDiagram
 - Show at checkout that a card payment is final 180 days after the registration or renewal, and on the order page the exact date.
 - Show the paid expiry and the date the payment becomes final, in place of the expiry on chain.
 - Sell renewals for card payments with `RenewName` (D5); refuse a renewal of a name with an unsettled payment before its `reversibleUntil`; after it, settle before asking the holder for the renewal acceptance, which #49 binds to the current expiry.
-- After a renewal's reversal, refuse that holder's next card renewal of the name; reinstate a won dispute before relaying the holder's next renewal.
+- After a renewal's reversal, sell renewals of the name for crypto or codes only, as the contracts refuse a card renewal while the reversed renewal is in effect; reinstate a won dispute before relaying the holder's next renewal.
 - Relay a claim of a name with an unsettled payment before its `reversibleUntil` only with the client's acknowledgement; from `reversibleUntil`, settle before the claim.
 - Send `settle(label)` for each reversible payment from `reversibleUntil`, and alert the operators when one is unsettled 7 days after it.
 - Read Stripe's `radar.early_fraud_warning.created` as a refund decision for the operators, and `charge.dispute.created`, `charge.refunded`, `charge.dispute.funds_reinstated` and `charge.dispute.closed` as reversal and reinstatement requests; each alert lists the evidence of every name the payment funded, directly or through balances.
@@ -549,8 +551,11 @@ sequenceDiagram
 - Alert the operators 14 days before `E` + 90 days of a reversed registration whose dispute is still open, for the guardian's reservation; a reinstatement of a reserved name goes with `removeReservedNames`.
 - Relay no record edit, offer or claim of a reversed registration, and show it as reversed in search.
 - Classify the new reverts:
-  - `ReversibleDaysTooMany`, `DurationTooShort`: code errors;
+  - `ReversibleDaysTooMany`: a code error;
+  - `DurationTooShort`, or a revert without reason, on a renewal of a name past its grace period: lapsed; otherwise a code error;
   - `PaymentNotSettled`: settle, then retry;
+  - `PaymentReversed` on a renewal: the registration's payment reversed, so renewed only after a reinstatement;
+  - `RenewalReversed` on a card renewal: the name's last card renewal reversed, so renewed without reversible days, or after a reinstatement;
   - `ReversiblePeriodNotEnded`: wait for `reversibleUntil`;
   - `NotReversible` on settlement: settled already, or lapsed;
   - `PaymentReversed` on settlement: reversed, so settled only by a reinstatement;
@@ -616,12 +621,12 @@ sequenceDiagram
   - of a name expiring before `reversibleUntil` + 30 days, extends the expiry to `reversibleUntil` + 30 days; of a later one, renews by 0; `NameRenewed.expires` is `E`, and `NamePaymentReversible.paidExpires` the previous expiry plus the duration, with `renewal` true;
   - of a name in its grace period, extends it to `E`;
   - 0 days renew the whole term, on the payable and the sponsored path, and `open` is not called;
-  - a paid expiry beyond the horizon reverts `DurationTooLong`, on the sponsored path for a general and a community name;
+  - a paid expiry beyond the horizon reverts `DurationTooLong`, on the sponsored path for a general and a community name, also when the first term is extended, at the exact second;
   - `RenewName` with other `reversibleDays`, another holder or another duration reverts `InvalidSignature`; an expired one `SignatureExpired`; a reused nonce `InvalidNonce`; the type hash is pinned;
   - a registrar renewing its own name, and any renewal with 0 days, needs no `RenewName`;
   - the holder check and the renewal acceptance of #49 apply as before;
   - settlement extends the expiry to the previous expiry plus the duration;
-  - a reversal: `reversiblePayment` returns zeros; a claim, a renewal and settlement after it: allowed, allowed, `PaymentReversed`;
+  - a reversal: `reversiblePayment` returns zeros; a claim, a renewal and settlement after it: allowed, allowed, `PaymentReversed`; a card renewal while it is in effect: `RenewalReversed`, and after a reinstatement allowed;
   - a reinstatement after a reversal adds the deferred term; after a renewal of the name, it skips the name;
   - the invariant `MAX_REVERSIBLE_DAYS days + SETTLEMENT_WINDOW + 90 days < MIN_RENEWAL_DURATION`.
 - settlement:
@@ -630,7 +635,7 @@ sequenceDiagram
   - reverts `NotReversible` one second after `E` + 90 days, and a second time;
   - settles a reserved name;
   - during the grace period, restores the subnames' owner.
-- renewal on both paths reverts `PaymentNotSettled` before settlement of a registration or a renewal and works after it; a renewal acceptance signed before settlement reverts `TermsNotAccepted` after it.
+- renewal on both paths reverts `PaymentNotSettled` before settlement of a registration or a renewal and works after it, and `PaymentReversed` after a registration's reversal; a renewal acceptance signed before settlement reverts `TermsNotAccepted` after it.
 - reversal:
   - refuses a claim and settlement; the name lapses at `E` and is available one second after `E` + 90 days;
   - skips the name at `block.timestamp == reversibleUntil`;
