@@ -1,0 +1,131 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { parseAbi, zeroAddress } from 'viem'
+import { artifactFailures, codeFailures, interfaceFailures, layoutFailures, slotFailures } from './prepare-upgrade.mjs'
+import { ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, placeImmutables } from './stack.mjs'
+
+const REGISTRY = '0x000000000000000000000000000000000000c0DE'
+const SUBNAME_REGISTRAR = '0x000000000000000000000000000000000000dEaD'
+const CONTROLLER = '0x000000000000000000000000000000000000bEEF'
+const OTHER = '0x0000000000000000000000000000000000001234'
+
+const uint256 = { label: 'uint256', encoding: 'inplace', numberOfBytes: '32' }
+const address = { label: 'address', encoding: 'inplace', numberOfBytes: '20' }
+const bool = { label: 'bool', encoding: 'inplace', numberOfBytes: '1' }
+const gap = (length) => ({ label: `uint256[${length}]`, encoding: 'inplace', numberOfBytes: String(32 * length), base: uint256 })
+const variable = (contract, label, slot, offset, type) => ({ contract, label, slot: String(slot), offset, type })
+const controller = (label, slot, offset, type) => variable('SimplexController', label, slot, offset, type)
+
+const prefix = [
+  variable('Initializable', '_initialized', 0, 0, { label: 'uint8', encoding: 'inplace', numberOfBytes: '1' }),
+  variable('Initializable', '_initializing', 0, 1, bool),
+  variable('ContextUpgradeable', '__gap', 1, 0, gap(50)),
+  controller('beneficiary', 51, 0, address),
+  controller('sponsor', 52, 0, address),
+  controller('defaultResolver', 53, 0, address),
+  controller('publicSalesOpen', 53, 20, bool),
+  controller('namePolicy', 54, 0, address),
+]
+const deployed = [...prefix, controller('__gap', 55, 0, gap(43))]
+
+const compiledWith = (abi, deployedBytecode = '0x6000') => ({ abi, deployedBytecode })
+const CONTROLLER_ABI = parseAbi(['function sponsor() view returns (address)', 'function setSponsor(address)'])
+
+test('an identical rebuild is accepted', () => {
+  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), deployed, deployed), [])
+})
+
+test('a variable appended in place of the first slot of the trailing __gap is accepted', () => {
+  const appended = [...prefix, controller('nextSponsor', 55, 0, address), controller('__gap', 56, 0, gap(42))]
+  assert.deepEqual(layoutFailures(deployed, appended), [])
+})
+
+test('a reordered state variable is refused', () => {
+  const reordered = [
+    ...prefix.slice(0, 3),
+    controller('sponsor', 51, 0, address),
+    controller('beneficiary', 52, 0, address),
+    ...prefix.slice(5),
+    controller('__gap', 55, 0, gap(43)),
+  ]
+  assert.deepEqual(layoutFailures(deployed, reordered), [
+    'SimplexController.beneficiary moved from slot 51, offset 0, address to slot 52, offset 0, address',
+    'SimplexController.sponsor moved from slot 52, offset 0, address to slot 51, offset 0, address',
+  ])
+})
+
+test('a retyped state variable is refused', () => {
+  const retyped = deployed.map((v) => (v.label === 'publicSalesOpen' ? { ...v, type: { ...uint256, numberOfBytes: '1', label: 'uint8' } } : v))
+  assert.equal(layoutFailures(deployed, retyped).length, 1)
+})
+
+test('a variable appended without shrinking the trailing __gap is refused', () => {
+  const appended = [...prefix, controller('nextSponsor', 55, 0, address), controller('__gap', 56, 0, gap(43))]
+  assert.deepEqual(layoutFailures(deployed, appended), [
+    'the candidate does not end with SimplexController.__gap ending at slot 98',
+  ])
+})
+
+test('a variable appended after the trailing __gap is refused', () => {
+  const appended = [...deployed, controller('nextSponsor', 98, 0, address)]
+  assert.equal(layoutFailures(deployed, appended).length, 1)
+})
+
+for (const signature of [
+  'function upgradeToAndCall(address newImplementation, bytes data) payable',
+  'function upgradeTo(address newImplementation)',
+  'function proxiableUUID() view returns (bytes32)',
+]) {
+  test(`an implementation with ${signature.split('(')[0].replace('function ', '')} is refused`, () => {
+    assert.equal(interfaceFailures([...CONTROLLER_ABI, ...parseAbi([signature])]).length, 1)
+  })
+}
+
+for (const type of ['fallback', 'receive']) {
+  test(`an implementation with a ${type} function is refused`, () => {
+    assert.deepEqual(interfaceFailures([...CONTROLLER_ABI, { type, stateMutability: 'payable' }]), [`has a ${type} function`])
+  })
+}
+
+for (const [which, slot] of [['implementation', ERC1967_IMPLEMENTATION_SLOT], ['admin', ERC1967_ADMIN_SLOT]]) {
+  test(`bytecode that contains the ERC-1967 ${which} slot is refused`, () => {
+    assert.deepEqual(slotFailures(`0x60006000${'7f'}${slot.slice(2)}54`), [`its bytecode contains the ERC-1967 ${which} slot`])
+  })
+}
+
+test('bytecode with the slot one nibble off its byte boundary is accepted', () => {
+  assert.deepEqual(slotFailures(`0x6${ERC1967_IMPLEMENTATION_SLOT.slice(2)}0`), [])
+})
+
+const PUSH32 = `7f${'00'.repeat(32)}`
+const resolver = {
+  contractName: 'SimplexResolver',
+  deployedBytecode: `0x${PUSH32.repeat(4)}00`,
+  immutableReferences: {
+    11: [{ start: 1, length: 32 }],
+    12: [{ start: 34, length: 32 }],
+    13: [{ start: 67, length: 32 }],
+    14: [{ start: 100, length: 32 }],
+  },
+}
+const names = new Map([[11, 'ens'], [12, 'nameWrapper'], [13, 'trustedETHController'], [14, 'trustedReverseRegistrar']])
+const immutables = { ens: REGISTRY, nameWrapper: SUBNAME_REGISTRAR, trustedETHController: CONTROLLER, trustedReverseRegistrar: zeroAddress }
+const expected = placeImmutables(resolver, names, immutables)
+
+test('a resolver built with the deployment\'s immutables is accepted', () => {
+  assert.deepEqual(codeFailures(expected, expected), [])
+})
+
+test('a resolver with a different trustedETHController is refused', () => {
+  const candidate = placeImmutables(resolver, names, { ...immutables, trustedETHController: OTHER })
+  assert.equal(codeFailures(candidate, expected).length, 1)
+})
+
+test('an expected value for an immutable the artifact lacks is refused', () => {
+  assert.throws(() => placeImmutables(resolver, names, { ...immutables, _self: OTHER }), /no immutable named _self/)
+})
+
+test('an immutable without an expected value is refused', () => {
+  const { trustedReverseRegistrar, ...missing } = immutables
+  assert.throws(() => placeImmutables(resolver, names, missing), /no expected value for its immutable trustedReverseRegistrar/)
+})
