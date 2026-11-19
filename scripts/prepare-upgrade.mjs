@@ -19,7 +19,8 @@ import {
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.attempts.log`)
 const UUPS_SELECTORS = new Set(['0x3659cfe6', '0x4f1ef286', '0x52d1902d'])
-const PROXY_ADMIN_NAME = '_proxyAdmin'
+const PROXY_ADMIN_IMMUTABLE = '_proxyAdmin'
+const PROXY_ADMIN_INPUT = 'proxyAdmin'
 
 const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
 const accepted = (fields) => ({ refused: false, ...fields })
@@ -119,14 +120,14 @@ export function ownImmutables(name, addresses, deployer, candidate, proxyAdmin) 
   const fresh = definition.immutables(addresses, { tld: TLD, deployer, self: candidate })
   return {
     ...Object.fromEntries((definition.ownImmutables ?? []).map((immutable) => [immutable, fresh[immutable]])),
-    [PROXY_ADMIN_NAME]: proxyAdmin,
+    [PROXY_ADMIN_IMMUTABLE]: proxyAdmin,
   }
 }
 
 export function dataGuardFailures({ immutableReferences }, names, call) {
-  const guarded = Object.keys(immutableReferences).some((id) => names.get(Number(id)) === PROXY_ADMIN_NAME)
+  const guarded = Object.keys(immutableReferences).some((id) => names.get(Number(id)) === PROXY_ADMIN_IMMUTABLE)
   return call && !guarded
-    ? [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_NAME}, which the candidate lacks: its data function would stay callable by anyone`]
+    ? [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_IMMUTABLE}, which the candidate lacks: its data function would stay callable by anyone`]
     : []
 }
 
@@ -145,10 +146,10 @@ export function upgradeData(abi, call) {
 
 export function candidateArgs(abi, given, proxyAdmin) {
   const inputs = abi.find(({ type }) => type === 'constructor')?.inputs ?? []
-  const at = inputs.findIndex(({ name }) => name === PROXY_ADMIN_NAME)
+  const at = inputs.findIndex(({ name }) => name === PROXY_ADMIN_INPUT)
   const complete = given.length === inputs.length
   if (at !== -1 && complete && String(given[at]).toLowerCase() !== proxyAdmin.toLowerCase()) {
-    return refusal([`CTOR_ARGS sets ${PROXY_ADMIN_NAME} to ${given[at]}, not the proxy's ProxyAdmin ${proxyAdmin}`])
+    return refusal([`CTOR_ARGS sets ${PROXY_ADMIN_INPUT} to ${given[at]}, not the proxy's ProxyAdmin ${proxyAdmin}`])
   }
   const args = at !== -1 && !complete ? given.toSpliced(at, 0, proxyAdmin) : given
   try {

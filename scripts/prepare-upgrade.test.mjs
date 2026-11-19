@@ -343,21 +343,21 @@ test('upgrade data for a candidate with a _proxyAdmin immutable is accepted', ()
   assert.deepEqual(dataGuardFailures(guarded, guardedNames, migration), [])
 })
 
-const GUARDED_ABI = parseAbi(['constructor(address registry, address _proxyAdmin)'])
+const GUARDED_ABI = parseAbi(['constructor(address registry, address proxyAdmin)'])
 const PROXY_ADMIN = proxyAdminOf(deployment.SimplexNamePolicy)
 
-test('the ProxyAdmin is passed for a constructor input named _proxyAdmin', () => {
+test('the ProxyAdmin is passed for a constructor input named proxyAdmin', () => {
   assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER], PROXY_ADMIN), { refused: false, args: [OTHER, PROXY_ADMIN] })
 })
 
-test('CTOR_ARGS that give the ProxyAdmin for _proxyAdmin are accepted', () => {
+test('CTOR_ARGS that give the ProxyAdmin for proxyAdmin are accepted', () => {
   assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER, PROXY_ADMIN], PROXY_ADMIN), { refused: false, args: [OTHER, PROXY_ADMIN] })
 })
 
-test('CTOR_ARGS that give another address for _proxyAdmin are refused', () => {
+test('CTOR_ARGS that give another address for proxyAdmin are refused', () => {
   assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER, zeroAddress], PROXY_ADMIN), {
     refused: true,
-    failures: [`CTOR_ARGS sets _proxyAdmin to ${zeroAddress}, not the proxy's ProxyAdmin ${PROXY_ADMIN}`],
+    failures: [`CTOR_ARGS sets proxyAdmin to ${zeroAddress}, not the proxy's ProxyAdmin ${PROXY_ADMIN}`],
   })
 })
 
