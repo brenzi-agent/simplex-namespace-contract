@@ -220,6 +220,11 @@ export function assertTaggedSource(tag) {
     console.error(`ens-contracts is at ${commit}, which ${tag ? `the tag ${tag} does not name` : 'no tag names'}: check out the tagged commit to deploy, and fetch its tag.`)
     process.exit(1)
   }
+  const pinned = tag && git(REPO_ROOT, 'ls-tree', 'HEAD', 'ens-contracts').split(/\s+/)[2]
+  if (pinned && commit !== pinned) {
+    console.error(`ens-contracts is at ${commit}, but the parent repository pins ${pinned}: deploy the pinned commit.`)
+    process.exit(1)
+  }
   const changes = git(ENS_CONTRACTS_DIR, 'status', '--porcelain')
   if (changes) {
     console.error(`ens-contracts has changes outside the commit ${commit}:\n${changes}`)
