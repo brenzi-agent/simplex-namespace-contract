@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
-  createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256, pad, parseAbi, parseGwei,
-  toFunctionSelector, zeroAddress,
+  BaseError, ContractFunctionRevertedError, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256,
+  pad, parseAbi, parseGwei, toFunctionSelector, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -25,6 +25,7 @@ const PROXY_ADMIN_ABI = parseAbi([
   'function transferOwnership(address newOwner)',
   'function upgradeAndCall(address proxy, address implementation, bytes data) payable',
 ])
+const PROXY_ADMIN_PLACEHOLDER = 'proxyAdmin'
 
 const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
@@ -107,6 +108,51 @@ export function immutableReview(compiled, names, code, current, own, intended) {
   }
 }
 
+export function ownImmutables(name, addresses, deployer, candidate, proxyAdmin) {
+  const definition = UPGRADEABLE[name]
+  const fresh = definition.immutables(addresses, { tld: TLD, deployer, self: candidate })
+  return {
+    ...Object.fromEntries((definition.ownImmutables ?? []).map((immutable) => [immutable, fresh[immutable]])),
+    _proxyAdmin: proxyAdmin,
+  }
+}
+
+export function upgradeData(abi, call) {
+  if (!call) return { data: '0x' }
+  const { signature, args } = call
+  try {
+    const selector = toFunctionSelector(signature)
+    const item = abi.find((entry) => entry.type === 'function' && toFunctionSelector(entry) === selector)
+    if (!item) return { refused: [`it has no function ${signature}`] }
+    return { data: encodeFunctionData({ abi: [item], functionName: item.name, args }) }
+  } catch (error) {
+    return { refused: [`DATA ${signature} with DATA_ARGS ${JSON.stringify(args)} does not encode: ${error.shortMessage ?? error.message}`] }
+  }
+}
+
+function constructorFailures(abi, args) {
+  try {
+    constructorArgs(abi, args)
+    return []
+  } catch (error) {
+    return [`CTOR_ARGS ${JSON.stringify(args)} do not encode for its constructor: ${error.shortMessage ?? error.message}`]
+  }
+}
+
+export async function upgradeCallFailures(client, { proxy, proxyAdmin, owner }, candidate, data, errors = []) {
+  try {
+    await client.simulateContract({
+      account: owner, address: proxyAdmin, abi: [...PROXY_ADMIN_ABI, ...errors], functionName: 'upgradeAndCall',
+      args: [proxy, candidate, data],
+    })
+    return []
+  } catch (error) {
+    const reverted = error instanceof BaseError && error.walk((cause) => cause instanceof ContractFunctionRevertedError)
+    if (!reverted) throw error
+    return [`upgradeAndCall(${proxy}, ${candidate}, ${data}) from ${owner} reverts: ${reverted.shortMessage.replaceAll('\n', ' ')}`]
+  }
+}
+
 export async function checkedProxyAdmin(client, addresses, name) {
   if (!Object.hasOwn(UPGRADEABLE, name)) {
     return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`] }
@@ -133,7 +179,8 @@ export async function transferCall(client, addresses, governance, name, nextName
   return target.refused ? target : { target, functionName: 'transferOwnership', args: [next.address] }
 }
 
-export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, intended) {
+export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, request = {}) {
+  const { intended = [], constructorArgs: requestedArgs, call } = request
   const definition = UPGRADEABLE[name]
   const admin = await checkedProxyAdmin(client, addresses, name)
   if (admin.refused) return admin
@@ -143,22 +190,32 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const refused = artifactFailures(compiled, names, layout, current, intended)
+  const args = (requestedArgs ?? definition.args(addresses, { tld: TLD }))
+    .map((arg) => (arg === PROXY_ADMIN_PLACEHOLDER ? admin.proxyAdmin : arg))
+  const { data, refused: undecodable = [] } = upgradeData(compiled.abi, call)
+  const refused = [
+    ...artifactFailures(compiled, names, layout, current, intended),
+    ...constructorFailures(compiled.abi, args),
+    ...undecodable,
+  ]
   if (refused.length) return { refused }
 
-  const args = definition.args(addresses, { tld: TLD })
   const initcode = encodeDeployData({ abi: compiled.abi, bytecode: compiled.bytecode, args })
   const { address: candidate } = await deploy(`${name}@${keccak256(initcode).slice(0, 18)}`, compiled.abi, compiled.bytecode, args)
   const code = await client.getCode({ address: candidate })
-  const fresh = definition.immutables(addresses, { tld: TLD, deployer, self: candidate })
-  const own = Object.fromEntries((definition.ownImmutables ?? []).map((immutable) => [immutable, fresh[immutable]]))
+  const own = ownImmutables(name, addresses, deployer, candidate, admin.proxyAdmin)
   const { failures, changes } = immutableReview(compiled, names, code, current.immutables, own, intended)
   const initialized = definition.initialize ? await storedValue(client, candidate, compiled, '_initialized') : 255n
   const uninitialized = initialized === 255n ? [] : [`its _initialized is ${initialized}, not 255`]
-  if (failures.length || uninitialized.length) return { refused: [...failures, ...uninitialized], candidate }
+  const errors = compiled.abi.filter(({ type }) => type === 'error')
+  const reverting = await upgradeCallFailures(client, admin, candidate, data, errors)
+  if (failures.length || uninitialized.length || reverting.length) {
+    return { refused: [...failures, ...uninitialized, ...reverting], candidate }
+  }
   return {
     ...admin,
     candidate,
+    data,
     changes,
     entry: {
       address: candidate,
@@ -171,12 +228,28 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   }
 }
 
+function jsonArrayEnv(name) {
+  const text = process.env[name]
+  if (text === undefined) return undefined
+  let value
+  try { value = JSON.parse(text) } catch {}
+  if (!Array.isArray(value)) {
+    console.error(`${name} must be a JSON array, not ${text}`)
+    process.exit(1)
+  }
+  return value
+}
+
 const ACTIONS = {
   upgrade: async (client, addresses, name) => {
     const deployerKey = requireEnv('DEPLOYER_KEY')
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
     const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
-    const intended = (process.env.INTENDED ?? '').split(',').filter(Boolean)
+    const request = {
+      intended: (process.env.INTENDED ?? '').split(',').filter(Boolean),
+      constructorArgs: jsonArrayEnv('CTOR_ARGS'),
+      call: process.env.DATA ? { signature: process.env.DATA, args: jsonArrayEnv('DATA_ARGS') ?? [] } : undefined,
+    }
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
     const source = assertTaggedSource()
@@ -193,13 +266,14 @@ const ACTIONS = {
       deploy: async (step, abi, bytecode, args) => {
         if (!runner.completedSteps().has(`deploy:${step}`)) {
           console.log(`\nThe deploy key ${account.address} deploys the ${name} candidate ${step}, built from ens-contracts ` +
-            `${source.commit} (${source.tags.join(', ')}), at a base fee of at most ${maxBaseFeeGwei} gwei.`)
+            `${source.commit} (${source.tags.join(', ')}), with constructor arguments (${args.join(', ')}), ` +
+            `at a base fee of at most ${maxBaseFeeGwei} gwei.`)
           if (!(await promptYesNo('Proceed? [y/N] '))) throw new Error(`the ${name} candidate was not deployed`)
         }
         return runner.deploy(step, abi, bytecode, args)
       },
     }
-    const prepared = await prepareUpgrade(confirmed, client, name, addresses, verification, account.address, intended)
+    const prepared = await prepareUpgrade(confirmed, client, name, addresses, verification, account.address, request)
     if (prepared.refused) return prepared
     verification.contracts[`${name}@${prepared.candidate}`] = { ...prepared.entry, ensContractsCommit: source.commit }
     writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
@@ -207,8 +281,9 @@ const ACTIONS = {
     for (const { name: immutable, current, next } of prepared.changes) {
       console.log(`  intended change of ${immutable}: ${current ?? 'none'} → ${next ?? 'none'}`)
     }
+    console.log(`  upgradeAndCall from the ProxyAdmin owner ${prepared.owner} succeeds in a simulation`)
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
-    return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, '0x'] }
+    return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, prepared.data] }
   },
   freeze: async (client, addresses, name) => {
     const target = await checkedProxyAdmin(client, addresses, name)
