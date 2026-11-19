@@ -35,6 +35,7 @@ const SECTION_8_AND_V1_RETIREMENT = [
 ]
 const STRANGER = '0x0000000000000000000000000000000000001234'
 const SPONSOR_ABI = parseAbi(['function setRegistrarAllowance(address registrar, uint256 allowanceUSD)'])
+const SAFE_ABI = parseAbi(['function changeThreshold(uint256 threshold)'])
 const FORK_TAIL = 6000
 
 class Stopped extends Error {}
@@ -179,7 +180,7 @@ async function main() {
     const wiringSteps = dry.totals().perStep.length
     await client.request({ method: 'evm_revert', params: [clean] })
 
-    const interrupted = async (steps, change, runInputs = inputs) => {
+    const interrupted = async (steps, change) => {
       const snapshot = await client.request({ method: 'evm_snapshot', params: [] })
       const dryRun = dryRunner()
       const created = {}
@@ -195,18 +196,16 @@ async function main() {
         await change(dryRun, created)
         nonceAtChange = await deployKeyNonce()
       })
-      const message = await runOne(runner, client, runInputs, account.address).then(() => undefined, (e) => e.message)
+      const message = await runOne(runner, client, inputs, account.address).then(() => undefined, (e) => e.message)
       const unsent = (await deployKeyNonce()) === nonceAtChange
       await client.request({ method: 'evm_revert', params: [snapshot] })
       return { message, unsent }
     }
 
     for (const [step, call] of [[0, 'transferOwnership'], [2, 'setSubnodeOwner']]) {
-      console.log(`\n=== Run 1 with the admin Safe entry changed to threshold 3 after step ${step} of section 8 ===`)
-      const changing = { ...inputs, governance: { ...governance } }
-      const { message, unsent } = await interrupted(wiringSteps + step, () => {
-        changing.governance.adminSafe = { ...governance.adminSafe, threshold: 3 }
-      }, changing)
+      console.log(`\n=== Run 1 with the admin Safe's threshold changed to 3 after step ${step} of section 8 ===`)
+      const { message, unsent } = await interrupted(wiringSteps + step,
+        () => sendAs(admin, admin, SAFE_ABI, 'changeThreshold', [3n]))
       expect(`run 1 stops before ${call} to the admin Safe`,
         message === `governance.mainnet.json does not match the chain: ${call} to the admin Safe is not sent`, message)
       expect('the deploy key sent nothing after the change', unsent)
