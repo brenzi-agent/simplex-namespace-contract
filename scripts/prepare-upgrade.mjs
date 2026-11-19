@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-import { createPublicClient, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256, parseGwei, toFunctionSelector } from 'viem'
+import {
+  createPublicClient, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256, parseAbi, parseGwei,
+  toFunctionSelector,
+} from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
 import { readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { createWaitForBaseRunner, DEFAULTS } from './gas-tools.mjs'
+import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
-  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, OWNABLE_ABI, PROXY_ADMIN, UPGRADEABLE,
-  artifact, assertBuildFresh, constructorArgs, proxySlots, runtimeCode, storageLayout,
+  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE,
+  artifact, assertBuildFresh, constructorArgs, proxyAdminOf, proxySlots, runtimeCode, storageLayout,
 } from './stack.mjs'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -18,6 +22,12 @@ const verificationPath = join(REPO_ROOT, `verification.mainnet.${TLD}.json`)
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.attempts.log`)
 const UUPS_SELECTORS = new Set(['0x3659cfe6', '0x4f1ef286', '0x52d1902d'])
+const PROXY_ADMIN_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function renounceOwnership()',
+  'function transferOwnership(address newOwner)',
+  'function upgradeAndCall(address proxy, address implementation, bytes data) payable',
+])
 
 const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
@@ -63,13 +73,29 @@ export function artifactFailures({ abi, deployedBytecode }, layout, currentLayou
 export const codeFailures = (code, expected) =>
   code === expected ? [] : [`its runtime code is not the artifact with the deployment's immutables (code hash ${code && keccak256(code)})`]
 
+async function checkedProxyAdmin(client, addresses, name) {
+  const proxy = addresses[UPGRADEABLE[name].key]
+  const { implementation, admin } = await proxySlots(client, proxy)
+  return admin === proxyAdminOf(proxy)
+    ? { name, proxy, implementation, proxyAdmin: admin }
+    : { refused: [`the admin slot of the ${name} proxy ${proxy} holds ${admin}, not ${proxyAdminOf(proxy)}`] }
+}
+
+export async function proxyAdminTarget(client, addresses, target) {
+  const admins = await Promise.all(Object.keys(UPGRADEABLE).map((name) => checkedProxyAdmin(client, addresses, name)))
+  const refused = admins.flatMap((admin) => admin.refused ?? [])
+  if (refused.length) return { refused }
+  return admins.find(({ proxyAdmin }) => proxyAdmin.toLowerCase() === target.toLowerCase())
+    ?? { refused: [`${target} is not the ProxyAdmin of any of the six proxies of ${addressesPath}`] }
+}
+
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer) {
   const definition = UPGRADEABLE[name]
-  const proxy = addresses[definition.key]
-  const { implementation: current, admin } = await proxySlots(client, proxy)
+  const admin = await checkedProxyAdmin(client, addresses, name)
+  if (admin.refused) return admin
   const recorded = Object.values(verification.contracts)
-    .find(({ address, storageLayout }) => address.toLowerCase() === current.toLowerCase() && storageLayout)
-  if (!recorded) throw new Error(`${verificationPath} records no storage layout for ${current}, the implementation of ${name}`)
+    .find(({ address, storageLayout }) => address.toLowerCase() === admin.implementation.toLowerCase() && storageLayout)
+  if (!recorded) throw new Error(`${verificationPath} records no storage layout for ${admin.implementation}, the implementation of ${name}`)
   const compiled = artifact(definition.artifact)
   const layout = storageLayout(compiled)
   const refused = artifactFailures(compiled, layout, recorded.storageLayout)
@@ -82,61 +108,86 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const failures = codeFailures(await client.getCode({ address: candidate }), expected)
   if (failures.length) return { refused: failures, candidate }
   return {
+    ...admin,
     candidate,
-    proxy,
-    proxyAdmin: admin,
     entry: { address: candidate, artifact: definition.artifact, constructorArgs: constructorArgs(compiled.abi, args), storageLayout: layout },
   }
 }
 
-async function main() {
-  const name = process.env.CONTRACT
-  if (!UPGRADEABLE[name]) {
-    console.error(`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')} (got ${JSON.stringify(name)})`)
+function requireEnv(...names) {
+  const missing = names.filter((name) => !process.env[name])
+  if (missing.length) {
+    console.error(`ERROR: ${missing.join(', ')} env var(s) required.`)
     process.exit(1)
   }
-  for (const required of ['DEPLOYER_KEY', 'MAINNET_RPC_URL', 'MAX_BASE_FEE_GWEI']) {
-    if (!process.env[required]) {
-      console.error(`ERROR: ${required} env var is required.`)
-      process.exit(1)
+  return names.map((name) => process.env[name])
+}
+
+const ACTIONS = {
+  upgrade: async (client, addresses) => {
+    const name = process.env.CONTRACT
+    if (!UPGRADEABLE[name]) return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}`] }
+    const [deployerKey, rpcUrl, maxBaseFeeGwei] = requireEnv('DEPLOYER_KEY', 'MAINNET_RPC_URL', 'MAX_BASE_FEE_GWEI')
+    const account = privateKeyToAccount(deployerKey)
+    const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
+    assertBuildFresh()
+    const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
+    const runner = createWaitForBaseRunner({
+      publicClient: client, walletClient, account,
+      maxBaseFeeWei: parseGwei(maxBaseFeeGwei),
+      bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
+      journalPath, attemptsLogPath,
+    })
+    const prepared = await prepareUpgrade(runner, client, name, addresses, verification, account.address)
+    if (prepared.refused) return prepared
+    verification.contracts[`${name}@${prepared.candidate}`] = prepared.entry
+    writeFileSync(verificationPath, JSON.stringify(verification, null, 2))
+    console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the deployment's immutables`)
+    console.log(`Wrote ${verificationPath}: commit it and verify the candidate on Etherscan before the upgrade.`)
+    return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, '0x'] }
+  },
+  freeze: async (client, addresses) => {
+    const [proxyAdmin] = requireEnv('PROXY_ADMIN')
+    const target = await proxyAdminTarget(client, addresses, proxyAdmin)
+    return target.refused ? target : { target, functionName: 'renounceOwnership', args: [] }
+  },
+  transfer: async (client, addresses) => {
+    const [proxyAdmin, nextName] = requireEnv('PROXY_ADMIN', 'NEXT')
+    const next = loadGovernance()[nextName]
+    if (next?.kind !== 'Safe' && next?.kind !== 'TimelockController') {
+      return { refused: [`NEXT must name a Safe or TimelockController entry of governance.mainnet.json, not ${nextName}`] }
     }
+    const { deployer } = JSON.parse(readFileSync(verificationPath, 'utf8'))
+    const failures = await entryFailures(client, next, deployer)
+    if (failures.length) return { refused: failures.map((failure) => `${nextName} ${next.address} ${failure}`) }
+    const target = await proxyAdminTarget(client, addresses, proxyAdmin)
+    return target.refused ? target : { target, functionName: 'transferOwnership', args: [next.address] }
+  },
+}
+
+async function main() {
+  const action = ACTIONS[process.env.ACTION]
+  if (!action) {
+    console.error(`ACTION must be one of ${Object.keys(ACTIONS).join(', ')} (got ${JSON.stringify(process.env.ACTION)})`)
+    process.exit(1)
   }
-  const account = privateKeyToAccount(process.env.DEPLOYER_KEY)
-  const transport = http(process.env.MAINNET_RPC_URL)
-  const publicClient = createPublicClient({ chain: mainnet, transport })
-  const walletClient = createWalletClient({ chain: mainnet, transport, account })
-  if ((await publicClient.getChainId()) !== mainnet.id) {
+  const [rpcUrl] = requireEnv('MAINNET_RPC_URL')
+  const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
+  if ((await client.getChainId()) !== mainnet.id) {
     console.error('MAINNET_RPC_URL is not mainnet')
     process.exit(1)
   }
-  assertBuildFresh()
-  const addresses = JSON.parse(readFileSync(addressesPath, 'utf8'))
-  const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
-  const runner = createWaitForBaseRunner({
-    publicClient, walletClient, account,
-    maxBaseFeeWei: parseGwei(process.env.MAX_BASE_FEE_GWEI),
-    bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
-    journalPath, attemptsLogPath,
-  })
-  const prepared = await prepareUpgrade(runner, publicClient, name, addresses, verification, account.address)
-  if (prepared.refused) {
-    console.error(`${name} candidate${prepared.candidate ? ` ${prepared.candidate}` : ''} refused:`)
-    for (const failure of prepared.refused) console.error(`  ✗ ${failure}`)
+  const call = await action(client, JSON.parse(readFileSync(addressesPath, 'utf8')))
+  if (call.refused) {
+    console.error(`${process.env.ACTION} refused:`)
+    for (const failure of call.refused) console.error(`  ✗ ${failure}`)
     process.exit(1)
   }
-  verification.contracts[`${name}@${prepared.candidate}`] = prepared.entry
-  writeFileSync(verificationPath, JSON.stringify(verification, null, 2))
-  const owner = await publicClient.readContract({ address: prepared.proxyAdmin, abi: OWNABLE_ABI, functionName: 'owner' })
-  const data = encodeFunctionData({
-    abi: artifact(PROXY_ADMIN).abi,
-    functionName: 'upgradeAndCall',
-    args: [prepared.proxy, prepared.candidate, '0x'],
-  })
-  console.log(`\n✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the deployment's immutables`)
-  console.log(`Wrote ${verificationPath}: commit it and verify the candidate on Etherscan before the upgrade.`)
-  console.log(`\nThe ProxyAdmin owner ${owner} submits to the ProxyAdmin ${prepared.proxyAdmin}:`)
-  console.log(`  upgradeAndCall(${prepared.proxy}, ${prepared.candidate}, 0x)`)
-  console.log(`  calldata ${data}`)
+  const { target: { name, proxy, proxyAdmin }, functionName, args } = call
+  const owner = await client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' })
+  console.log(`\nThe ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy ${proxy}:`)
+  console.log(`  ${functionName}(${args.join(', ')})`)
+  console.log(`  calldata ${encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })}`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

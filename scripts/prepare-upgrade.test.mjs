@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseAbi, zeroAddress } from 'viem'
-import { artifactFailures, codeFailures, interfaceFailures, layoutFailures, slotFailures } from './prepare-upgrade.mjs'
-import { ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, placeImmutables } from './stack.mjs'
+import { pad, parseAbi, zeroAddress } from 'viem'
+import {
+  artifactFailures, codeFailures, interfaceFailures, layoutFailures, proxyAdminTarget, slotFailures,
+} from './prepare-upgrade.mjs'
+import { ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, placeImmutables, proxyAdminOf } from './stack.mjs'
 
 const REGISTRY = '0x000000000000000000000000000000000000c0DE'
 const SUBNAME_REGISTRAR = '0x000000000000000000000000000000000000dEaD'
@@ -128,4 +130,30 @@ test('an expected value for an immutable the artifact lacks is refused', () => {
 test('an immutable without an expected value is refused', () => {
   const { trustedReverseRegistrar, ...missing } = immutables
   assert.throws(() => placeImmutables(resolver, names, missing), /no expected value for its immutable trustedReverseRegistrar/)
+})
+
+const deployment = Object.fromEntries(Object.values(UPGRADEABLE)
+  .map(({ key }, i) => [key, `0x${(i + 1).toString(16).padStart(40, '0')}`]))
+const slots = (adminOf) => ({
+  getStorageAt: async ({ address, slot }) => pad(slot === ERC1967_ADMIN_SLOT ? adminOf(address) : OTHER),
+})
+
+test('the ProxyAdmin of a proxy of the deployment is accepted as a target', async () => {
+  const target = await proxyAdminTarget(slots(proxyAdminOf), deployment, proxyAdminOf(deployment.ETHRegistrarController))
+  assert.deepEqual([target.name, target.proxy], ['SimplexController', deployment.ETHRegistrarController])
+})
+
+test('a proxy address given as target is refused', async () => {
+  const target = await proxyAdminTarget(slots(proxyAdminOf), deployment, deployment.ETHRegistrarController)
+  assert.match(target.refused.join('; '), /is not the ProxyAdmin of any of the six proxies/)
+})
+
+test('a ProxyAdmin of another deployment is refused as a target', async () => {
+  const target = await proxyAdminTarget(slots(proxyAdminOf), deployment, proxyAdminOf(OTHER))
+  assert.match(target.refused.join('; '), /is not the ProxyAdmin of any of the six proxies/)
+})
+
+test('a proxy whose admin slot is not its CREATE address at nonce 1 is refused', async () => {
+  const target = await proxyAdminTarget(slots(() => OTHER), deployment, OTHER)
+  assert.equal(target.refused.length, 6)
 })
