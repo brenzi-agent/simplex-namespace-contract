@@ -1,6 +1,6 @@
 import {
   createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, http, namehash, pad,
-  parseAbi, toHex, zeroAddress,
+  parseAbi, toEventSelector, toEventSignature, toFunctionSelector, toFunctionSignature, toHex, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { execFileSync } from 'child_process'
@@ -19,6 +19,7 @@ export const ENS_CONTRACTS_DIR = join(REPO_ROOT, 'ens-contracts')
 const ARTIFACTS = join(ENS_CONTRACTS_DIR, 'artifacts')
 
 export const TLD = 'simplex'
+export const SOURCE_TAG = 'simplex-mainnet-v2'
 export const ADDRESSES_PATH = join(REPO_ROOT, `deployments.mainnet.${TLD}.json`)
 export const JOURNAL_PATH = join(REPO_ROOT, `deployments.mainnet.${TLD}.journal.jsonl`)
 export const VERIFICATION_PATH = join(REPO_ROOT, `verification.mainnet.${TLD}.json`)
@@ -27,7 +28,12 @@ export const ERC1967_IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca
 export const ERC1967_ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103'
 export const TRANSPARENT_PROXY = '@openzeppelin/contracts-v5/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json'
 export const PROXY_ADMIN_ARTIFACT = '@openzeppelin/contracts-v5/proxy/transparent/ProxyAdmin.sol/ProxyAdmin.json'
-export const OWNABLE_ABI = parseAbi(['function owner() view returns (address)'])
+export const PROXY_ADMIN_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function renounceOwnership()',
+  'function transferOwnership(address newOwner)',
+  'function upgradeAndCall(address proxy, address implementation, bytes data) payable',
+])
 export const V1_ABI = parseAbi([
   'function owner() view returns (address)',
   'function pendingOwner() view returns (address)',
@@ -203,15 +209,23 @@ export function assertBuildFresh() {
   console.log('  build is current')
 }
 
+const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+
+export const ensContractsHead = () => git(ENS_CONTRACTS_DIR, 'rev-parse', 'HEAD')
+
 export function assertTaggedSource(tag) {
-  const git = (...args) => execFileSync('git', ['-C', ENS_CONTRACTS_DIR, ...args], { encoding: 'utf8' }).trim()
-  const commit = git('rev-parse', 'HEAD')
-  const tags = git('tag', '--points-at', 'HEAD').split('\n').filter(Boolean)
+  const commit = ensContractsHead()
+  const tags = git(ENS_CONTRACTS_DIR, 'tag', '--points-at', 'HEAD').split('\n').filter(Boolean)
   if (tag ? !tags.includes(tag) : tags.length === 0) {
     console.error(`ens-contracts is at ${commit}, which ${tag ? `the tag ${tag} does not name` : 'no tag names'}: check out the tagged commit to deploy, and fetch its tag.`)
     process.exit(1)
   }
-  const changes = git('status', '--porcelain')
+  const pinned = tag && git(REPO_ROOT, 'ls-tree', 'HEAD', 'ens-contracts').split(/\s+/)[2]
+  if (pinned && commit !== pinned) {
+    console.error(`ens-contracts is at ${commit}, but the parent repository pins ${pinned}: deploy the pinned commit.`)
+    process.exit(1)
+  }
+  const changes = git(ENS_CONTRACTS_DIR, 'status', '--porcelain')
   if (changes) {
     console.error(`ens-contracts has changes outside the commit ${commit}:\n${changes}`)
     process.exit(1)
@@ -251,6 +265,15 @@ export async function deployBehindProxy(deploy, name, addresses, setup, initialO
 }
 
 export const proxyAdminOf = (proxy) => getContractAddress({ from: proxy, nonce: 1n })
+
+export function interfaceOf(abi) {
+  const signatures = (type, selector, signature) =>
+    Object.fromEntries(abi.filter((item) => item.type === type).map((item) => [selector(item), signature(item)]))
+  return {
+    functions: signatures('function', toFunctionSelector, toFunctionSignature),
+    events: signatures('event', toEventSelector, toEventSignature),
+  }
+}
 
 export async function proxySlots(client, proxy) {
   const [implementation, admin] = await Promise.all([

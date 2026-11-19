@@ -72,6 +72,8 @@ if (meta.contracts) {
     address: entry.address,
     artifact: entry.artifact,
     constructorArgs: entry.constructorArgs,
+    buildInfoId: entry.buildInfoId,
+    ensContractsCommit: entry.ensContractsCommit,
   }))
 } else {
   // Legacy flat format — translate inline. Adding more contracts here is
@@ -212,6 +214,12 @@ for (const t of TARGETS) {
   // and some of their artifacts no longer exist in ens-contracts. Skip them.
   if (!t.address || /^0x0+$/i.test(t.address)) {
     console.log(`\n--- ${t.label} ---\n  address: ${t.address}\n  skipped (not deployed)`)
+    continue
+  }
+  const localBuild = JSON.parse(readFileSync(join(ARTIFACTS_ROOT, t.artifact), 'utf8')).buildInfoId
+  if (t.buildInfoId && t.buildInfoId !== localBuild) {
+    console.log(`\n--- ${t.label} ---\n  address: ${t.address}\n  skipped: built as ${t.buildInfoId} from ens-contracts ` +
+      `${t.ensContractsCommit}, and the local artifact is ${localBuild}; check out and compile that commit to verify it`)
     continue
   }
   const guid = await verify(t)

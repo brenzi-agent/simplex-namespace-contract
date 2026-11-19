@@ -5,8 +5,10 @@ import {
   artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, interfaceFailures,
   layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
+import { assembleVerification } from './build-verification.mjs'
 import {
-  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, immutablesIn, placeImmutables, proxyAdminOf,
+  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, VERIFICATION_PATH, immutablesIn, interfaceOf,
+  placeImmutables, proxyAdminOf,
 } from './stack.mjs'
 
 const REGISTRY = '0x000000000000000000000000000000000000c0DE'
@@ -45,12 +47,30 @@ const prefix = [
 ]
 const deployed = [...prefix, controller('__gap', 55, 0, gap(43))]
 
-const CONTROLLER_ABI = parseAbi(['function sponsor() view returns (address)', 'function setSponsor(address)'])
+const CONTROLLER_ABI = parseAbi([
+  'function sponsor() view returns (address)',
+  'function setSponsor(address)',
+  'event SponsorChanged(address sponsor)',
+])
 const compiledWith = (abi) => ({ abi, deployedBytecode: '0x6000', immutableReferences: {} })
+const currentController = { storageLayout: deployed, immutables: {}, ...interfaceOf(CONTROLLER_ABI) }
+const without = (signature) => CONTROLLER_ABI.filter((item) => item.name !== signature.split('(')[0])
 
 test('an identical rebuild is accepted', () => {
-  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, { storageLayout: deployed, immutables: {} }, []), [])
+  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, currentController, []), [])
 })
+
+for (const [kind, signature] of [['function', 'setSponsor(address)'], ['event', 'SponsorChanged(address)']]) {
+  test(`a candidate without the ${kind} ${signature} of the current implementation is refused`, () => {
+    assert.deepEqual(artifactFailures(compiledWith(without(signature)), new Map(), deployed, currentController, []), [
+      `it lacks the ${kind} ${signature} of the current implementation`,
+    ])
+  })
+
+  test(`a candidate without the ${kind} ${signature}, named in INTENDED, is accepted`, () => {
+    assert.deepEqual(artifactFailures(compiledWith(without(signature)), new Map(), deployed, currentController, [signature]), [])
+  })
+}
 
 test('a variable appended in place of the first slot of the trailing __gap is accepted', () => {
   const appended = [...prefix, controller('nextSponsor', 55, 0, address), controller('__gap', 56, 0, gap(42))]
@@ -187,7 +207,7 @@ test('a different trustedETHController named as an intended change is accepted, 
 })
 
 const withoutController = { ...resolver, immutableReferences: { 11: resolver.immutableReferences[11], 12: resolver.immutableReferences[12], 14: resolver.immutableReferences[14] } }
-const currentResolver = { storageLayout: [], immutables: current }
+const currentResolver = { storageLayout: [], immutables: current, functions: {}, events: {} }
 
 test('a resolver candidate without trustedETHController is refused', () => {
   assert.deepEqual(artifactFailures(withoutController, immutableNames, [], currentResolver, []), [
@@ -201,7 +221,7 @@ test('a resolver candidate without trustedETHController, named as an intended ch
 
 test('an intended change of an immutable that neither implementation has is refused', () => {
   assert.deepEqual(artifactFailures(resolver, immutableNames, [], currentResolver, ['controller']), [
-    'neither it nor the current implementation has an immutable named controller',
+    'INTENDED names controller, neither an immutable nor a function or event of the current implementation',
   ])
 })
 
@@ -223,19 +243,46 @@ const chain = ({ adminOf = proxyAdminOf, owner = ADMIN_SAFE } = {}) => ({
   readContract: async () => owner,
 })
 
+test('a verification file is refused for an implementation whose code is another artifact', async () => {
+  const client = { ...chain(), getCode: async () => resolver.deployedBytecode }
+  await assert.rejects(assembleVerification({ client, addresses: deployment, deployer: OTHER, adminSafe: ADMIN_SAFE }), {
+    message: `the code at ${OTHER}, the implementation of the ENSRegistry proxy, differs from ` +
+      `${UPGRADEABLE.ENSRegistry.artifact} outside its immutables: build the verification file from the ens-contracts commit that deployed it`,
+  })
+})
+
+const recorded = (names) => ({
+  deployer: OTHER,
+  contracts: Object.fromEntries(names.map((name) => [`${name}@${OTHER}`, { address: OTHER, artifact: UPGRADEABLE[name].artifact }])),
+})
+const verification = recorded(Object.keys(UPGRADEABLE))
+
 test('an unknown CONTRACT fails', async () => {
-  const target = await checkedProxyAdmin(chain(), deployment, 'ProxyAdmin')
-  assert.deepEqual(target.refused, [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ProxyAdmin`])
+  assert.deepEqual(await checkedProxyAdmin(chain(), deployment, verification, 'ProxyAdmin'), {
+    refused: true,
+    failures: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ProxyAdmin`],
+  })
 })
 
 test('a proxy whose admin slot is not its CREATE address at nonce 1 is refused', async () => {
-  const target = await checkedProxyAdmin(chain({ adminOf: () => OTHER }), deployment, 'SimplexResolver')
-  assert.match(target.refused.join('; '), /admin slot of the SimplexResolver proxy/)
+  const target = await checkedProxyAdmin(chain({ adminOf: () => OTHER }), deployment, verification, 'SimplexResolver')
+  assert.equal(target.refused, true)
+  assert.match(target.failures.join('; '), /admin slot of the SimplexResolver proxy/)
+})
+
+test('a proxy whose implementation the verification file records for another contract is refused', async () => {
+  const target = await checkedProxyAdmin(chain(), deployment, recorded(['SubnameRegistrar']), 'SimplexResolver')
+  assert.deepEqual(target, {
+    refused: true,
+    failures: [`${VERIFICATION_PATH} records no ${UPGRADEABLE.SimplexResolver.artifact} at ${OTHER}, ` +
+      `the implementation of the SimplexResolver proxy ${deployment.PublicResolver}`],
+  })
 })
 
 test('a renounced ProxyAdmin is refused', async () => {
-  const target = await checkedProxyAdmin(chain({ owner: zeroAddress }), deployment, 'SimplexResolver')
-  assert.match(target.refused.join('; '), /is renounced/)
+  const target = await checkedProxyAdmin(chain({ owner: zeroAddress }), deployment, verification, 'SimplexResolver')
+  assert.equal(target.refused, true)
+  assert.match(target.failures.join('; '), /is renounced/)
 })
 
 const TIMELOCK = '0x0000000000000000000000000000000000007777'
@@ -272,31 +319,35 @@ const timelockChain = (code) => {
 }
 
 test('a transfer to a Safe entry is refused', async () => {
-  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, governance, 'SimplexController', 'adminSafe', OTHER)
-  assert.deepEqual(call.refused, ['NEXT must name a TimelockController entry of governance.mainnet.json, not adminSafe'])
+  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, verification, governance, 'SimplexController', 'adminSafe')
+  assert.deepEqual(call, {
+    refused: true,
+    failures: ['NEXT must name a TimelockController entry of governance.mainnet.json, not adminSafe'],
+  })
 })
 
 test('a transfer to a timelock that fails its check is refused', async () => {
-  const call = await transferCall(timelockChain('0x6002'), deployment, governance, 'SimplexController', 'timelock', OTHER)
-  assert.match(call.refused.join('; '), /^timelock 0x0+7777 code hash is 0x[0-9a-f]{64}, expected /)
+  const call = await transferCall(timelockChain('0x6002'), deployment, verification, governance, 'SimplexController', 'timelock')
+  assert.equal(call.refused, true)
+  assert.match(call.failures.join('; '), /^timelock 0x0+7777 code hash is 0x[0-9a-f]{64}, expected /)
 })
 
 test('a transfer to a timelock that passes its check addresses the ProxyAdmin of the named contract', async () => {
-  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, governance, 'SimplexController', 'timelock', OTHER)
-  assert.deepEqual([call.target.proxyAdmin, call.functionName, call.args],
-    [proxyAdminOf(deployment.ETHRegistrarController), 'transferOwnership', [TIMELOCK]])
+  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, verification, governance, 'SimplexController', 'timelock')
+  assert.deepEqual([call.refused, call.target.proxyAdmin, call.functionName, call.args],
+    [false, proxyAdminOf(deployment.ETHRegistrarController), 'transferOwnership', [TIMELOCK]])
 })
 
 const MIGRATION_ABI = parseAbi(['function migrate(uint256 version)', 'function owner() view returns (address)'])
 
 test('upgrade data is encoded for a function of the candidate', () => {
   assert.deepEqual(upgradeData(MIGRATION_ABI, { signature: 'migrate(uint256)', args: ['42'] }),
-    { data: encodeFunctionData({ abi: MIGRATION_ABI, functionName: 'migrate', args: [42n] }) })
+    { refused: false, data: encodeFunctionData({ abi: MIGRATION_ABI, functionName: 'migrate', args: [42n] }) })
 })
 
 test('upgrade data for a function the candidate lacks is refused', () => {
   assert.deepEqual(upgradeData(MIGRATION_ABI, { signature: 'migrate(uint8)', args: [1] }),
-    { refused: ['it has no function migrate(uint8)'] })
+    { refused: true, failures: ['it has no function migrate(uint8)'] })
 })
 
 const guarded = {
@@ -319,20 +370,21 @@ test('upgrade data for a candidate with a _proxyAdmin immutable is accepted', ()
   assert.deepEqual(dataGuardFailures(guarded, guardedNames, migration), [])
 })
 
-const GUARDED_ABI = parseAbi(['constructor(address registry, address _proxyAdmin)'])
+const GUARDED_ABI = parseAbi(['constructor(address registry, address proxyAdmin)'])
 const PROXY_ADMIN = proxyAdminOf(deployment.SimplexNamePolicy)
 
-test('the ProxyAdmin is passed for a constructor input named _proxyAdmin', () => {
-  assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER], PROXY_ADMIN), { args: [OTHER, PROXY_ADMIN] })
+test('the ProxyAdmin is passed for a constructor input named proxyAdmin', () => {
+  assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER], PROXY_ADMIN), { refused: false, args: [OTHER, PROXY_ADMIN] })
 })
 
-test('CTOR_ARGS that give the ProxyAdmin for _proxyAdmin are accepted', () => {
-  assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER, PROXY_ADMIN], PROXY_ADMIN), { args: [OTHER, PROXY_ADMIN] })
+test('CTOR_ARGS that give the ProxyAdmin for proxyAdmin are accepted', () => {
+  assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER, PROXY_ADMIN], PROXY_ADMIN), { refused: false, args: [OTHER, PROXY_ADMIN] })
 })
 
-test('CTOR_ARGS that give another address for _proxyAdmin are refused', () => {
+test('CTOR_ARGS that give another address for proxyAdmin are refused', () => {
   assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER, zeroAddress], PROXY_ADMIN), {
-    refused: [`CTOR_ARGS sets _proxyAdmin to ${zeroAddress}, not the proxy's ProxyAdmin ${PROXY_ADMIN}`],
+    refused: true,
+    failures: [`CTOR_ARGS sets proxyAdmin to ${zeroAddress}, not the proxy's ProxyAdmin ${PROXY_ADMIN}`],
   })
 })
 

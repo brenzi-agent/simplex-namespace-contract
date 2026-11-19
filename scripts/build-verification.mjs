@@ -29,16 +29,10 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
-  ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, TLD, TRANSPARENT_PROXY, UPGRADEABLE, VERIFICATION_PATH,
-  artifact, constructorArgs, immutableNames, immutablesIn, initializerData, mainnetClient, proxySlots, requireEnv,
-  storageLayout,
+  ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, SOURCE_TAG, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
+  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, ensContractsHead, immutableNames,
+  immutablesIn, initializerData, interfaceOf, mainnetClient, placeImmutables, proxySlots, requireEnv, storageLayout,
 } from './stack.mjs'
-
-const target = (path, address, args) => ({
-  address,
-  artifact: path,
-  constructorArgs: constructorArgs(artifact(path).abi, args),
-})
 
 /**
  * Given the deployment addresses, the deploy key and the admin Safe, return the
@@ -46,16 +40,29 @@ const target = (path, address, args) => ({
  * where every input is already in scope.
  */
 export async function assembleVerification({ client, addresses, deployer, adminSafe }) {
+  const ensContractsCommit = ensContractsHead()
+  const target = (path, address, args) => {
+    const { abi, buildInfoId } = artifact(path)
+    return { address, artifact: path, constructorArgs: constructorArgs(abi, args), buildInfoId, ensContractsCommit }
+  }
   const setup = { tld: TLD, deployer, chainlinkEthUsd: addresses.DummyOracle }
   const contracts = {}
   for (const [name, definition] of Object.entries(UPGRADEABLE)) {
     const proxy = addresses[definition.key]
     const { implementation, admin } = await proxySlots(client, proxy)
     const compiled = artifact(definition.artifact)
+    const names = immutableNames(compiled)
+    const code = await client.getCode({ address: implementation })
+    const immutables = immutablesIn(compiled, names, code)
+    if (code !== placeImmutables(compiled, names, immutables)) {
+      throw new Error(`the code at ${implementation}, the implementation of the ${name} proxy, differs from ` +
+        `${definition.artifact} outside its immutables: build the verification file from the ens-contracts commit that deployed it`)
+    }
     contracts[`${name}@${implementation}`] = {
       ...target(definition.artifact, implementation, definition.args(addresses, setup)),
       storageLayout: storageLayout(compiled),
-      immutables: immutablesIn(compiled, immutableNames(compiled), await client.getCode({ address: implementation })),
+      immutables,
+      ...interfaceOf(compiled.abi),
     }
     contracts[`${name}Proxy`] = target(TRANSPARENT_PROXY, proxy,
       [implementation, adminSafe, initializerData(name, addresses, setup)])
@@ -84,6 +91,8 @@ async function lookupDeployerFromJournal(rpcUrl) {
 
 async function cli() {
   const rpcUrl = requireEnv('MAINNET_RPC_URL')
+  assertTaggedSource(SOURCE_TAG)
+  assertBuildFresh()
   if (!existsSync(ADDRESSES_PATH)) {
     console.error(`ERROR: ${ADDRESSES_PATH} not found.`)
     process.exit(1)

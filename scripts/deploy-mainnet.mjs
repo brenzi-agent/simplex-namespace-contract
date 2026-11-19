@@ -78,14 +78,14 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 import {
-  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, OWNABLE_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy, deployImmutable,
-  logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
+  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy,
+  deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses,
+  storedValue,
 } from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
 const TLD_NODE = namehash(TLD)
-const SOURCE_TAG = 'simplex-mainnet-v2'
 const chainlinkEthUsd = '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
 const SMPXNFT = '0x3AF6D9Ee862376A8DFC0a78847Eb20A153557291'
 const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
@@ -229,7 +229,7 @@ export function loadInputs() {
  * runner (forked node) to capture gas, then the real wait-for-base runner
  * against mainnet.
  */
-async function deployAndWire({ deploy, write }, { governance, reservedByReason, terms, communityNames }, deployer) {
+async function deployAndWire({ deploy, write }, { governance, reservedByReason, terms, communityNames }, deployer, client) {
   const setup = { tld: TLD, deployer, chainlinkEthUsd }
   const addresses = {}
   const upgradeable = {}
@@ -332,6 +332,7 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   // owner-callable only while it is unset and beneficiary-callable thereafter, so
   // doing it here is what makes revenue and the registrar kill switch independent
   // of the admin key from the first block. Skipping it leaves `withdraw` reverting.
+  await requireGovernance(client, { guardianSafe: governance.guardianSafe }, deployer, 'setBeneficiary to the guardian Safe')
   await write(controller, 'setBeneficiary', [governance.guardianSafe.address])
 
   return { addresses, upgradeable, priceOracle }
@@ -587,7 +588,7 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
     await check(`${name} proxy admin slot`, proxyAdmin,
       async () => (await proxySlots(client, proxy)).admin)
     await check(`${name} ProxyAdmin owner is the admin Safe`, governance.adminSafe.address,
-      () => client.readContract({ address: proxyAdmin, abi: OWNABLE_ABI, functionName: 'owner' }))
+      () => client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' }))
   }
   await check('registrar ens', registry, () => read(registrar, [], ADDR, 'ens'))
   await check('registrar baseNode', TLD_NODE, () => read(registrar, [], BYTES32, 'baseNode'))
@@ -639,7 +640,7 @@ async function requireGovernance(client, governance, deployer, withheld) {
 
 export async function runOne(runner, client, inputs, deployer) {
   await requireGovernance(client, inputs.governance, deployer, 'any transaction of this run')
-  const deployed = await deployAndWire(runner, inputs, deployer)
+  const deployed = await deployAndWire(runner, inputs, deployer, client)
   const failures = await readBackOne(client, deployed, inputs, deployer)
   if (failures.length) {
     throw new Error(
@@ -663,7 +664,7 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
 
   for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
     await owner(`${name} ProxyAdmin owner`, admin, async () => client.readContract({
-      address: (await proxySlots(client, addresses[key])).admin, abi: OWNABLE_ABI, functionName: 'owner',
+      address: (await proxySlots(client, addresses[key])).admin, abi: PROXY_ADMIN_ABI, functionName: 'owner',
     }))
   }
   await owner('controller owner', admin, () => read(addresses.ETHRegistrarController, [], ADDR, 'owner'))

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { createPublicClient, getAddress, http, isHex, keccak256, parseAbi, parseAbiItem, toHex, zeroAddress } from 'viem'
-import { mainnet } from 'viem/chains'
+import { getAddress, isHex, keccak256, parseAbi, parseAbiItem, toHex, zeroAddress } from 'viem'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { REPO_ROOT, VERIFICATION_PATH, addressAt, logsSince, requireEnv, sortedAddresses } from './stack.mjs'
+import {
+  REPO_ROOT, VERIFICATION_PATH, addressAt, logsSince, mainnetClient, requireEnv, sortedAddresses,
+} from './stack.mjs'
 
 const GOVERNANCE_PATH = join(REPO_ROOT, 'governance.mainnet.json')
 
@@ -90,29 +91,38 @@ async function timelockFailures(client, entry, code, deployKey) {
   const { address, codeHash, minDelay, deployBlock } = entry
   if (keccak256(code) !== codeHash) return [`code hash is ${keccak256(code)}, expected ${codeHash}`]
   const read = (functionName, args) => client.readContract({ address, abi: TIMELOCK_ABI, functionName, args })
-  const adminRole = await read('getRoleAdmin', [TIMELOCK_ROLES.proposers])
-  let granted
+  const roles = { ...TIMELOCK_ROLES, admins: await read('getRoleAdmin', [TIMELOCK_ROLES.proposers]) }
+  let grants
   try {
-    granted = (await logsSince(client, { address, event: ROLE_GRANTED, args: { role: adminRole } }, BigInt(deployBlock)))
-      .map(({ args }) => getAddress(args.account))
+    grants = (await logsSince(client, { address, event: ROLE_GRANTED, args: { role: Object.values(roles) } }, BigInt(deployBlock)))
+      .map(({ args }) => ({ role: args.role, account: getAddress(args.account) }))
   } catch (error) {
     return [`its RoleGranted logs from block ${deployBlock} could not be read: ${error.shortMessage ?? error.message}`]
   }
-  if (!granted.includes(address)) {
+  if (!grants.some(({ role, account }) => role === roles.admins && account === address)) {
     return [`the grant of the admin role to itself is missing from its RoleGranted logs from block ${deployBlock}: deployBlock is later than its deployment`]
   }
-  const members = Object.entries(TIMELOCK_ROLES).flatMap(([roles, role]) => entry[roles].map((account) => [roles, role, account]))
-  const accounts = [...new Set([...members.map(([, , account]) => account), ...granted, ...(deployKey ? [deployKey] : [])]
-    .map((account) => getAddress(account)))].filter((account) => account !== address)
-  const [delay, held, admins] = await Promise.all([
+  const listed = { proposers: entry.proposers, executors: entry.executors, cancellers: entry.cancellers, admins: [address] }
+  const accounts = [...new Set([
+    ...Object.values(listed).flat(),
+    ...grants.map(({ account }) => account),
+    ...(deployKey ? [deployKey] : []),
+    zeroAddress,
+  ].map((account) => getAddress(account)))]
+  const checks = Object.entries(roles).flatMap(([roleName, role]) => accounts.map((account) => ({ roleName, role, account })))
+  const [delay, held] = await Promise.all([
     read('getMinDelay'),
-    Promise.all(members.map(([, role, account]) => read('hasRole', [role, account]))),
-    Promise.all(accounts.map((account) => read('hasRole', [adminRole, account]))),
+    Promise.all(checks.map(({ role, account }) => read('hasRole', [role, account]))),
   ])
+  const isListed = ({ roleName, account }) => listed[roleName].includes(account)
   return [
     ...mismatches({ 'minimum delay': [delay, minDelay] }),
-    ...members.filter((member, i) => !held[i]).map(([roles, , account]) => `${account} is not among the ${roles}`),
-    ...accounts.filter((account, i) => admins[i]).map((account) => `${account} holds the admin role`),
+    ...checks.filter((check, i) => check.roleName !== 'admins' && isListed(check) && !held[i])
+      .map(({ roleName, account }) => `${account} is not among the ${roleName}`),
+    ...checks.filter((check, i) => !isListed(check) && held[i])
+      .map(({ roleName, account }) => (roleName === 'admins'
+        ? `${account} holds the admin role`
+        : `${account} is among the ${roleName}, which the entry does not list`)),
   ]
 }
 
@@ -187,9 +197,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     process.exit(1)
   }
   const deployKey = existsSync(VERIFICATION_PATH) ? JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8')).deployer : undefined
-  const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
   const entries = names.length ? Object.fromEntries(names.map((name) => [name, governance[name]])) : governance
-  checkGovernance(client, entries, deployKey).then(
+  mainnetClient(rpcUrl).then((client) => checkGovernance(client, entries, deployKey)).then(
     (passed) => process.exit(passed ? 0 : 1),
     (err) => {
       console.error(err)

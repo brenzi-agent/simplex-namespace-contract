@@ -8,7 +8,6 @@
  */
 import { createPublicClient, createWalletClient, http, labelhash, namehash, zeroHash, zeroAddress } from 'viem'
 import { localhost } from 'viem/chains'
-import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { localTermsLink } from './serve-terms.mjs'
@@ -18,16 +17,9 @@ import {
   SIMPLEX_PRICE_ORACLE_ARTIFACT,
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
-import { UPGRADEABLE, deployBehindProxy, deployImmutable } from './stack.mjs'
+import { UPGRADEABLE, artifact, deployBehindProxy, deployImmutable } from './stack.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const ARTIFACTS = join(__dirname, '..', 'ens-contracts', 'artifacts', 'contracts')
-
-function loadArtifact(path) {
-  const full = join(ARTIFACTS, path)
-  const json = JSON.parse(readFileSync(full, 'utf8'))
-  return { abi: json.abi, bytecode: json.bytecode }
-}
 
 const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
 const tld = process.env.SIMPLEX_TLD || 'testing'
@@ -50,7 +42,7 @@ async function deployRaw(name, abi, bytecode, args = []) {
 }
 
 async function deploy(name, artifactPath, args = []) {
-  const { abi, bytecode } = loadArtifact(artifactPath)
+  const { abi, bytecode } = artifact(`contracts/${artifactPath}`)
   return deployRaw(name, abi, bytecode, args)
 }
 

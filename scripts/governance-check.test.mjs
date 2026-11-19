@@ -101,7 +101,8 @@ const roles = new Set([
   `${ROLE('EXECUTOR_ROLE')}:${timelock.executors[0]}`,
   `${ROLE('CANCELLER_ROLE')}:${timelock.cancellers[0]}`,
 ])
-const granted = (account) => ({ args: { role: ADMIN_ROLE, account, sender: account } })
+const granted = (account, role = ADMIN_ROLE) => ({ args: { role, account, sender: account } })
+const holding = (role, extra) => (asked, account) => (asked === role && account === extra) || roles.has(`${asked}:${account}`)
 const deployedTimelock = {
   code: TIMELOCK_CODE,
   logs: [granted(timelock.address)],
@@ -123,6 +124,13 @@ for (const [refused, changes, failure] of [
     logs: [granted(timelock.address), granted(SECOND)],
     hasRole: (role, account) => (role === ADMIN_ROLE && account === SECOND) || roles.has(`${role}:${account}`),
   }, /^0x0+5678 holds the admin role$/],
+  ['a proposer its entry does not list', {
+    logs: [granted(timelock.address), granted(SECOND, ROLE('PROPOSER_ROLE'))],
+    hasRole: holding(ROLE('PROPOSER_ROLE'), SECOND),
+  }, /^0x0+5678 is among the proposers, which the entry does not list$/],
+  ['an executor role open to every account', {
+    hasRole: holding(ROLE('EXECUTOR_ROLE'), zeroAddress),
+  }, /^0x0{40} is among the executors, which the entry does not list$/],
   ['logs that cannot be read', { logs: () => { throw new Error('range too large') } }, /^its RoleGranted logs from block 1 could not be read: range too large$/],
   ['a deployment block later than its deployment', { logs: [] }, /^the grant of the admin role to itself is missing from its RoleGranted logs from block 1: /],
   ['other code', { code: '0x6002' }, /^code hash is /],
