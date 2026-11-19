@@ -607,6 +607,22 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
   await check('controllers added on the registrar', sortedAddresses([controller, addresses.SimplexNamePolicy]).join(', '),
     async () => sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)).join(', '))
 
+  const handedOver = await read(registrar, [], ADDR, 'owner')
+    .then((owner) => owner.toLowerCase() === governance.adminSafe.address.toLowerCase(), () => false)
+  if (handedOver) {
+    console.log(`  · the admin Safe owns the registrar: section 8 began after a passing read-back, so the deploy key's roles are not read`)
+  } else {
+    await check('registrar owner is the deploy key', deployer, () => read(registrar, [], ADDR, 'owner'))
+    for (const name of ['', 'eth', 'data.eth', 'eth-usd.data.eth']) {
+      await check(`registry owner of ${name || 'the root node'} is the deploy key`, deployer,
+        () => read(registry, BYTES32, ADDR, 'owner', [namehash(name)]))
+    }
+    for (const [what, at] of [['controller', controller], ['oracle', addresses.SimplexPriceOracle]]) {
+      await check(`${what} owner is the deploy key`, deployer, () => read(at, [], ADDR, 'owner'))
+      await check(`${what} pendingOwner`, zeroAddress, () => read(at, [], ADDR, 'pendingOwner'))
+    }
+  }
+
   return failures
 }
 
