@@ -2,8 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ContractFunctionRevertedError, encodeFunctionData, keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
 import {
-  artifactFailures, checkedProxyAdmin, immutableReview, interfaceFailures, layoutFailures, ownImmutables, slotFailures,
-  transferCall, upgradeCallFailures, upgradeData,
+  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, interfaceFailures,
+  layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
 import {
   ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, immutablesIn, placeImmutables, proxyAdminOf,
@@ -306,6 +306,35 @@ const guarded = {
   immutableReferences: { 21: [{ start: 1, length: 32 }] },
 }
 const guardedNames = new Map([[21, '_proxyAdmin']])
+
+const migration = { signature: 'migrate(uint256)', args: ['1'] }
+
+test('upgrade data for a candidate without a _proxyAdmin immutable is refused', () => {
+  assert.deepEqual(dataGuardFailures(resolver, immutableNames, migration), [
+    'DATA migrate(uint256) requires an immutable _proxyAdmin, which the candidate lacks: its data function would stay callable by anyone',
+  ])
+})
+
+test('upgrade data for a candidate with a _proxyAdmin immutable is accepted', () => {
+  assert.deepEqual(dataGuardFailures(guarded, guardedNames, migration), [])
+})
+
+const GUARDED_ABI = parseAbi(['constructor(address registry, address _proxyAdmin)'])
+const PROXY_ADMIN = proxyAdminOf(deployment.SimplexNamePolicy)
+
+test('the ProxyAdmin is passed for a constructor input named _proxyAdmin', () => {
+  assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER], PROXY_ADMIN), { args: [OTHER, PROXY_ADMIN] })
+})
+
+test('CTOR_ARGS that give the ProxyAdmin for _proxyAdmin are accepted', () => {
+  assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER, PROXY_ADMIN], PROXY_ADMIN), { args: [OTHER, PROXY_ADMIN] })
+})
+
+test('CTOR_ARGS that give another address for _proxyAdmin are refused', () => {
+  assert.deepEqual(candidateArgs(GUARDED_ABI, [OTHER, zeroAddress], PROXY_ADMIN), {
+    refused: [`CTOR_ARGS sets _proxyAdmin to ${zeroAddress}, not the proxy's ProxyAdmin ${PROXY_ADMIN}`],
+  })
+})
 
 test("a _proxyAdmin immutable other than the proxy's ProxyAdmin is refused, also when named as an intended change", () => {
   const proxyAdmin = proxyAdminOf(deployment.SimplexNamePolicy)

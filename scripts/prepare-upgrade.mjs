@@ -25,7 +25,7 @@ const PROXY_ADMIN_ABI = parseAbi([
   'function transferOwnership(address newOwner)',
   'function upgradeAndCall(address proxy, address implementation, bytes data) payable',
 ])
-const PROXY_ADMIN_PLACEHOLDER = 'proxyAdmin'
+const PROXY_ADMIN_NAME = '_proxyAdmin'
 
 const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
@@ -122,8 +122,15 @@ export function ownImmutables(name, addresses, deployer, candidate, proxyAdmin) 
   const fresh = definition.immutables(addresses, { tld: TLD, deployer, self: candidate })
   return {
     ...Object.fromEntries((definition.ownImmutables ?? []).map((immutable) => [immutable, fresh[immutable]])),
-    _proxyAdmin: proxyAdmin,
+    [PROXY_ADMIN_NAME]: proxyAdmin,
   }
+}
+
+export function dataGuardFailures({ immutableReferences }, names, call) {
+  const guarded = Object.keys(immutableReferences).some((id) => names.get(Number(id)) === PROXY_ADMIN_NAME)
+  return call && !guarded
+    ? [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_NAME}, which the candidate lacks: its data function would stay callable by anyone`]
+    : []
 }
 
 export function upgradeData(abi, call) {
@@ -139,12 +146,19 @@ export function upgradeData(abi, call) {
   }
 }
 
-function constructorFailures(abi, args) {
+export function candidateArgs(abi, given, proxyAdmin) {
+  const inputs = abi.find(({ type }) => type === 'constructor')?.inputs ?? []
+  const at = inputs.findIndex(({ name }) => name === PROXY_ADMIN_NAME)
+  const complete = given.length === inputs.length
+  if (at !== -1 && complete && String(given[at]).toLowerCase() !== proxyAdmin.toLowerCase()) {
+    return { refused: [`CTOR_ARGS sets ${PROXY_ADMIN_NAME} to ${given[at]}, not the proxy's ProxyAdmin ${proxyAdmin}`] }
+  }
+  const args = at !== -1 && !complete ? given.toSpliced(at, 0, proxyAdmin) : given
   try {
     constructorArgs(abi, args)
-    return []
+    return { args }
   } catch (error) {
-    return [`CTOR_ARGS ${JSON.stringify(args)} do not encode for its constructor: ${error.shortMessage ?? error.message}`]
+    return { refused: [`the constructor arguments ${JSON.stringify(args)} do not encode: ${error.shortMessage ?? error.message}`] }
   }
 }
 
@@ -199,13 +213,14 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const args = (requestedArgs ?? definition.args(addresses, { tld: TLD }))
-    .map((arg) => (arg === PROXY_ADMIN_PLACEHOLDER ? admin.proxyAdmin : arg))
-  const { data, refused: undecodable = [] } = upgradeData(compiled.abi, call)
+  const { args, refused: argsFailures = [] } =
+    candidateArgs(compiled.abi, requestedArgs ?? definition.args(addresses, { tld: TLD }), admin.proxyAdmin)
+  const { data, refused: dataFailures = [] } = upgradeData(compiled.abi, call)
   const refused = [
     ...artifactFailures(compiled, names, layout, current, intended),
-    ...constructorFailures(compiled.abi, args),
-    ...undecodable,
+    ...argsFailures,
+    ...dataFailures,
+    ...dataGuardFailures(compiled, names, call),
   ]
   if (refused.length) return { refused }
 
