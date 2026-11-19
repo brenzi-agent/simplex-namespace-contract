@@ -8,7 +8,7 @@ import { join } from 'path'
 import { createDryRunRunner, createWaitForBaseRunner, fundOnFork, loadJournal, spawnHardhatFork, DEFAULTS } from './gas-tools.mjs'
 import { assembleVerification } from './build-verification.mjs'
 import { loadInputs, readBackTwo, runOne } from './deploy-mainnet.mjs'
-import { prepareUpgrade } from './prepare-upgrade.mjs'
+import { prepareUpgrade, proxyAdminTarget } from './prepare-upgrade.mjs'
 import { ENS_CONTRACTS_DIR, PROXY_ADMIN, UPGRADEABLE, artifact, assertBuildFresh, proxyAdminOf, proxySlots } from './stack.mjs'
 
 const SECTION_8_STEPS = 10
@@ -154,16 +154,6 @@ async function main() {
     const runTwo = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes', runTwo.length === 0, runTwo.join(', '))
 
-    console.log(`\n=== The deploy key restores v1 ===`)
-    console.log(await v1State())
-    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.ETHRegistrarController])
-    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.SimplexNamePolicy])
-    await sendAs(account.address, v1.ETHRegistrarController, V1_ABI, 'transferOwnership', [admin])
-    await sendAs(account.address, v1.SimplexPriceOracle, V1_ABI, 'transferOwnership', [admin])
-    const v1Restored = await v1State()
-    console.log(v1Restored)
-    expect('v1 is in its state before step 7', JSON.stringify(v1Restored) === JSON.stringify(v1Before))
-
     console.log(`\n=== prepare-upgrade accepts an identical rebuild, and the admin Safe upgrades ===`)
     const verification = await assembleVerification({ client, addresses, deployer: account.address, adminSafe: admin })
     for (const name of Object.keys(UPGRADEABLE)) {
@@ -177,6 +167,24 @@ async function main() {
     }
     const afterUpgrades = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes after the upgrades', afterUpgrades.length === 0, afterUpgrades.join(', '))
+
+    console.log(`\n=== Freezes and transfers address the six ProxyAdmins only ===`)
+    for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
+      const accepted = await proxyAdminTarget(client, addresses, proxyAdminOf(addresses[key]))
+      expect(`the ProxyAdmin of ${name} is a target`, accepted.name === name, accepted.refused?.join('; ') ?? accepted.proxyAdmin)
+      const refused = await proxyAdminTarget(client, addresses, addresses[key])
+      expect(`the ${name} proxy is refused as a target`, Boolean(refused.refused), refused.refused?.join('; '))
+    }
+
+    console.log(`\n=== The deploy key restores v1 ===`)
+    console.log(await v1State())
+    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.ETHRegistrarController])
+    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.SimplexNamePolicy])
+    await sendAs(account.address, v1.ETHRegistrarController, V1_ABI, 'transferOwnership', [admin])
+    await sendAs(account.address, v1.SimplexPriceOracle, V1_ABI, 'transferOwnership', [admin])
+    const v1Restored = await v1State()
+    console.log(v1Restored)
+    expect('v1 is in its state before step 7', JSON.stringify(v1Restored) === JSON.stringify(v1Before))
   } finally {
     fork.stop()
   }
