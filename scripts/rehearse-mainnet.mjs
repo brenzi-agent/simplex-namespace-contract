@@ -154,16 +154,6 @@ async function main() {
     const runTwo = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes', runTwo.length === 0, runTwo.join(', '))
 
-    console.log(`\n=== The deploy key restores v1 ===`)
-    console.log(await v1State())
-    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.ETHRegistrarController])
-    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.SimplexNamePolicy])
-    await sendAs(account.address, v1.ETHRegistrarController, V1_ABI, 'transferOwnership', [admin])
-    await sendAs(account.address, v1.SimplexPriceOracle, V1_ABI, 'transferOwnership', [admin])
-    const v1Restored = await v1State()
-    console.log(v1Restored)
-    expect('v1 is in its state before step 7', JSON.stringify(v1Restored) === JSON.stringify(v1Before))
-
     console.log(`\n=== prepare-upgrade accepts an identical rebuild, and the admin Safe upgrades ===`)
     const verification = await assembleVerification({ client, addresses, deployer: account.address, adminSafe: admin })
     for (const name of Object.keys(UPGRADEABLE)) {
@@ -185,6 +175,16 @@ async function main() {
       const refused = await proxyAdminTarget(client, addresses, addresses[key])
       expect(`the ${name} proxy is refused as a target`, Boolean(refused.refused), refused.refused?.join('; '))
     }
+
+    console.log(`\n=== The deploy key restores v1 ===`)
+    console.log(await v1State())
+    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.ETHRegistrarController])
+    await sendAs(account.address, v1.BaseRegistrarImplementation, V1_ABI, 'addController', [v1.SimplexNamePolicy])
+    await sendAs(account.address, v1.ETHRegistrarController, V1_ABI, 'transferOwnership', [admin])
+    await sendAs(account.address, v1.SimplexPriceOracle, V1_ABI, 'transferOwnership', [admin])
+    const v1Restored = await v1State()
+    console.log(v1Restored)
+    expect('v1 is in its state before step 7', JSON.stringify(v1Restored) === JSON.stringify(v1Before))
   } finally {
     fork.stop()
   }
