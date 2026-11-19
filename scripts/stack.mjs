@@ -193,17 +193,26 @@ function build(buildInfoId) {
       readFileSync(join(ARTIFACTS, 'build-info', `${buildInfoId}.output.json`), 'utf8'),
     ).output
     const immutables = new Map()
+    const contractNames = new Map()
+    const scopes = new Map()
     const visit = (node) => {
       if (Array.isArray(node)) node.forEach(visit)
       else if (node && typeof node === 'object') {
+        if (node.nodeType === 'ContractDefinition') contractNames.set(node.id, node.name)
         if (node.nodeType === 'VariableDeclaration' && node.mutability === 'immutable') immutables.set(node.id, node.name)
+        if (node.nodeType === 'VariableDeclaration' && node.stateVariable) scopes.set(node.id, node.scope)
         Object.values(node).forEach(visit)
       }
     }
     Object.values(sources).forEach(({ ast }) => visit(ast))
     const layouts = new Map(Object.entries(contracts).flatMap(([source, byName]) =>
       Object.entries(byName).map(([contractName, { storageLayout }]) => [`${source}:${contractName}`, storageLayout])))
-    builds.set(buildInfoId, { immutables, layouts })
+    const declaringContract = (astId) => {
+      const name = contractNames.get(scopes.get(astId))
+      if (!name) throw new Error(`build ${buildInfoId}: no contract declares the state variable ${astId}`)
+      return name
+    }
+    builds.set(buildInfoId, { immutables, layouts, declaringContract })
   }
   return builds.get(buildInfoId)
 }
@@ -224,28 +233,29 @@ export function placeImmutables({ contractName, deployedBytecode, immutableRefer
 
 export const runtimeCode = (compiled, values) => placeImmutables(compiled, build(compiled.buildInfoId).immutables, values)
 
-export function canonicalLayout({ storage, types }) {
+function canonicalLayout({ storage, types }, declaringContract) {
   const type = (id) => {
     const { label, encoding, numberOfBytes, members, key, value, base } = types[id]
     return {
       label,
       encoding,
       numberOfBytes,
-      ...(members && { members: members.map(variable) }),
+      ...(members && { members: members.map(member) }),
       ...(key && { key: type(key) }),
       ...(value && { value: type(value) }),
       ...(base && { base: type(base) }),
     }
   }
-  const variable = ({ contract, label, slot, offset, type: id }) =>
-    ({ contract: contract.split(':').at(-1), label, slot, offset, type: type(id) })
-  return storage.map(variable)
+  const member = ({ label, slot, offset, type: id }) => ({ label, slot, offset, type: type(id) })
+  return storage.map(({ astId, label, slot, offset, type: id }) =>
+    ({ contract: declaringContract(astId), label, slot, offset, type: type(id) }))
 }
 
 export function storageLayout({ buildInfoId, inputSourceName, contractName }) {
-  const layout = build(buildInfoId).layouts.get(`${inputSourceName}:${contractName}`)
+  const { layouts, declaringContract } = build(buildInfoId)
+  const layout = layouts.get(`${inputSourceName}:${contractName}`)
   if (!layout) throw new Error(`${contractName}: the build output has no storageLayout; ens-contracts must request it from solc`)
-  return canonicalLayout(layout)
+  return canonicalLayout(layout, declaringContract)
 }
 
 export async function initializedVersion(client, address, compiled) {
