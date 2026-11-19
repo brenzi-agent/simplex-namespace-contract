@@ -117,6 +117,13 @@ test('a variable appended after the trailing __gap is refused', () => {
   assert.equal(layoutFailures(deployed, appended).length, 1)
 })
 
+test('a variable inserted in the middle of the layout is refused', () => {
+  const inserted = [...prefix.slice(0, 7), controller('paused', 53, 21, bool), ...prefix.slice(7), controller('__gap', 55, 0, gap(43))]
+  assert.deepEqual(layoutFailures(deployed, inserted), [
+    'SimplexController.paused is new at slot 53, offset 21, bool, inside the current layout, which ends at slot 54, offset 0, address',
+  ])
+})
+
 for (const signature of [
   'function upgradeToAndCall(address newImplementation, bytes data) payable',
   'function upgradeTo(address newImplementation)',
