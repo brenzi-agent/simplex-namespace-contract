@@ -55,8 +55,8 @@ modified (SNRC added `price6Letter`, `priceUSD` and `InvalidPriceFeed`); it is w
 `.testing` runs, while `.simplex` uses the new `SimplexPriceOracle`.
 `SimplexController` is custom (UUPS); `BaseRegistrarImplementation` is modified (v3 — ERC721Enumerable + `labelOf`
 label index + `tokenURI` + consented transfer + community name transfer check); `SimplexSponsor`,
-`MetadataRenderer` (swappable), `SubnameRegistrar` (immutable) and `SimplexNamePolicy`
-(UUPS) are new SNRC contracts. **There is no NameWrapper** — only the
+`MetadataRenderer` (swappable), `SubnameRegistrar` (immutable), `SimplexNamePolicy`
+(UUPS) and `SimplexSettlement` (UUPS; card payments reversible until settled) are new SNRC contracts. **There is no NameWrapper** — only the
 `INameWrapper` interface is kept, because verbatim `PublicResolver` imports it
 (deployed with `nameWrapper = SubnameRegistrar`, so subname records authorise via
 `SubnameRegistrar.ownerOf`). **There is no reverse registrar either** — removed in
@@ -167,9 +167,9 @@ There is no NameWrapper. Instead:
 
 ## Upgrade story
 
-Only `SimplexController` and `SimplexNamePolicy` are upgradeable — each sits
-behind an ERC-1967 proxy and uses UUPS (`_authorizeUpgrade` gated on the
-controller's owner). Every other contract is **immutable**: `ENSRegistry`,
+Only `SimplexController`, `SimplexNamePolicy` and `SimplexSettlement` are
+upgradeable — each sits behind an ERC-1967 proxy and uses UUPS
+(`_authorizeUpgrade` gated on the controller's owner). Every other contract is **immutable**: `ENSRegistry`,
 `BaseRegistrar` (v3), `MetadataRenderer`, `SubnameRegistrar`, resolver, oracles.
 The two seams that avoid needing a registrar redeploy: `MetadataRenderer` is
 swapped via `baseRegistrar.setMetadataRenderer(...)`, and the `SubnameRegistrar`
@@ -275,6 +275,8 @@ simplex-namespace-contract/      ← parent repo (this)
       simplex/SubnameRegistrar.sol       ← new (subname create + index)
       simplex/SimplexNamePolicy.sol      ← new (UUPS: reserved and community names)
       simplex/SimplexNamePolicyProxy.sol ← new (ERC1967 proxy)
+      simplex/SimplexSettlement.sol      ← new (UUPS: reversible card payments)
+      simplex/SimplexSettlementProxy.sol ← new (ERC1967 proxy)
       simplex/INamePolicy.sol            ← new (hook interface)
       ethregistrar/BaseRegistrarImplementation.sol ← modified (v3: enumerable,
                                             labelOf, tokenURI, registerWithLabel,

@@ -28,7 +28,7 @@ hot wallet.
 | GOV6 | The investor window opens. Hard deadline for the handover, because names now start belonging to third parties. |
 | GOV7 | Public sales open. |
 | GOV8 | Hardening: the hardware wallets are replaced by multi-signature Safes, and admin actions start taking seven days instead of taking effect at once. No fixed date. |
-| GOV9 | The freeze: `Root.lock` ends the ability to replace the deployment, and `controller.freeze()` ends the ability to upgrade the controller's and the name policy's code. No fixed date, and never before GOV8. |
+| GOV9 | The freeze: `Root.lock` ends the ability to replace the deployment, and `controller.freeze()` ends the ability to upgrade the controller's, the name policy's and the settlement's code. No fixed date, and never before GOV8. |
 
 GOV1 to GOV7 are dated and binding. GOV8 and GOV9 are not: both wait until the namespace is
 big enough to be worth the work they cost.
@@ -55,8 +55,10 @@ The admin key and the guardian key are two authorisation tiers, ranked by how mu
 compromised key can do. The admin tier can replace the controller's code, and new code can do
 anything the contracts allow, so its reach has no bound. The guardian tier is bounded in kind:
 halt sales, set registrar allowances, redirect revenue, reserve names (which also stops their
-renewal), and nothing else. It is not bounded in amount: it can give itself any allowance and
-mint unreserved names with it, an accepted risk (`docs/security.md`, V1). They are separate
+renewal), reverse unsettled card payments before their `reversibleUntil`
+([`payment-reversal.md`](./payment-reversal.md)), and nothing else. It is not bounded in amount:
+it can give itself any allowance and mint unreserved names with it, and reverse every unsettled
+card payment, accepted risks (`docs/security.md`, V1). They are separate
 keys so that one compromise does not hand over both tiers. The timelock, the Safes and the
 multi-signer rotation are deferred to GOV8, not abandoned.
 
@@ -65,10 +67,10 @@ multi-signer rotation are deferred to GOV8, not abandoned.
 | Key | GOV2 until GOV9 | After GOV9 |
 |---|---|---|
 | Deploy key | nothing | nothing |
-| Admin key | upgrade the controller and the name policy; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setGeneralTerms`; `namePolicy.setCommunityTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
-| Guardian key | `namePolicy.addReservedNames`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
-| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit` (with the holder's acceptance for that renewal); and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderGeneralTermsWithSig`, `commitUnderCommunityTermsWithSig`, `acceptGeneralTermsForClaimWithSig`, `acceptCommunityTermsForClaimWithSig`, `acceptGeneralTermsForRenewalWithSig`, `acceptCommunityTermsForRenewalWithSig` | same |
-| Anyone | `commit`; `commitUnderGeneralTerms`; `commitUnderCommunityTerms`; `acceptGeneralTermsForClaim`; `acceptCommunityTermsForClaim`; `acceptGeneralTermsForRenewal`; `acceptCommunityTermsForRenewal`; payable `register`; payable `renew` of a name they hold; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
+| Admin key | upgrade the controller, the name policy and the settlement; `setSponsor`; `settlement.reversePayments`; `settlement.reinstatePayments`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setGeneralTerms`; `namePolicy.setCommunityTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
+| Guardian key | `namePolicy.addReservedNames`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `settlement.reversePayments`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
+| Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature over the reversible days); `sponsor.renewWithCredit` (with the holder's acceptance for that renewal and, for reversible days, the holder's `RenewName` signature); and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderGeneralTermsWithSig`, `commitUnderCommunityTermsWithSig`, `acceptGeneralTermsForClaimWithSig`, `acceptCommunityTermsForClaimWithSig`, `acceptGeneralTermsForRenewalWithSig`, `acceptCommunityTermsForRenewalWithSig` | same |
+| Anyone | `commit`; `commitUnderGeneralTerms`; `commitUnderCommunityTerms`; `acceptGeneralTermsForClaim`; `acceptCommunityTermsForClaim`; `acceptGeneralTermsForRenewal`; `acceptCommunityTermsForRenewal`; payable `register`; payable `renew` of a name they hold; `settlement.settle` of a due card payment; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
 
 Until GOV8 every call in this table takes effect when it is signed. After GOV8 the admin's
 calls wait seven days and the guardian's stay immediate.
@@ -87,6 +89,7 @@ only caller of those paths and the only party that can refuse before it has paid
 These powers outlive GOV9 because losing them would be worse than keeping them.
 `registerReserved` and `addReservedNames` keep brand outreach open with no end date.
 `addController` is the only repair path if the frozen controller has a bug.
+`reversePayments` and `reinstatePayments` keep card disputes answerable.
 `setMetadataRenderer` updates NFT artwork, since the renderer is immutable and is replaced
 rather than edited.
 
@@ -115,6 +118,25 @@ the damage is slow and public. Every name keeps its remaining term plus 90 days 
 the holder of an unreserved name can renew it throughout, at the old price as soon as the
 change is noticed. That is months of visible behaviour rather
 than seven days of notice. GOV8 buys the notice back.
+
+A third path follows from reversible card payments
+([`payment-reversal.md`](./payment-reversal.md)). A name paid by card is extended only to `E`
+until its payment is settled, and the guardian or the admin can reverse the payment before
+its `reversibleUntil`. The name of a reversed registration then lapses after `E` + 90 days,
+and the deferred term of a reversed renewal is withheld. The admin can also end an entry by
+adding a registrar controller that renews the name, and can remove `SimplexSettlement` as a
+registrar controller, after which every unsettled registration lapses after `E` + 90 days.
+No key takes a name from its holder before its registration expires: `E` for an unsettled
+reversible registration, while `SimplexSettlement` is a registrar controller.
+
+```mermaid
+flowchart TD
+  paid["card payment, registration or renewal extended to E"] -->|"anyone, settle, from reversibleUntil"| final["final: paid expiry"]
+  paid -->|"guardian or admin, reversePayments, before reversibleUntil"| reversed["reversed"]
+  reversed -->|"admin, reinstatePayments, up to E + 90 days"| final
+  reversed -->|"no reinstatement"| lapsed["registration: available after E + 90 days; renewal: keeps E"]
+  paid -->|"unsettled after E + 90 days"| lapsed
+```
 
 ## 6. Why it is built this way
 
@@ -203,6 +225,8 @@ from configuration we ship, so switching them is a release, not a migration user
 remaining expiry, its `simplex.contact` and `simplex.channel` records, and any subnames.
 `registerReserved` is owner-callable forever and takes an arbitrary owner and duration, so
 the new deployment re-mints the snapshot directly, with no user action and no signature.
+A name with an unsettled card payment is re-minted for its paid term, which ends the store's
+reversal window for it; a name with a reversed renewal is re-minted to `E`.
 Subnames are the exception: only a name's holder can create them, and a name the admin holds
 reaches its holder only when the holder claims it, so re-creating them needs a purpose-built
 migration controller or the holders' signatures.
@@ -217,7 +241,8 @@ migration controller or the holders' signatures.
    writing the records in the same call. `registerReserved` releases each reservation, so
    afterwards reserve again every name that was under dispute; a disputed name past its
    expiry stays reserved and is not re-minted, since `registerReserved` would give it a fresh
-   term of at least two years.
+   term of at least two years. A name with a reversed registration is reserved and not
+   re-minted, as a disputed name past its expiry.
 4. Re-snapshot and apply the difference, because transfers do not stop when sales do.
 5. Point the TLD at the new contracts, ship the client release, announce the old addresses as
    dead.
@@ -244,13 +269,16 @@ Caller: **deploy key**, alone.
 
 1. Deploy `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexPriceOracle`,
    `SimplexController` implementation and proxy, `SimplexSponsor(controllerProxy)`,
-   `SimplexNamePolicy(controllerProxy, baseRegistrar)` implementation and proxy,
-   `SubnameRegistrar`, `SimplexResolver`, `MetadataRenderer`, `UniversalResolver`.
+   `SimplexSettlement(controllerProxy, baseRegistrar)` implementation and
+   `SimplexSettlementProxy`, `SimplexNamePolicy(controllerProxy, baseRegistrar, settlementProxy)`
+   implementation and proxy, `SubnameRegistrar`, `SimplexResolver`, `MetadataRenderer`,
+   `UniversalResolver`.
 2. `ens.setSubnodeOwner(0x0, labelhash("simplex"), baseRegistrar)`, from the deploy key, which
    holds the registry root until the handover. `Root` comes with the handover (A2).
-3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.addController(namePolicy)`;
-   `controller.setNamePolicy(namePolicy)`; `baseRegistrar.setMetadataRenderer(renderer)`;
-   `baseRegistrar.setMaxLabelLength(63)`; `baseRegistrar.setSubnameHook(subnameRegistrar)`.
+3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.addController(settlementProxy)`;
+   `baseRegistrar.addController(namePolicy)`; `controller.setNamePolicy(namePolicy)`;
+   `baseRegistrar.setMetadataRenderer(renderer)`; `baseRegistrar.setMaxLabelLength(63)`;
+   `baseRegistrar.setSubnameHook(subnameRegistrar)`.
 4. `subnameRegistrar.setResolver(simplexResolver)`.
 5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`.
    `namePolicy.setGeneralTerms(link)` and `namePolicy.setCommunityTerms(link)`, the links of `terms.<tld>.json`;
@@ -261,6 +289,18 @@ Caller: **deploy key**, alone.
    single-digit dollars at the base fee we expect. Run it at a low base fee;
    `deploy-mainnet.mjs` supports that through `MAX_BASE_FEE_GWEI`.
 7. Leave `publicSalesOpen == false`.
+
+The settlement proxy precedes the policy, whose constructor binds it for good:
+
+```mermaid
+flowchart LR
+  controller["SimplexController proxy"] --> settlement["SimplexSettlement(controller, registrar) + proxy"]
+  settlement --> policy["SimplexNamePolicy(controller, registrar, settlement proxy) + proxy"]
+  policy --> pointer["controller.setNamePolicy(policy)"]
+  registrar["BaseRegistrar"] -->|"addController"| controller
+  registrar -->|"addController"| settlement
+  registrar -->|"addController"| policy
+```
 
 A transaction may use at most 16,777,216 gas (EIP-7825), and the gas estimate for the loop
 in step 6 passes that above about 210 names, so the batches stay at 200. The name list is
@@ -399,6 +439,9 @@ in brackets.
 | List community names | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addCommunityNames([names])`, sent privately; names that are registered or in grace are skipped (`CommunityNameSkipped`) |
 | Publish new general terms or community terms | admin key *(admin Safe, timelock, 7 days)* | Commit the file to `simplex-chat/simplex-chat`, tag it `general-terms-vN` or `community-terms-vN`, wait until git.simplex.chat mirrors it, run `scripts/terms-check.mjs` on the link, then `namePolicy.setGeneralTerms(link)` or `namePolicy.setCommunityTerms(link)`. An acceptance of that kind not yet used at registration or claim must then be made again; existing holders are not asked to accept. |
 | Hold a disputed name | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
+| Reverse a disputed or refunded card payment | guardian key *(guardian Safe, 2 sigs)* | `settlement.reversePayments([labels])`, before each payment's `reversibleUntil`; every name skipped is in a `NamePaymentReversalSkipped` event |
+| Reinstate a payment whose dispute is won | admin key *(admin Safe, timelock, 7 days)* | `settlement.reinstatePayments([labels])`, up to `E` + 90 days, with `removeReservedNames` for a name the guardian reserved; every name skipped is in a `NamePaymentReinstatementSkipped` event |
+| Settle a due card payment | anyone | `settlement.settle(label)` from its `reversibleUntil`, or `scripts/settle-due.mjs` for every due one |
 | Keep a lapsing brand name protected | guardian key *(guardian Safe, 2 sigs)* | for a name handed out by `registerReserved` and not renewed: `namePolicy.addReservedNames([name], reason)` before its grace period ends, sent privately |
 | Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
 | Cut off a compromised registrar | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, 0)` |
@@ -438,7 +481,9 @@ the guardian Safe sets it true first, and this is the last moment it can. Also r
 `controller()` is this controller: the freeze fixes the sponsor, and `freeze()` reverts only
 while none is set. Read the name policy's ERC-1967 implementation slot and confirm that it
 holds the audited `SimplexNamePolicy`: the policy's upgrades end at the freeze only because
-that implementation checks `controller.frozen()`. Then execute both operations in order. The
+that implementation checks `controller.frozen()`. Read the settlement proxy's implementation
+slot the same way, for the audited `SimplexSettlement`, whose upgrades end at the freeze for the
+same reason. Then execute both operations in order. The
 executor role is open, so anyone can submit them.
 
 The contract enforces this ordering: `freeze()` reverts with `PublicSalesClosed` while sales
@@ -452,7 +497,7 @@ Verify: `root.locked(labelhash("simplex")) == true`; `controller.frozen() == tru
 `setPriceOracle` still succeeds; the oracle's own `setPrices`, `setUsdOracle` and
 `setPremium` still succeed, because the freeze belongs to the controller and the oracle is a
 separate contract; `owner()` is still the timelock and not `address(0)` on both. A simulated
-`namePolicy.upgradeTo` reverts `Frozen`.
+`namePolicy.upgradeTo` and a simulated `settlement.upgradeTo` revert `Frozen`.
 
 Then confirm live: a sponsored registration, a relayed record edit, a signed offer and claim,
 `registerReserved`, and `withdraw()` paying the guardian Safe, which is the beneficiary by
