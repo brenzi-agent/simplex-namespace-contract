@@ -4,8 +4,8 @@
  * Used as:
  *
  *   - Imported by deploy-mainnet.mjs to write the file at the end of run 1.
- *   - Run standalone to rebuild it, from a checkout of the ens-contracts commit
- *     that run 1 deployed.
+ *   - Run standalone when run 1 did not write it, before any upgrade, from a
+ *     checkout of the ens-contracts commit that run 1 deployed.
  *
  * The implementation and the ProxyAdmin of each proxy are read from its ERC-1967
  * slots. Constructor arguments are reconstructed from the addresses in the
@@ -25,20 +25,13 @@
  * Run:
  *   MAINNET_RPC_URL=… DEPLOYER=0x… node scripts/build-verification.mjs
  */
-import { createPublicClient, http } from 'viem'
-import { mainnet } from 'viem/chains'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
-  IMMUTABLE, PROXY_ADMIN, TRANSPARENT_PROXY, UPGRADEABLE,
-  artifact, constructorArgs, initializerData, proxySlots, storageLayout,
+  ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN, TLD, TRANSPARENT_PROXY, UPGRADEABLE, VERIFICATION_PATH,
+  artifact, constructorArgs, immutableNames, immutablesIn, initializerData, mainnetClient, proxySlots, storageLayout,
 } from './stack.mjs'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = join(__dirname, '..')
-const TLD = 'simplex'
 
 const target = (path, address, args) => ({
   address,
@@ -57,9 +50,11 @@ export async function assembleVerification({ client, addresses, deployer, adminS
   for (const [name, definition] of Object.entries(UPGRADEABLE)) {
     const proxy = addresses[definition.key]
     const { implementation, admin } = await proxySlots(client, proxy)
+    const compiled = artifact(definition.artifact)
     contracts[`${name}@${implementation}`] = {
       ...target(definition.artifact, implementation, definition.args(addresses, setup)),
-      storageLayout: storageLayout(artifact(definition.artifact)),
+      storageLayout: storageLayout(compiled),
+      immutables: immutablesIn(compiled, immutableNames(compiled), await client.getCode({ address: implementation })),
     }
     contracts[`${name}Proxy`] = target(TRANSPARENT_PROXY, proxy,
       [implementation, adminSafe, initializerData(name, addresses, setup)])
@@ -74,11 +69,8 @@ export async function assembleVerification({ client, addresses, deployer, adminS
 // ----- CLI -----
 
 async function lookupDeployerFromJournal(rpcUrl) {
-  const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.journal.jsonl`)
-  if (!existsSync(journalPath)) return null
-  const first = readFileSync(journalPath, 'utf8').split('\n').filter(Boolean)[0]
-  if (!first) return null
-  const { txHash } = JSON.parse(first)
+  const [first] = loadJournal(JOURNAL_PATH)
+  const txHash = first?.txHash
   if (!txHash) return null
   const r = await fetch(rpcUrl, {
     method: 'POST',
@@ -95,12 +87,24 @@ async function cli() {
     console.error('ERROR: MAINNET_RPC_URL env var is required.')
     process.exit(1)
   }
-  const deploymentsPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.json`)
-  if (!existsSync(deploymentsPath)) {
-    console.error(`ERROR: ${deploymentsPath} not found.`)
+  if (!existsSync(ADDRESSES_PATH)) {
+    console.error(`ERROR: ${ADDRESSES_PATH} not found.`)
     process.exit(1)
   }
-  const addresses = JSON.parse(readFileSync(deploymentsPath, 'utf8'))
+  if (existsSync(VERIFICATION_PATH)) {
+    console.error(`ERROR: ${VERIFICATION_PATH} exists, and it records every implementation since run 1; it is not rebuilt.`)
+    process.exit(1)
+  }
+  const addresses = JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8'))
+  const client = await mainnetClient(rpcUrl)
+  const deployedByRunOne = new Map(loadJournal(JOURNAL_PATH).map(({ step, address }) => [step, address]))
+  for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
+    const { implementation } = await proxySlots(client, addresses[key])
+    if (implementation.toLowerCase() !== deployedByRunOne.get(`deploy:${name}`)?.toLowerCase()) {
+      console.error(`ERROR: the ${name} proxy runs ${implementation}, not the implementation run 1 deployed.`)
+      process.exit(1)
+    }
+  }
 
   const deployer = process.env.DEPLOYER || (await lookupDeployerFromJournal(rpcUrl))
   if (!deployer) {
@@ -112,15 +116,14 @@ async function cli() {
   }
 
   const meta = await assembleVerification({
-    client: createPublicClient({ chain: mainnet, transport: http(rpcUrl) }),
+    client,
     addresses,
     deployer,
     adminSafe: loadGovernance().adminSafe.address,
   })
 
-  const outPath = join(REPO_ROOT, `verification.mainnet.${TLD}.json`)
-  writeFileSync(outPath, JSON.stringify(meta, null, 2))
-  console.log(`Wrote ${outPath}`)
+  writeFileSync(VERIFICATION_PATH, JSON.stringify(meta, null, 2))
+  console.log(`Wrote ${VERIFICATION_PATH}`)
   console.log(`Targets:`)
   for (const [name, t] of Object.entries(meta.contracts)) {
     console.log(`  ${name.padEnd(64)} ${t.address}`)

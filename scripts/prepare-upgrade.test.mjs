@@ -2,21 +2,34 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { pad, parseAbi, zeroAddress } from 'viem'
 import {
-  artifactFailures, codeFailures, interfaceFailures, layoutFailures, proxyAdminTarget, slotFailures,
+  artifactFailures, immutableReview, interfaceFailures, layoutFailures, proxyAdminTarget, slotFailures,
 } from './prepare-upgrade.mjs'
-import { ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, placeImmutables, proxyAdminOf } from './stack.mjs'
+import {
+  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, immutablesIn, placeImmutables, proxyAdminOf,
+} from './stack.mjs'
 
 const REGISTRY = '0x000000000000000000000000000000000000c0DE'
 const SUBNAME_REGISTRAR = '0x000000000000000000000000000000000000dEaD'
 const CONTROLLER = '0x000000000000000000000000000000000000bEEF'
 const OTHER = '0x0000000000000000000000000000000000001234'
+const ADMIN_SAFE = '0xf38920389740E46A7f4160DaF1672f3df2754Df4'
 
 const uint256 = { label: 'uint256', encoding: 'inplace', numberOfBytes: '32' }
+const bytes32 = { label: 'bytes32', encoding: 'inplace', numberOfBytes: '32' }
 const address = { label: 'address', encoding: 'inplace', numberOfBytes: '20' }
 const bool = { label: 'bool', encoding: 'inplace', numberOfBytes: '1' }
+const reason = { label: 'enum SimplexNamePolicy.Reason', encoding: 'inplace', numberOfBytes: '1' }
 const gap = (length) => ({ label: `uint256[${length}]`, encoding: 'inplace', numberOfBytes: String(32 * length), base: uint256 })
 const variable = (contract, label, slot, offset, type) => ({ contract, label, slot: String(slot), offset, type })
 const controller = (label, slot, offset, type) => variable('SimplexController', label, slot, offset, type)
+const member = (label, slot, offset, type) => ({ label, slot: String(slot), offset, type })
+const names = (members) => ({
+  label: 'mapping(bytes32 => struct SimplexNamePolicy.NameEntry)',
+  encoding: 'mapping',
+  numberOfBytes: '32',
+  key: bytes32,
+  value: { label: 'struct SimplexNamePolicy.NameEntry', encoding: 'inplace', numberOfBytes: '32', members },
+})
 
 const prefix = [
   variable('Initializable', '_initialized', 0, 0, { label: 'uint8', encoding: 'inplace', numberOfBytes: '1' }),
@@ -30,11 +43,11 @@ const prefix = [
 ]
 const deployed = [...prefix, controller('__gap', 55, 0, gap(43))]
 
-const compiledWith = (abi, deployedBytecode = '0x6000') => ({ abi, deployedBytecode })
 const CONTROLLER_ABI = parseAbi(['function sponsor() view returns (address)', 'function setSponsor(address)'])
+const compiledWith = (abi) => ({ abi, deployedBytecode: '0x6000', immutableReferences: {} })
 
 test('an identical rebuild is accepted', () => {
-  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), deployed, deployed), [])
+  assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, deployed, []), [])
 })
 
 test('a variable appended in place of the first slot of the trailing __gap is accepted', () => {
@@ -51,8 +64,17 @@ test('a reordered state variable is refused', () => {
     controller('__gap', 55, 0, gap(43)),
   ]
   assert.deepEqual(layoutFailures(deployed, reordered), [
-    'SimplexController.beneficiary moved from slot 51, offset 0, address to slot 52, offset 0, address',
-    'SimplexController.sponsor moved from slot 52, offset 0, address to slot 51, offset 0, address',
+    'SimplexController.beneficiary changed from slot 51, offset 0, address to slot 52, offset 0, address',
+    'SimplexController.sponsor changed from slot 52, offset 0, address to slot 51, offset 0, address',
+  ])
+})
+
+test('a reordered member of a stored struct is refused', () => {
+  const policy = (members) => [variable('SimplexNamePolicy', '_names', 0, 0, names(members))]
+  const current = policy([member('community', 0, 0, bool), member('reserved', 0, 1, reason)])
+  const reordered = policy([member('reserved', 0, 0, reason), member('community', 0, 1, bool)])
+  assert.deepEqual(layoutFailures(current, reordered), [
+    'SimplexNamePolicy._names: the layout inside mapping(bytes32 => struct SimplexNamePolicy.NameEntry) changed',
   ])
 })
 
@@ -102,6 +124,7 @@ test('bytecode with the slot one nibble off its byte boundary is accepted', () =
 const PUSH32 = `7f${'00'.repeat(32)}`
 const resolver = {
   contractName: 'SimplexResolver',
+  abi: [],
   deployedBytecode: `0x${PUSH32.repeat(4)}00`,
   immutableReferences: {
     11: [{ start: 1, length: 32 }],
@@ -110,50 +133,73 @@ const resolver = {
     14: [{ start: 100, length: 32 }],
   },
 }
-const names = new Map([[11, 'ens'], [12, 'nameWrapper'], [13, 'trustedETHController'], [14, 'trustedReverseRegistrar']])
+const immutableNames = new Map([[11, 'ens'], [12, 'nameWrapper'], [13, 'trustedETHController'], [14, 'trustedReverseRegistrar']])
 const immutables = { ens: REGISTRY, nameWrapper: SUBNAME_REGISTRAR, trustedETHController: CONTROLLER, trustedReverseRegistrar: zeroAddress }
-const expected = placeImmutables(resolver, names, immutables)
+const currentCode = placeImmutables(resolver, immutableNames, immutables)
+const current = immutablesIn(resolver, immutableNames, currentCode)
+const replaced = placeImmutables(resolver, immutableNames, { ...immutables, trustedETHController: OTHER })
+const word = (value) => pad(value).toLowerCase()
 
-test('a resolver built with the deployment\'s immutables is accepted', () => {
-  assert.deepEqual(codeFailures(expected, expected), [])
+test('a resolver with the current immutables is accepted', () => {
+  assert.deepEqual(immutableReview(resolver, immutableNames, currentCode, current, {}, []), { failures: [], changes: [] })
 })
 
 test('a resolver with a different trustedETHController is refused', () => {
-  const candidate = placeImmutables(resolver, names, { ...immutables, trustedETHController: OTHER })
-  assert.equal(codeFailures(candidate, expected).length, 1)
+  assert.deepEqual(immutableReview(resolver, immutableNames, replaced, current, {}, []).failures, [
+    `its immutable trustedETHController is ${word(OTHER)}, expected ${word(CONTROLLER)}`,
+  ])
 })
 
-test('an expected value for an immutable the artifact lacks is refused', () => {
-  assert.throws(() => placeImmutables(resolver, names, { ...immutables, _self: OTHER }), /no immutable named _self/)
+test('a different trustedETHController named as an intended change is accepted, with both values', () => {
+  assert.deepEqual(immutableReview(resolver, immutableNames, replaced, current, {}, ['trustedETHController']), {
+    failures: [],
+    changes: [{ name: 'trustedETHController', current: word(CONTROLLER), next: word(OTHER) }],
+  })
 })
 
-test('an immutable without an expected value is refused', () => {
-  const { trustedReverseRegistrar, ...missing } = immutables
-  assert.throws(() => placeImmutables(resolver, names, missing), /no expected value for its immutable trustedReverseRegistrar/)
+test('an intended change of an immutable the artifact lacks is refused', () => {
+  assert.deepEqual(artifactFailures(resolver, immutableNames, [], [], ['controller']), ['it has no immutable named controller'])
+})
+
+test('an immutable of the implementation itself takes its own value, not the current one', () => {
+  assert.deepEqual(immutableReview(resolver, immutableNames, replaced, current, { trustedETHController: OTHER }, []).failures, [])
+})
+
+test('runtime code that differs outside its immutables is refused', () => {
+  const tampered = `${replaced.slice(0, -2)}01`
+  assert.deepEqual(immutableReview(resolver, immutableNames, tampered, current, {}, ['trustedETHController']).failures, [
+    'its runtime code differs from the artifact outside its immutables',
+  ])
 })
 
 const deployment = Object.fromEntries(Object.values(UPGRADEABLE)
   .map(({ key }, i) => [key, `0x${(i + 1).toString(16).padStart(40, '0')}`]))
-const slots = (adminOf) => ({
+const chain = ({ adminOf = proxyAdminOf, owner = ADMIN_SAFE } = {}) => ({
   getStorageAt: async ({ address, slot }) => pad(slot === ERC1967_ADMIN_SLOT ? adminOf(address) : OTHER),
+  readContract: async () => owner,
 })
 
 test('the ProxyAdmin of a proxy of the deployment is accepted as a target', async () => {
-  const target = await proxyAdminTarget(slots(proxyAdminOf), deployment, proxyAdminOf(deployment.ETHRegistrarController))
-  assert.deepEqual([target.name, target.proxy], ['SimplexController', deployment.ETHRegistrarController])
+  const target = await proxyAdminTarget(chain(), deployment, proxyAdminOf(deployment.ETHRegistrarController))
+  assert.deepEqual([target.name, target.proxy, target.owner], ['SimplexController', deployment.ETHRegistrarController, ADMIN_SAFE])
 })
 
 test('a proxy address given as target is refused', async () => {
-  const target = await proxyAdminTarget(slots(proxyAdminOf), deployment, deployment.ETHRegistrarController)
+  const target = await proxyAdminTarget(chain(), deployment, deployment.ETHRegistrarController)
   assert.match(target.refused.join('; '), /is not the ProxyAdmin of any of the six proxies/)
 })
 
 test('a ProxyAdmin of another deployment is refused as a target', async () => {
-  const target = await proxyAdminTarget(slots(proxyAdminOf), deployment, proxyAdminOf(OTHER))
+  const target = await proxyAdminTarget(chain(), deployment, proxyAdminOf(OTHER))
   assert.match(target.refused.join('; '), /is not the ProxyAdmin of any of the six proxies/)
 })
 
 test('a proxy whose admin slot is not its CREATE address at nonce 1 is refused', async () => {
-  const target = await proxyAdminTarget(slots(() => OTHER), deployment, OTHER)
-  assert.equal(target.refused.length, 6)
+  const target = await proxyAdminTarget(chain({ adminOf: () => OTHER }), deployment, proxyAdminOf(deployment.PublicResolver))
+  assert.match(target.refused.join('; '), /admin slot of the SimplexResolver proxy/)
+})
+
+test('a renounced ProxyAdmin is refused as a target', async () => {
+  const target = await proxyAdminTarget(chain({ owner: zeroAddress }), deployment, proxyAdminOf(deployment.PublicResolver))
+  assert.match(target.refused.join('; '), /is renounced/)
 })

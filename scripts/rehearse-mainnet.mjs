@@ -47,7 +47,10 @@ async function main() {
   const rpcUrl = process.env.MAINNET_RPC_URL
   if (!rpcUrl) throw new Error('MAINNET_RPC_URL is required')
   assertBuildFresh()
-  const inputs = loadInputs()
+  const committed = loadInputs()
+  const { placeholder, ...registrarWallet } = committed.governance.registrarWallet
+  console.log(`The rehearsal uses the registrar wallet ${registrarWallet.address} (${placeholder ?? 'as committed'}).`)
+  const inputs = { ...committed, governance: { ...committed.governance, registrarWallet } }
   const { governance, v1 } = inputs
   const admin = governance.adminSafe.address
   const account = privateKeyToAccount(generatePrivateKey())
@@ -145,7 +148,6 @@ async function main() {
     await sentOnce(wiringSteps + SECTION_8_STEPS + V1_RETIREMENT_STEPS)
 
     console.log(`\n=== The guardian Safe sets the allowance, the admin Safe accepts ===`)
-    const { registrarWallet } = governance
     await sendAs(governance.guardianSafe.address, addresses.SimplexSponsor, SPONSOR_ABI, 'setRegistrarAllowance',
       [registrarWallet.address, registrarWallet.allowance])
     await sendAs(admin, addresses.ETHRegistrarController, V1_ABI, 'acceptOwnership')
@@ -154,10 +156,20 @@ async function main() {
     const runTwo = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes', runTwo.length === 0, runTwo.join(', '))
 
-    console.log(`\n=== prepare-upgrade accepts an identical rebuild, and the admin Safe upgrades ===`)
+    console.log(`\n=== prepare-upgrade and a resolver that trusts another controller ===`)
     const verification = await assembleVerification({ client, addresses, deployer: account.address, adminSafe: admin })
+    const elsewhere = { ...addresses, ETHRegistrarController: STRANGER }
+    const unnamed = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address, [])
+    expect('the change of trustedETHController is refused when it is not named',
+      Boolean(unnamed.refused?.some((failure) => failure.includes('trustedETHController'))), unnamed.refused?.join('; '))
+    const named = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address,
+      ['trustedETHController'])
+    expect('the change of trustedETHController is accepted when it is named, with both values',
+      !named.refused && named.changes.length === 1, named.refused?.join('; ') ?? JSON.stringify(named.changes))
+
+    console.log(`\n=== prepare-upgrade accepts an identical rebuild, and the admin Safe upgrades ===`)
     for (const name of Object.keys(UPGRADEABLE)) {
-      const prepared = await prepareUpgrade(dry, client, name, addresses, verification, account.address)
+      const prepared = await prepareUpgrade(dry, client, name, addresses, verification, account.address, [])
       expect(`${name} candidate accepted`, !prepared.refused, prepared.refused?.join('; ') ?? prepared.candidate)
       if (prepared.refused) continue
       await sendAs(admin, prepared.proxyAdmin, artifact(PROXY_ADMIN).abi, 'upgradeAndCall', [prepared.proxy, prepared.candidate, '0x'])

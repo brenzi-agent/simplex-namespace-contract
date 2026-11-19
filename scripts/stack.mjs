@@ -1,4 +1,8 @@
-import { encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, namehash, pad, parseAbi, toHex, zeroAddress } from 'viem'
+import {
+  createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, http, namehash, pad,
+  parseAbi, toHex, zeroAddress,
+} from 'viem'
+import { mainnet } from 'viem/chains'
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import { dirname, join } from 'path'
@@ -10,17 +14,33 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 
-export const ENS_CONTRACTS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ens-contracts')
+export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+export const ENS_CONTRACTS_DIR = join(REPO_ROOT, 'ens-contracts')
 const ARTIFACTS = join(ENS_CONTRACTS_DIR, 'artifacts')
+
+export const TLD = 'simplex'
+export const ADDRESSES_PATH = join(REPO_ROOT, `deployments.mainnet.${TLD}.json`)
+export const JOURNAL_PATH = join(REPO_ROOT, `deployments.mainnet.${TLD}.journal.jsonl`)
+export const VERIFICATION_PATH = join(REPO_ROOT, `verification.mainnet.${TLD}.json`)
 
 export const ERC1967_IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
 export const ERC1967_ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103'
 export const TRANSPARENT_PROXY = '@openzeppelin/contracts-v5/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json'
 export const PROXY_ADMIN = '@openzeppelin/contracts-v5/proxy/transparent/ProxyAdmin.sol/ProxyAdmin.json'
-export const OWNABLE_ABI = parseAbi([
-  'function owner() view returns (address)',
-  'function pendingOwner() view returns (address)',
-])
+export const OWNABLE_ABI = parseAbi(['function owner() view returns (address)'])
+
+export async function mainnetClient(rpcUrl) {
+  const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
+  // MAINNET_RPC_URL pointing at a testnet would deploy the whole stack to the
+  // wrong chain and journal it as a success. viem only asserts the chain id on
+  // some paths, so assert it here, once, before any spend.
+  const liveChainId = await client.getChainId()
+  if (liveChainId !== mainnet.id) {
+    console.error(`MAINNET_RPC_URL is chainId ${liveChainId}, expected ${mainnet.id}. Refusing to run.`)
+    process.exit(1)
+  }
+  return client
+}
 
 const controllerConfig = (tld, smpxNft) => ({
   tldNode: namehash(tld),
@@ -64,6 +84,7 @@ export const UPGRADEABLE = {
     key: 'SimplexNamePolicy',
     artifact: 'contracts/simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
     args: (a) => [a.ETHRegistrarController, a.BaseRegistrarImplementation],
+    ownImmutables: ['_self'],
     immutables: (a, { tld, self }) => ({
       controller: a.ETHRegistrarController,
       registrar: a.BaseRegistrarImplementation,
@@ -76,6 +97,7 @@ export const UPGRADEABLE = {
     key: 'SubnameRegistrar',
     artifact: 'contracts/simplex/SubnameRegistrar.sol/SubnameRegistrar.json',
     args: (a) => [a.ENSRegistry, a.BaseRegistrarImplementation],
+    ownImmutables: ['_deployer'],
     immutables: (a, { deployer }) => ({
       ens: a.ENSRegistry,
       baseRegistrar: a.BaseRegistrarImplementation,
@@ -231,7 +253,15 @@ export function placeImmutables({ contractName, deployedBytecode, immutableRefer
   return `0x${code.toString('hex')}`
 }
 
-export const runtimeCode = (compiled, values) => placeImmutables(compiled, build(compiled.buildInfoId).immutables, values)
+export const immutableNames = ({ buildInfoId }) => build(buildInfoId).immutables
+
+export const runtimeCode = (compiled, values) => placeImmutables(compiled, immutableNames(compiled), values)
+
+export function immutablesIn({ immutableReferences }, names, code) {
+  const bytes = Buffer.from(code.slice(2), 'hex')
+  return Object.fromEntries(Object.entries(immutableReferences).map(([id, [{ start, length }]]) =>
+    [names.get(Number(id)), `0x${bytes.subarray(start, start + length).toString('hex')}`]))
+}
 
 function canonicalLayout({ storage, types }, declaringContract) {
   const type = (id) => {
@@ -258,8 +288,8 @@ export function storageLayout({ buildInfoId, inputSourceName, contractName }) {
   return canonicalLayout(layout, declaringContract)
 }
 
-export async function initializedVersion(client, address, compiled) {
-  const { slot, offset } = storageLayout(compiled).find(({ label }) => label === '_initialized')
+export async function storedValue(client, address, compiled, label) {
+  const { slot, offset, type } = storageLayout(compiled).find((variable) => variable.label === label)
   const word = BigInt(await client.getStorageAt({ address, slot: toHex(BigInt(slot), { size: 32 }) }))
-  return (word >> BigInt(8 * offset)) & 0xffn
+  return (word >> BigInt(8 * offset)) & ((1n << BigInt(8 * Number(type.numberOfBytes))) - 1n)
 }

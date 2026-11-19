@@ -1,24 +1,21 @@
 #!/usr/bin/env node
 import {
-  createPublicClient, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256, parseAbi, parseGwei,
-  toFunctionSelector,
+  createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256, pad, parseAbi, parseGwei,
+  toFunctionSelector, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
 import { readFileSync, writeFileSync } from 'fs'
-import { dirname, join } from 'path'
-import { fileURLToPath, pathToFileURL } from 'url'
+import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { createWaitForBaseRunner, DEFAULTS } from './gas-tools.mjs'
 import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
-  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE,
-  artifact, assertBuildFresh, constructorArgs, proxyAdminOf, proxySlots, runtimeCode, storageLayout,
+  ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, REPO_ROOT, TLD, UPGRADEABLE, VERIFICATION_PATH,
+  artifact, assertBuildFresh, constructorArgs, immutableNames, immutablesIn, mainnetClient, placeImmutables,
+  proxyAdminOf, proxySlots, storageLayout, storedValue,
 } from './stack.mjs'
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const TLD = 'simplex'
-const addressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.json`)
-const verificationPath = join(REPO_ROOT, `verification.mainnet.${TLD}.json`)
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.attempts.log`)
 const UUPS_SELECTORS = new Set(['0x3659cfe6', '0x4f1ef286', '0x52d1902d'])
@@ -40,9 +37,10 @@ export function layoutFailures(current, candidate) {
   const moved = (gap ? current.slice(0, -1) : current).flatMap((variable) => {
     const next = byName.get(qualified(variable))
     if (!next) return [`${qualified(variable)} is gone`]
-    const same = next.slot === variable.slot && next.offset === variable.offset &&
-      JSON.stringify(next.type) === JSON.stringify(variable.type)
-    return same ? [] : [`${qualified(variable)} moved from ${place(variable)} to ${place(next)}`]
+    if (place(next) !== place(variable)) return [`${qualified(variable)} changed from ${place(variable)} to ${place(next)}`]
+    return JSON.stringify(next.type) === JSON.stringify(variable.type)
+      ? []
+      : [`${qualified(variable)}: the layout inside ${variable.type.label} changed`]
   })
   const last = candidate.at(-1)
   const gapMoved = gap && !(isGap(last) && qualified(last) === qualified(gap) && endSlot(last) === endSlot(gap))
@@ -66,51 +64,85 @@ export function slotFailures(bytecode) {
     .map(([which]) => `its bytecode contains the ERC-1967 ${which} slot`)
 }
 
-export function artifactFailures({ abi, deployedBytecode }, layout, currentLayout) {
-  return [...layoutFailures(currentLayout, layout), ...interfaceFailures(abi), ...slotFailures(deployedBytecode)]
+export function artifactFailures({ abi, deployedBytecode, immutableReferences }, names, layout, currentLayout, intended) {
+  const immutables = Object.keys(immutableReferences).map((id) => names.get(Number(id)))
+  return [
+    ...layoutFailures(currentLayout, layout),
+    ...interfaceFailures(abi),
+    ...slotFailures(deployedBytecode),
+    ...intended.filter((name) => !immutables.includes(name)).map((name) => `it has no immutable named ${name}`),
+  ]
 }
 
-export const codeFailures = (code, expected) =>
-  code === expected ? [] : [`its runtime code is not the artifact with the deployment's immutables (code hash ${code && keccak256(code)})`]
+export function immutableReview(compiled, names, code, current, own, intended) {
+  const found = immutablesIn(compiled, names, code)
+  const word = (value) => value && pad(value).toLowerCase()
+  const expected = Object.fromEntries(Object.keys(found).map((name) =>
+    [name, Object.hasOwn(own, name) ? own[name] : intended.includes(name) ? found[name] : current[name]]))
+  return {
+    failures: [
+      ...Object.keys(found).filter((name) => word(found[name]) !== word(expected[name]))
+        .map((name) => `its immutable ${name} is ${found[name]}, expected ${expected[name] ?? 'none: the current implementation has no such immutable'}`),
+      ...(code === placeImmutables(compiled, names, found) ? [] : ['its runtime code differs from the artifact outside its immutables']),
+    ],
+    changes: intended.map((name) => ({ name, current: current[name], next: found[name] })),
+  }
+}
 
 async function checkedProxyAdmin(client, addresses, name) {
   const proxy = addresses[UPGRADEABLE[name].key]
   const { implementation, admin } = await proxySlots(client, proxy)
-  return admin === proxyAdminOf(proxy)
-    ? { name, proxy, implementation, proxyAdmin: admin }
-    : { refused: [`the admin slot of the ${name} proxy ${proxy} holds ${admin}, not ${proxyAdminOf(proxy)}`] }
+  if (admin !== proxyAdminOf(proxy)) {
+    return { refused: [`the admin slot of the ${name} proxy ${proxy} holds ${admin}, not ${proxyAdminOf(proxy)}`] }
+  }
+  const owner = await client.readContract({ address: admin, abi: PROXY_ADMIN_ABI, functionName: 'owner' })
+  return owner === zeroAddress
+    ? { refused: [`the ProxyAdmin ${admin} of ${name} is renounced`] }
+    : { name, proxy, implementation, proxyAdmin: admin, owner }
 }
 
 export async function proxyAdminTarget(client, addresses, target) {
-  const admins = await Promise.all(Object.keys(UPGRADEABLE).map((name) => checkedProxyAdmin(client, addresses, name)))
-  const refused = admins.flatMap((admin) => admin.refused ?? [])
-  if (refused.length) return { refused }
-  return admins.find(({ proxyAdmin }) => proxyAdmin.toLowerCase() === target.toLowerCase())
-    ?? { refused: [`${target} is not the ProxyAdmin of any of the six proxies of ${addressesPath}`] }
+  const proxies = Object.entries(UPGRADEABLE).map(([name, { key }]) => [name, addresses[key]])
+  const named = proxies.find(([, proxy]) => proxyAdminOf(proxy).toLowerCase() === target.toLowerCase())
+  return named
+    ? checkedProxyAdmin(client, addresses, named[0])
+    : { refused: [`${target} is not the ProxyAdmin of any of the six proxies of ${ADDRESSES_PATH}`] }
 }
 
-export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer) {
+export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, intended) {
   const definition = UPGRADEABLE[name]
   const admin = await checkedProxyAdmin(client, addresses, name)
   if (admin.refused) return admin
-  const recorded = Object.values(verification.contracts)
-    .find(({ address, storageLayout }) => address.toLowerCase() === admin.implementation.toLowerCase() && storageLayout)
-  if (!recorded) throw new Error(`${verificationPath} records no storage layout for ${admin.implementation}, the implementation of ${name}`)
+  const current = Object.values(verification.contracts).find(({ address, storageLayout, immutables }) =>
+    address.toLowerCase() === admin.implementation.toLowerCase() && storageLayout && immutables)
+  if (!current) throw new Error(`${VERIFICATION_PATH} does not record ${admin.implementation}, the implementation of ${name}`)
   const compiled = artifact(definition.artifact)
+  const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const refused = artifactFailures(compiled, layout, recorded.storageLayout)
+  const refused = artifactFailures(compiled, names, layout, current.storageLayout, intended)
   if (refused.length) return { refused }
 
   const args = definition.args(addresses, { tld: TLD })
   const initcode = encodeDeployData({ abi: compiled.abi, bytecode: compiled.bytecode, args })
   const { address: candidate } = await deploy(`${name}@${keccak256(initcode).slice(0, 18)}`, compiled.abi, compiled.bytecode, args)
-  const expected = runtimeCode(compiled, definition.immutables(addresses, { tld: TLD, deployer, self: candidate }))
-  const failures = codeFailures(await client.getCode({ address: candidate }), expected)
-  if (failures.length) return { refused: failures, candidate }
+  const code = await client.getCode({ address: candidate })
+  const fresh = definition.immutables(addresses, { tld: TLD, deployer, self: candidate })
+  const own = Object.fromEntries((definition.ownImmutables ?? []).map((immutable) => [immutable, fresh[immutable]]))
+  const { failures, changes } = immutableReview(compiled, names, code, current.immutables, own, intended)
+  const initialized = definition.initialize ? await storedValue(client, candidate, compiled, '_initialized') : 255n
+  const uninitialized = initialized === 255n ? [] : [`its _initialized is ${initialized}, not 255`]
+  if (failures.length || uninitialized.length) return { refused: [...failures, ...uninitialized], candidate }
   return {
     ...admin,
     candidate,
-    entry: { address: candidate, artifact: definition.artifact, constructorArgs: constructorArgs(compiled.abi, args), storageLayout: layout },
+    changes,
+    entry: {
+      address: candidate,
+      artifact: definition.artifact,
+      constructorArgs: constructorArgs(compiled.abi, args),
+      storageLayout: layout,
+      immutables: immutablesIn(compiled, names, code),
+    },
   }
 }
 
@@ -128,22 +160,26 @@ const ACTIONS = {
     const name = process.env.CONTRACT
     if (!UPGRADEABLE[name]) return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}`] }
     const [deployerKey, rpcUrl, maxBaseFeeGwei] = requireEnv('DEPLOYER_KEY', 'MAINNET_RPC_URL', 'MAX_BASE_FEE_GWEI')
+    const intended = (process.env.INTENDED ?? '').split(',').filter(Boolean)
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
     assertBuildFresh()
-    const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
+    const verification = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
     const runner = createWaitForBaseRunner({
       publicClient: client, walletClient, account,
       maxBaseFeeWei: parseGwei(maxBaseFeeGwei),
       bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
       journalPath, attemptsLogPath,
     })
-    const prepared = await prepareUpgrade(runner, client, name, addresses, verification, account.address)
+    const prepared = await prepareUpgrade(runner, client, name, addresses, verification, account.address, intended)
     if (prepared.refused) return prepared
     verification.contracts[`${name}@${prepared.candidate}`] = prepared.entry
-    writeFileSync(verificationPath, JSON.stringify(verification, null, 2))
-    console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the deployment's immutables`)
-    console.log(`Wrote ${verificationPath}: commit it and verify the candidate on Etherscan before the upgrade.`)
+    writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
+    console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the current immutables`)
+    for (const { name: immutable, current, next } of prepared.changes) {
+      console.log(`  intended change of ${immutable}: ${current} → ${next}`)
+    }
+    console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
     return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, '0x'] }
   },
   freeze: async (client, addresses) => {
@@ -157,7 +193,7 @@ const ACTIONS = {
     if (next?.kind !== 'Safe' && next?.kind !== 'TimelockController') {
       return { refused: [`NEXT must name a Safe or TimelockController entry of governance.mainnet.json, not ${nextName}`] }
     }
-    const { deployer } = JSON.parse(readFileSync(verificationPath, 'utf8'))
+    const { deployer } = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
     const failures = await entryFailures(client, next, deployer)
     if (failures.length) return { refused: failures.map((failure) => `${nextName} ${next.address} ${failure}`) }
     const target = await proxyAdminTarget(client, addresses, proxyAdmin)
@@ -172,19 +208,14 @@ async function main() {
     process.exit(1)
   }
   const [rpcUrl] = requireEnv('MAINNET_RPC_URL')
-  const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
-  if ((await client.getChainId()) !== mainnet.id) {
-    console.error('MAINNET_RPC_URL is not mainnet')
-    process.exit(1)
-  }
-  const call = await action(client, JSON.parse(readFileSync(addressesPath, 'utf8')))
+  const client = await mainnetClient(rpcUrl)
+  const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')))
   if (call.refused) {
     console.error(`${process.env.ACTION} refused:`)
     for (const failure of call.refused) console.error(`  ✗ ${failure}`)
     process.exit(1)
   }
-  const { target: { name, proxy, proxyAdmin }, functionName, args } = call
-  const owner = await client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' })
+  const { target: { name, proxy, proxyAdmin, owner }, functionName, args } = call
   console.log(`\nThe ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy ${proxy}:`)
   console.log(`  ${functionName}(${args.join(', ')})`)
   console.log(`  calldata ${encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })}`)
