@@ -21,9 +21,20 @@ community. The holder must not:
 ## A lease for the registered term
 
 Registering or receiving a bona fide name gives you its use until it expires,
-and nothing beyond that. The fee pays for that term only. Renewal is not a
-right: the consortium that operates the .simplex namespace (the Consortium)
-allows it only to holders who have used the name in line with these terms.
+and nothing beyond that, except as the section Dispute period states. The fee
+pays for that term only. Renewal is not a right: the consortium that operates
+the .simplex namespace (the Consortium) allows it only to holders who have used
+the name in line with these terms.
+
+## Dispute period
+
+A name that SimpleX registers for you after you pay SimpleX has a dispute
+period of 14 to 120 days, shown before you pay. A name you register yourself on
+chain has none. If a payment for the registration is disputed, reversed or
+refunded before its dispute period ends, the Consortium may end the
+registration: the name, its records and its subnames are removed, and anyone
+can register the name again. The name can be renewed only after its dispute
+period, and a transfer passes on the rest of it.
 
 ## Renewal and reassignment
 
@@ -34,9 +45,10 @@ not used in line with these terms, it may block its renewal. Once the term and
 the grace period after it have ended, the Consortium may assign the name to
 another party it considers better placed to serve the community.
 
-The Consortium decides in good faith and may hear the community first. It does
-not take a name away or change its records during a term the holder has paid
-for, and fees already paid are not refunded.
+The Consortium decides in good faith and may hear the community first. Except
+as the section Dispute period states, it does not take a name away or change
+its records during a term the holder has paid for, and fees already paid are
+not refunded.
 
 ## Transfers
 
