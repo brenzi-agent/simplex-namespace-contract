@@ -5,6 +5,7 @@ import {
   artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, interfaceFailures,
   layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
+import { assembleVerification } from './build-verification.mjs'
 import {
   ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, VERIFICATION_PATH, immutablesIn, interfaceOf,
   placeImmutables, proxyAdminOf,
@@ -240,6 +241,14 @@ const deployment = Object.fromEntries(Object.values(UPGRADEABLE)
 const chain = ({ adminOf = proxyAdminOf, owner = ADMIN_SAFE } = {}) => ({
   getStorageAt: async ({ address, slot }) => pad(slot === ERC1967_ADMIN_SLOT ? adminOf(address) : OTHER),
   readContract: async () => owner,
+})
+
+test('a verification file is refused for an implementation whose code is another artifact', async () => {
+  const client = { ...chain(), getCode: async () => resolver.deployedBytecode }
+  await assert.rejects(assembleVerification({ client, addresses: deployment, deployer: OTHER, adminSafe: ADMIN_SAFE }), {
+    message: `the code at ${OTHER}, the implementation of the ENSRegistry proxy, differs from ` +
+      `${UPGRADEABLE.ENSRegistry.artifact} outside its immutables: build the verification file from the ens-contracts commit that deployed it`,
+  })
 })
 
 const recorded = (names) => ({

@@ -19,6 +19,7 @@ export const ENS_CONTRACTS_DIR = join(REPO_ROOT, 'ens-contracts')
 const ARTIFACTS = join(ENS_CONTRACTS_DIR, 'artifacts')
 
 export const TLD = 'simplex'
+export const SOURCE_TAG = 'simplex-mainnet-v2'
 export const ADDRESSES_PATH = join(REPO_ROOT, `deployments.mainnet.${TLD}.json`)
 export const JOURNAL_PATH = join(REPO_ROOT, `deployments.mainnet.${TLD}.journal.jsonl`)
 export const VERIFICATION_PATH = join(REPO_ROOT, `verification.mainnet.${TLD}.json`)

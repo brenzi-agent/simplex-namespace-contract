@@ -78,14 +78,14 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 import {
-  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy, deployImmutable,
-  logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
+  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy,
+  deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses,
+  storedValue,
 } from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
 const TLD_NODE = namehash(TLD)
-const SOURCE_TAG = 'simplex-mainnet-v2'
 const chainlinkEthUsd = '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
 const SMPXNFT = '0x3AF6D9Ee862376A8DFC0a78847Eb20A153557291'
 const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
