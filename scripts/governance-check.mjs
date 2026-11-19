@@ -4,7 +4,7 @@ import { mainnet } from 'viem/chains'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { REPO_ROOT, VERIFICATION_PATH } from './stack.mjs'
+import { REPO_ROOT, VERIFICATION_PATH, addressAt, requireEnv, sortedAddresses } from './stack.mjs'
 
 const GOVERNANCE_PATH = join(REPO_ROOT, 'governance.mainnet.json')
 
@@ -52,8 +52,6 @@ function count(where, value) {
   return value
 }
 
-const sorted = (list) => list.map((address) => getAddress(address)).sort()
-
 const show = (value) => (Array.isArray(value) ? `[${value.join(', ')}]` : String(value))
 
 const mismatches = (pairs) => Object.entries(pairs)
@@ -62,12 +60,11 @@ const mismatches = (pairs) => Object.entries(pairs)
 
 async function safeFailures(client, { address, threshold, owners }, code) {
   if (keccak256(code) !== SAFE_PROXY_CODE_HASH) return [`code hash is ${keccak256(code)}, not that of SafeProxy ${SAFE_VERSION}`]
-  const slot = async (slot) => getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
   const read = (functionName, args) => client.readContract({ address, abi: SAFE_ABI, functionName, args })
   const [singleton, guard, fallbackHandler, version, actualThreshold, actualOwners, [modules], nonce] = await Promise.all([
-    slot(SAFE_SINGLETON_SLOT),
-    slot(SAFE_GUARD_SLOT),
-    slot(SAFE_FALLBACK_HANDLER_SLOT),
+    addressAt(client, address, SAFE_SINGLETON_SLOT),
+    addressAt(client, address, SAFE_GUARD_SLOT),
+    addressAt(client, address, SAFE_FALLBACK_HANDLER_SLOT),
     read('VERSION'),
     read('getThreshold'),
     read('getOwners'),
@@ -79,7 +76,7 @@ async function safeFailures(client, { address, threshold, owners }, code) {
       singleton: [singleton, SAFE_SINGLETON],
       VERSION: [version, SAFE_VERSION],
       threshold: [actualThreshold, threshold],
-      owners: [sorted(actualOwners), sorted(owners)],
+      owners: [sortedAddresses(actualOwners), sortedAddresses(owners)],
       modules: [modules, []],
       guard: [guard, zeroAddress],
       'fallback handler': [fallbackHandler, SAFE_FALLBACK_HANDLER],
@@ -168,11 +165,7 @@ export async function checkGovernance(client, governance, deployKey) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const rpcUrl = process.env.MAINNET_RPC_URL
-  if (!rpcUrl) {
-    console.error('MAINNET_RPC_URL is required')
-    process.exit(1)
-  }
+  const rpcUrl = requireEnv('MAINNET_RPC_URL')
   const governance = loadGovernance()
   const names = process.argv.slice(2)
   const unknown = names.filter((name) => !governance[name])

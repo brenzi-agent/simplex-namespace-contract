@@ -28,6 +28,29 @@ export const ERC1967_ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8e
 export const TRANSPARENT_PROXY = '@openzeppelin/contracts-v5/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json'
 export const PROXY_ADMIN = '@openzeppelin/contracts-v5/proxy/transparent/ProxyAdmin.sol/ProxyAdmin.json'
 export const OWNABLE_ABI = parseAbi(['function owner() view returns (address)'])
+export const V1_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function pendingOwner() view returns (address)',
+  'function controllers(address) view returns (bool)',
+  'function addController(address)',
+  'function removeController(address)',
+  'function transferOwnership(address)',
+  'function acceptOwnership()',
+])
+
+export function requireEnv(name, hint = '') {
+  const value = process.env[name]
+  if (!value) {
+    console.error(`ERROR: ${name} env var is required.${hint}`)
+    process.exit(1)
+  }
+  return value
+}
+
+export const sortedAddresses = (list) => list.map((address) => getAddress(address)).sort()
+
+export const addressAt = async (client, address, slot) =>
+  getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
 
 export async function mainnetClient(rpcUrl) {
   const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
@@ -202,8 +225,10 @@ export async function deployBehindProxy(deploy, name, addresses, setup, initialO
 export const proxyAdminOf = (proxy) => getContractAddress({ from: proxy, nonce: 1n })
 
 export async function proxySlots(client, proxy) {
-  const read = async (slot) => getAddress(`0x${(await client.getStorageAt({ address: proxy, slot })).slice(-40)}`)
-  const [implementation, admin] = await Promise.all([read(ERC1967_IMPLEMENTATION_SLOT), read(ERC1967_ADMIN_SLOT)])
+  const [implementation, admin] = await Promise.all([
+    addressAt(client, proxy, ERC1967_IMPLEMENTATION_SLOT),
+    addressAt(client, proxy, ERC1967_ADMIN_SLOT),
+  ])
   return { implementation, admin }
 }
 

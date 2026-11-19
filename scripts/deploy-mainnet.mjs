@@ -80,8 +80,8 @@ import {
 } from './simplex-price-curve.mjs'
 import {
   ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, OWNABLE_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  VERIFICATION_PATH, artifact, assertBuildFresh, deployBehindProxy, deployImmutable, mainnetClient, proxyAdminOf,
-  proxySlots, runtimeCode, storedValue,
+  V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, deployBehindProxy, deployImmutable, mainnetClient,
+  proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
 } from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
@@ -101,12 +101,6 @@ const COMMUNITY_BATCH = 100
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
 const LOG_RANGE = 10_000n
-const V1_ABI = parseAbi([
-  'function controllers(address) view returns (bool)',
-  'function removeController(address)',
-  'function transferOwnership(address)',
-  'function pendingOwner() view returns (address)',
-])
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
@@ -611,9 +605,8 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
   await check('universal resolver registry', registry, () => read(addresses.UniversalResolver, [], ADDR, 'registry'))
   await check('registry resolver of the TLD node', addresses.PublicResolver,
     () => read(registry, BYTES32, ADDR, 'resolver', [TLD_NODE]))
-  const sortedList = (list) => list.map((address) => address.toLowerCase()).sort().join(', ')
-  await check('controllers added on the registrar', sortedList([controller, addresses.SimplexNamePolicy]),
-    async () => sortedList(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)))
+  await check('controllers added on the registrar', sortedAddresses([controller, addresses.SimplexNamePolicy]).join(', '),
+    async () => sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)).join(', '))
 
   return failures
 }
@@ -708,15 +701,6 @@ function assertTaggedSources() {
     console.error(`ens-contracts has changes outside ${SOURCE_TAG}:\n${changes}`)
     process.exit(1)
   }
-}
-
-function requireEnv(name, hint = '') {
-  const value = process.env[name]
-  if (!value) {
-    console.error(`ERROR: ${name} env var is required.${hint}`)
-    process.exit(1)
-  }
-  return value
 }
 
 // Track the spawned fork at module scope so cleanup handlers can reach it.

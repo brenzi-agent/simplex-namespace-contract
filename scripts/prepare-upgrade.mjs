@@ -13,7 +13,7 @@ import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, REPO_ROOT, TLD, UPGRADEABLE, VERIFICATION_PATH,
   artifact, assertBuildFresh, constructorArgs, immutableNames, immutablesIn, mainnetClient, placeImmutables,
-  proxyAdminOf, proxySlots, storageLayout, storedValue,
+  proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -161,20 +161,13 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   }
 }
 
-function requireEnv(...names) {
-  const missing = names.filter((name) => !process.env[name])
-  if (missing.length) {
-    console.error(`ERROR: ${missing.join(', ')} env var(s) required.`)
-    process.exit(1)
-  }
-  return names.map((name) => process.env[name])
-}
-
 const ACTIONS = {
   upgrade: async (client, addresses) => {
     const name = process.env.CONTRACT
     if (!UPGRADEABLE[name]) return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}`] }
-    const [deployerKey, rpcUrl, maxBaseFeeGwei] = requireEnv('DEPLOYER_KEY', 'MAINNET_RPC_URL', 'MAX_BASE_FEE_GWEI')
+    const deployerKey = requireEnv('DEPLOYER_KEY')
+    const rpcUrl = requireEnv('MAINNET_RPC_URL')
+    const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
     const intended = (process.env.INTENDED ?? '').split(',').filter(Boolean)
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
@@ -198,12 +191,13 @@ const ACTIONS = {
     return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, '0x'] }
   },
   freeze: async (client, addresses) => {
-    const [proxyAdmin] = requireEnv('PROXY_ADMIN')
+    const proxyAdmin = requireEnv('PROXY_ADMIN')
     const target = await proxyAdminTarget(client, addresses, proxyAdmin)
     return target.refused ? target : { target, functionName: 'renounceOwnership', args: [] }
   },
   transfer: async (client, addresses) => {
-    const [proxyAdmin, nextName] = requireEnv('PROXY_ADMIN', 'NEXT')
+    const proxyAdmin = requireEnv('PROXY_ADMIN')
+    const nextName = requireEnv('NEXT')
     const next = loadGovernance()[nextName]
     if (next?.kind !== 'Safe' && next?.kind !== 'TimelockController') {
       return { refused: [`NEXT must name a Safe or TimelockController entry of governance.mainnet.json, not ${nextName}`] }
@@ -222,8 +216,7 @@ async function main() {
     console.error(`ACTION must be one of ${Object.keys(ACTIONS).join(', ')} (got ${JSON.stringify(process.env.ACTION)})`)
     process.exit(1)
   }
-  const [rpcUrl] = requireEnv('MAINNET_RPC_URL')
-  const client = await mainnetClient(rpcUrl)
+  const client = await mainnetClient(requireEnv('MAINNET_RPC_URL'))
   const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')))
   if (call.refused) {
     console.error(`${process.env.ACTION} refused:`)

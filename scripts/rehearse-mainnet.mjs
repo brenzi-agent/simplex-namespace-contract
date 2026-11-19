@@ -11,19 +11,13 @@ import { createDryRunRunner, createWaitForBaseRunner, fundOnFork, loadJournal, s
 import { assembleVerification } from './build-verification.mjs'
 import { loadInputs, readBackTwo, runOne } from './deploy-mainnet.mjs'
 import { prepareUpgrade, proxyAdminTarget } from './prepare-upgrade.mjs'
-import { ENS_CONTRACTS_DIR, PROXY_ADMIN, UPGRADEABLE, artifact, assertBuildFresh, proxyAdminOf, proxySlots } from './stack.mjs'
+import {
+  ENS_CONTRACTS_DIR, PROXY_ADMIN, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf, proxySlots, requireEnv,
+} from './stack.mjs'
 
 const SECTION_8_STEPS = 10
 const V1_RETIREMENT_STEPS = 4
 const STRANGER = '0x0000000000000000000000000000000000001234'
-const V1_ABI = parseAbi([
-  'function owner() view returns (address)',
-  'function pendingOwner() view returns (address)',
-  'function controllers(address) view returns (bool)',
-  'function addController(address)',
-  'function transferOwnership(address)',
-  'function acceptOwnership()',
-])
 const SPONSOR_ABI = parseAbi(['function setRegistrarAllowance(address registrar, uint256 allowanceUSD)'])
 const FORK_TAIL = 6000
 
@@ -56,8 +50,7 @@ function stopAfter(runner, step) {
 }
 
 async function main() {
-  const rpcUrl = process.env.MAINNET_RPC_URL
-  if (!rpcUrl) throw new Error('MAINNET_RPC_URL is required')
+  const rpcUrl = requireEnv('MAINNET_RPC_URL')
   assertBuildFresh()
   const committed = loadInputs()
   const { placeholder, ...registrarWallet } = committed.governance.registrarWallet
