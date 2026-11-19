@@ -472,6 +472,12 @@ const recordVerification = (deployed) => record(verificationPath, (file) => {
 })
 
 async function main() {
+  const transport = http(MAINNET_RPC_URL)
+  const publicClient = createPublicClient({ chain: mainnet, transport })
+  if ((await publicClient.getChainId()) !== mainnet.id) {
+    console.error('MAINNET_RPC_URL is not mainnet')
+    process.exit(1)
+  }
   const fork = await spawnHardhatFork({
     mainnetRpcUrl: MAINNET_RPC_URL,
     port: parseInt(process.env.FORK_PORT || '18545', 10),
@@ -490,9 +496,9 @@ async function main() {
     for (const address of [account.address, ...Object.values(owners), REHEARSAL_HOLDER.address, REHEARSAL_REGISTRAR, REHEARSAL_RECIPIENT])
       await fundOnFork({ forkUrl: fork.url, address, weiHex: toHex(parseEther('1000')) })
     console.log('\n--- Rehearsal on a fork of mainnet ---')
-    const sponsorInUse = await read(client, controllerContract, 'sponsor')
-    const funded = await fundedRegistrars(client, sponsorInUse)
-    console.log(`  the sponsor in use ${sponsorInUse} holds a non-zero allowance for: ${funded.join(', ') || 'no registrar'}`)
+    const sponsorInUse = await read(publicClient, controllerContract, 'sponsor')
+    const funded = await fundedRegistrars(publicClient, sponsorInUse)
+    console.log(`  the sponsor in use ${sponsorInUse} holds a non-zero allowance on mainnet for: ${funded.join(', ') || 'no registrar'}`)
     previousRuntime = await runtimeOf(client, await deploy(REHEARSAL_REGISTRAR, PREVIOUS_CONTROLLER))
     rollbackImpl = await existingRollback(client, journal, previousRuntime)
     const dry = createDryRunRunner({ forkUrl: fork.url, forkChainId: fork.chainId, account })
@@ -514,13 +520,7 @@ async function main() {
     fork.stop()
   }
 
-  const transport = http(MAINNET_RPC_URL)
-  const publicClient = createPublicClient({ chain: mainnet, transport })
   const walletClient = createWalletClient({ chain: mainnet, transport, account })
-  if ((await publicClient.getChainId()) !== mainnet.id) {
-    console.error('MAINNET_RPC_URL is not mainnet')
-    process.exit(1)
-  }
   const pendingOwner = await read(publicClient, controllerContract, 'pendingOwner')
   const root = await read(publicClient, registryContract, 'owner', [zeroHash])
   const handedOver = pendingOwner === zeroAddress && root !== getAddress(verification.deployer)
