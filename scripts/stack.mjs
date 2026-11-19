@@ -217,10 +217,12 @@ function build(buildInfoId) {
     const immutables = new Map()
     const contractNames = new Map()
     const scopes = new Map()
+    const enumDefinitions = new Map()
     const visit = (node) => {
       if (Array.isArray(node)) node.forEach(visit)
       else if (node && typeof node === 'object') {
         if (node.nodeType === 'ContractDefinition') contractNames.set(node.id, node.name)
+        if (node.nodeType === 'EnumDefinition') enumDefinitions.set(node.id, node.members.map(({ name }) => name))
         if (node.nodeType === 'VariableDeclaration' && node.mutability === 'immutable') immutables.set(node.id, node.name)
         if (node.nodeType === 'VariableDeclaration' && node.stateVariable) scopes.set(node.id, node.scope)
         Object.values(node).forEach(visit)
@@ -234,7 +236,14 @@ function build(buildInfoId) {
       if (!name) throw new Error(`build ${buildInfoId}: no contract declares the state variable ${astId}`)
       return name
     }
-    builds.set(buildInfoId, { immutables, layouts, declaringContract })
+    const enumValues = (typeId) => {
+      const enumId = /^t_enum\(.*\)(\d+)$/.exec(typeId)?.[1]
+      if (enumId === undefined) return undefined
+      const values = enumDefinitions.get(Number(enumId))
+      if (!values) throw new Error(`build ${buildInfoId}: no enum definition for the type ${typeId}`)
+      return values
+    }
+    builds.set(buildInfoId, { immutables, layouts, declaringContract, enumValues })
   }
   return builds.get(buildInfoId)
 }
@@ -263,13 +272,15 @@ export function immutablesIn({ immutableReferences }, names, code) {
     [names.get(Number(id)), `0x${bytes.subarray(start, start + length).toString('hex')}`]))
 }
 
-function canonicalLayout({ storage, types }, declaringContract) {
+function canonicalLayout({ storage, types }, { declaringContract, enumValues }) {
   const type = (id) => {
     const { label, encoding, numberOfBytes, members, key, value, base } = types[id]
+    const values = enumValues(id)
     return {
       label,
       encoding,
       numberOfBytes,
+      ...(values && { enumValues: values }),
       ...(members && { members: members.map(member) }),
       ...(key && { key: type(key) }),
       ...(value && { value: type(value) }),
@@ -282,10 +293,10 @@ function canonicalLayout({ storage, types }, declaringContract) {
 }
 
 export function storageLayout({ buildInfoId, inputSourceName, contractName }) {
-  const { layouts, declaringContract } = build(buildInfoId)
+  const { layouts, declaringContract, enumValues } = build(buildInfoId)
   const layout = layouts.get(`${inputSourceName}:${contractName}`)
   if (!layout) throw new Error(`${contractName}: the build output has no storageLayout; ens-contracts must request it from solc`)
-  return canonicalLayout(layout, declaringContract)
+  return canonicalLayout(layout, { declaringContract, enumValues })
 }
 
 export async function storedValue(client, address, compiled, label) {
