@@ -18,7 +18,8 @@ const uint256 = { label: 'uint256', encoding: 'inplace', numberOfBytes: '32' }
 const bytes32 = { label: 'bytes32', encoding: 'inplace', numberOfBytes: '32' }
 const address = { label: 'address', encoding: 'inplace', numberOfBytes: '20' }
 const bool = { label: 'bool', encoding: 'inplace', numberOfBytes: '1' }
-const reason = { label: 'enum SimplexNamePolicy.Reason', encoding: 'inplace', numberOfBytes: '1' }
+const reason = (enumValues) => ({ label: 'enum SimplexNamePolicy.Reason', encoding: 'inplace', numberOfBytes: '1', enumValues })
+const REASONS = ['None', 'Internal', 'Trademark', 'Community']
 const gap = (length) => ({ label: `uint256[${length}]`, encoding: 'inplace', numberOfBytes: String(32 * length), base: uint256 })
 const variable = (contract, label, slot, offset, type) => ({ contract, label, slot: String(slot), offset, type })
 const controller = (label, slot, offset, type) => variable('SimplexController', label, slot, offset, type)
@@ -69,13 +70,25 @@ test('a reordered state variable is refused', () => {
   ])
 })
 
+const policy = (members) => [variable('SimplexNamePolicy', '_names', 0, 0, names(members))]
+const policyWith = (reasons) => policy([member('community', 0, 0, bool), member('reserved', 0, 1, reason(reasons))])
+
 test('a reordered member of a stored struct is refused', () => {
-  const policy = (members) => [variable('SimplexNamePolicy', '_names', 0, 0, names(members))]
-  const current = policy([member('community', 0, 0, bool), member('reserved', 0, 1, reason)])
-  const reordered = policy([member('reserved', 0, 0, reason), member('community', 0, 1, bool)])
-  assert.deepEqual(layoutFailures(current, reordered), [
+  const reordered = policy([member('reserved', 0, 0, reason(REASONS)), member('community', 0, 1, bool)])
+  assert.deepEqual(layoutFailures(policyWith(REASONS), reordered), [
     'SimplexNamePolicy._names: the layout inside mapping(bytes32 => struct SimplexNamePolicy.NameEntry) changed',
   ])
+})
+
+test('a reordered member of a stored enum is refused', () => {
+  const reordered = policyWith(['None', 'Trademark', 'Internal', 'Community'])
+  assert.deepEqual(layoutFailures(policyWith(REASONS), reordered), [
+    'SimplexNamePolicy._names: the layout inside mapping(bytes32 => struct SimplexNamePolicy.NameEntry) changed',
+  ])
+})
+
+test('the same stored enum is accepted', () => {
+  assert.deepEqual(layoutFailures(policyWith(REASONS), policyWith([...REASONS])), [])
 })
 
 test('a retyped state variable is refused', () => {
