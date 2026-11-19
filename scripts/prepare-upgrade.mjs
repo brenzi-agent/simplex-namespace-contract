@@ -31,6 +31,8 @@ const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
 const endSlot = ({ slot, type }) => BigInt(slot) + BigInt(type.numberOfBytes) / 32n
 const place = ({ slot, offset, type }) => `slot ${slot}, offset ${offset}, ${type.label}`
+const follows = (variable, end) =>
+  BigInt(variable.slot) > BigInt(end.slot) || (variable.slot === end.slot && variable.offset > end.offset)
 const prefixOf = (current = [], next = []) => current.every((value, i) => next[i] === value)
 const samePart = (current, next) => (current === undefined ? next === undefined : next !== undefined && sameType(current, next))
 const sameMembers = (current = [], next = []) => current.length === next.length && current.every((member, i) =>
@@ -49,8 +51,15 @@ function sameType(current, next) {
 
 export function layoutFailures(current, candidate) {
   const gap = isGap(current.at(-1)) ? current.at(-1) : undefined
+  const kept = gap ? current.slice(0, -1) : current
   const byName = new Map(candidate.map((variable) => [qualified(variable), variable]))
-  const moved = (gap ? current.slice(0, -1) : current).flatMap((variable) => {
+  const known = new Set(current.map(qualified))
+  const end = kept.at(-1)
+  const inserted = end
+    ? candidate.filter((variable) => !known.has(qualified(variable)) && !follows(variable, end))
+      .map((variable) => `${qualified(variable)} is new at ${place(variable)}, inside the current layout, which ends at ${place(end)}`)
+    : []
+  const moved = kept.flatMap((variable) => {
     const next = byName.get(qualified(variable))
     if (!next) return [`${qualified(variable)} is gone`]
     if (place(next) !== place(variable)) return [`${qualified(variable)} changed from ${place(variable)} to ${place(next)}`]
@@ -62,7 +71,7 @@ export function layoutFailures(current, candidate) {
   const gapMoved = gap && !(isGap(last) && qualified(last) === qualified(gap) && endSlot(last) === endSlot(gap))
     ? [`the candidate does not end with ${qualified(gap)} ending at slot ${endSlot(gap)}`]
     : []
-  return [...moved, ...gapMoved]
+  return [...moved, ...inserted, ...gapMoved]
 }
 
 export function interfaceFailures(abi) {
