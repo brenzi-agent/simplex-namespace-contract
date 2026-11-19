@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { createPublicClient, getAddress, http, isHex, keccak256, parseAbi, parseAbiItem, toHex, zeroAddress } from 'viem'
-import { mainnet } from 'viem/chains'
+import { getAddress, isHex, keccak256, parseAbi, parseAbiItem, toHex, zeroAddress } from 'viem'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { REPO_ROOT, VERIFICATION_PATH, addressAt, logsSince, requireEnv, sortedAddresses } from './stack.mjs'
+import {
+  REPO_ROOT, VERIFICATION_PATH, addressAt, logsSince, mainnetClient, requireEnv, sortedAddresses,
+} from './stack.mjs'
 
 const GOVERNANCE_PATH = join(REPO_ROOT, 'governance.mainnet.json')
 
@@ -196,9 +197,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     process.exit(1)
   }
   const deployKey = existsSync(VERIFICATION_PATH) ? JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8')).deployer : undefined
-  const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
   const entries = names.length ? Object.fromEntries(names.map((name) => [name, governance[name]])) : governance
-  checkGovernance(client, entries, deployKey).then(
+  mainnetClient(rpcUrl).then((client) => checkGovernance(client, entries, deployKey)).then(
     (passed) => process.exit(passed ? 0 : 1),
     (err) => {
       console.error(err)
