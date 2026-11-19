@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { pad, parseAbi, zeroAddress } from 'viem'
+import { keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
 import {
-  artifactFailures, immutableReview, interfaceFailures, layoutFailures, proxyAdminTarget, slotFailures,
+  artifactFailures, checkedProxyAdmin, immutableReview, interfaceFailures, layoutFailures, slotFailures, transferCall,
 } from './prepare-upgrade.mjs'
 import {
   ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, immutablesIn, placeImmutables, proxyAdminOf,
@@ -200,27 +200,64 @@ const chain = ({ adminOf = proxyAdminOf, owner = ADMIN_SAFE } = {}) => ({
   readContract: async () => owner,
 })
 
-test('the ProxyAdmin of a proxy of the deployment is accepted as a target', async () => {
-  const target = await proxyAdminTarget(chain(), deployment, proxyAdminOf(deployment.ETHRegistrarController))
-  assert.deepEqual([target.name, target.proxy, target.owner], ['SimplexController', deployment.ETHRegistrarController, ADMIN_SAFE])
-})
-
-test('a proxy address given as target is refused', async () => {
-  const target = await proxyAdminTarget(chain(), deployment, deployment.ETHRegistrarController)
-  assert.match(target.refused.join('; '), /is not the ProxyAdmin of any of the six proxies/)
-})
-
-test('a ProxyAdmin of another deployment is refused as a target', async () => {
-  const target = await proxyAdminTarget(chain(), deployment, proxyAdminOf(OTHER))
-  assert.match(target.refused.join('; '), /is not the ProxyAdmin of any of the six proxies/)
+test('an unknown CONTRACT fails', async () => {
+  const target = await checkedProxyAdmin(chain(), deployment, 'ProxyAdmin')
+  assert.deepEqual(target.refused, [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ProxyAdmin`])
 })
 
 test('a proxy whose admin slot is not its CREATE address at nonce 1 is refused', async () => {
-  const target = await proxyAdminTarget(chain({ adminOf: () => OTHER }), deployment, proxyAdminOf(deployment.PublicResolver))
+  const target = await checkedProxyAdmin(chain({ adminOf: () => OTHER }), deployment, 'SimplexResolver')
   assert.match(target.refused.join('; '), /admin slot of the SimplexResolver proxy/)
 })
 
-test('a renounced ProxyAdmin is refused as a target', async () => {
-  const target = await proxyAdminTarget(chain({ owner: zeroAddress }), deployment, proxyAdminOf(deployment.PublicResolver))
+test('a renounced ProxyAdmin is refused', async () => {
+  const target = await checkedProxyAdmin(chain({ owner: zeroAddress }), deployment, 'SimplexResolver')
   assert.match(target.refused.join('; '), /is renounced/)
+})
+
+const TIMELOCK = '0x000000000000000000000000000000000000fA11'
+const TIMELOCK_CODE = '0x6001'
+const ADMIN_ROLE = pad('0x00', { size: 32 })
+const governance = {
+  adminSafe: { kind: 'Safe', address: ADMIN_SAFE, threshold: 2, owners: [OTHER] },
+  timelock: {
+    kind: 'TimelockController',
+    address: TIMELOCK,
+    codeHash: keccak256(TIMELOCK_CODE),
+    minDelay: 604800,
+    proposers: [ADMIN_SAFE],
+    executors: [ADMIN_SAFE],
+    cancellers: [ADMIN_SAFE],
+  },
+}
+const timelockRoles = new Set(['PROPOSER_ROLE', 'EXECUTOR_ROLE', 'CANCELLER_ROLE'].map((role) => keccak256(toHex(role))))
+const timelockChain = (code) => {
+  const reads = {
+    owner: () => ADMIN_SAFE,
+    getMinDelay: () => 604800n,
+    getRoleAdmin: () => ADMIN_ROLE,
+    hasRole: (role, account) => account === ADMIN_SAFE && timelockRoles.has(role),
+  }
+  return {
+    ...chain(),
+    getCode: async () => code,
+    getLogs: async () => [],
+    readContract: async ({ functionName, args = [] }) => reads[functionName](...args),
+  }
+}
+
+test('a transfer to a Safe entry is refused', async () => {
+  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, governance, 'SimplexController', 'adminSafe', OTHER)
+  assert.deepEqual(call.refused, ['NEXT must name a TimelockController entry of governance.mainnet.json, not adminSafe'])
+})
+
+test('a transfer to a timelock that fails its check is refused', async () => {
+  const call = await transferCall(timelockChain('0x6002'), deployment, governance, 'SimplexController', 'timelock', OTHER)
+  assert.match(call.refused.join('; '), /^timelock 0x0+fA11 code hash is 0x[0-9a-f]{64}, expected /)
+})
+
+test('a transfer to a timelock that passes its check addresses the ProxyAdmin of the named contract', async () => {
+  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, governance, 'SimplexController', 'timelock', OTHER)
+  assert.deepEqual([call.target.proxyAdmin, call.functionName, call.args],
+    [proxyAdminOf(deployment.ETHRegistrarController), 'transferOwnership', [TIMELOCK]])
 })

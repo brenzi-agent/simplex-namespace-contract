@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
-  ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN, TLD, TRANSPARENT_PROXY, UPGRADEABLE, VERIFICATION_PATH,
+  ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, TLD, TRANSPARENT_PROXY, UPGRADEABLE, VERIFICATION_PATH,
   artifact, constructorArgs, immutableNames, immutablesIn, initializerData, mainnetClient, proxySlots, requireEnv,
   storageLayout,
 } from './stack.mjs'
@@ -59,7 +59,7 @@ export async function assembleVerification({ client, addresses, deployer, adminS
     }
     contracts[`${name}Proxy`] = target(TRANSPARENT_PROXY, proxy,
       [implementation, adminSafe, initializerData(name, addresses, setup)])
-    contracts[`${name}ProxyAdmin`] = target(PROXY_ADMIN, admin, [adminSafe])
+    contracts[`${name}ProxyAdmin`] = target(PROXY_ADMIN_ARTIFACT, admin, [adminSafe])
   }
   for (const [name, { artifact: path, args }] of Object.entries(IMMUTABLE)) {
     contracts[name] = target(path, addresses[name], args(addresses, setup))

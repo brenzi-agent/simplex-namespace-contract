@@ -10,9 +10,10 @@ import { join } from 'path'
 import { createDryRunRunner, createWaitForBaseRunner, fundOnFork, loadJournal, spawnHardhatFork, DEFAULTS } from './gas-tools.mjs'
 import { assembleVerification } from './build-verification.mjs'
 import { loadInputs, readBackTwo, runOne } from './deploy-mainnet.mjs'
-import { prepareUpgrade, proxyAdminTarget } from './prepare-upgrade.mjs'
+import { checkedProxyAdmin, prepareUpgrade } from './prepare-upgrade.mjs'
 import {
-  ENS_CONTRACTS_DIR, PROXY_ADMIN, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf, proxySlots, requireEnv,
+  ENS_CONTRACTS_DIR, PROXY_ADMIN_ARTIFACT, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf, proxySlots,
+  requireEnv,
 } from './stack.mjs'
 
 const SECTION_8_STEPS = 10
@@ -130,7 +131,7 @@ async function main() {
         const contract = await dry.deploy(name, abi, bytecode, args)
         deployed[name] = contract.address
         if (name === 'SimplexNamePolicyProxy') {
-          await sendAs(admin, proxyAdminOf(contract.address), artifact(PROXY_ADMIN).abi, 'transferOwnership', [STRANGER])
+          await sendAs(admin, proxyAdminOf(contract.address), artifact(PROXY_ADMIN_ARTIFACT).abi, 'transferOwnership', [STRANGER])
         }
         return contract
       },
@@ -198,7 +199,7 @@ async function main() {
       const prepared = await prepareUpgrade(dry, client, name, addresses, verification, account.address, [])
       expect(`${name} candidate accepted`, !prepared.refused, prepared.refused?.join('; ') ?? prepared.candidate)
       if (prepared.refused) continue
-      await sendAs(admin, prepared.proxyAdmin, artifact(PROXY_ADMIN).abi, 'upgradeAndCall', [prepared.proxy, prepared.candidate, '0x'])
+      await sendAs(admin, prepared.proxyAdmin, artifact(PROXY_ADMIN_ARTIFACT).abi, 'upgradeAndCall', [prepared.proxy, prepared.candidate, '0x'])
       const { implementation } = await proxySlots(client, prepared.proxy)
       expect(`${name} proxy upgraded through its ProxyAdmin`,
         implementation.toLowerCase() === prepared.candidate.toLowerCase(), implementation)
@@ -206,13 +207,14 @@ async function main() {
     const afterUpgrades = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes after the upgrades', afterUpgrades.length === 0, afterUpgrades.join(', '))
 
-    console.log(`\n=== Freezes and transfers address the six ProxyAdmins only ===`)
+    console.log(`\n=== Freezes and transfers address the ProxyAdmin of the contract they name ===`)
     for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
-      const accepted = await proxyAdminTarget(client, addresses, proxyAdminOf(addresses[key]))
-      expect(`the ProxyAdmin of ${name} is a target`, accepted.name === name, accepted.refused?.join('; ') ?? accepted.proxyAdmin)
-      const refused = await proxyAdminTarget(client, addresses, addresses[key])
-      expect(`the ${name} proxy is refused as a target`, Boolean(refused.refused), refused.refused?.join('; '))
+      const target = await checkedProxyAdmin(client, addresses, name)
+      expect(`${name} names its proxy's ProxyAdmin`, target.proxyAdmin === proxyAdminOf(addresses[key]),
+        target.refused?.join('; ') ?? `${target.proxyAdmin}, implementation ${target.implementation}`)
     }
+    const unknown = await checkedProxyAdmin(client, addresses, addresses.ETHRegistrarController)
+    expect('a proxy address given as CONTRACT is refused', Boolean(unknown.refused), unknown.refused?.join('; '))
 
     console.log(`\n=== The deploy key restores v1 ===`)
     console.log(await v1State())

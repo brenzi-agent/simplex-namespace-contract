@@ -104,7 +104,10 @@ export function immutableReview(compiled, names, code, current, own, intended) {
   }
 }
 
-async function checkedProxyAdmin(client, addresses, name) {
+export async function checkedProxyAdmin(client, addresses, name) {
+  if (!Object.hasOwn(UPGRADEABLE, name)) {
+    return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`] }
+  }
   const proxy = addresses[UPGRADEABLE[name].key]
   const { implementation, admin } = await proxySlots(client, proxy)
   if (admin !== proxyAdminOf(proxy)) {
@@ -116,12 +119,15 @@ async function checkedProxyAdmin(client, addresses, name) {
     : { name, proxy, implementation, proxyAdmin: admin, owner }
 }
 
-export async function proxyAdminTarget(client, addresses, target) {
-  const proxies = Object.entries(UPGRADEABLE).map(([name, { key }]) => [name, addresses[key]])
-  const named = proxies.find(([, proxy]) => proxyAdminOf(proxy).toLowerCase() === target.toLowerCase())
-  return named
-    ? checkedProxyAdmin(client, addresses, named[0])
-    : { refused: [`${target} is not the ProxyAdmin of any of the six proxies of ${ADDRESSES_PATH}`] }
+export async function transferCall(client, addresses, governance, name, nextName, deployer) {
+  const next = governance[nextName]
+  if (next?.kind !== 'TimelockController') {
+    return { refused: [`NEXT must name a TimelockController entry of governance.mainnet.json, not ${nextName}`] }
+  }
+  const failures = await entryFailures(client, next, deployer)
+  if (failures.length) return { refused: failures.map((failure) => `${nextName} ${next.address} ${failure}`) }
+  const target = await checkedProxyAdmin(client, addresses, name)
+  return target.refused ? target : { target, functionName: 'transferOwnership', args: [next.address] }
 }
 
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, intended) {
@@ -162,9 +168,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
 }
 
 const ACTIONS = {
-  upgrade: async (client, addresses) => {
-    const name = process.env.CONTRACT
-    if (!UPGRADEABLE[name]) return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}`] }
+  upgrade: async (client, addresses, name) => {
     const deployerKey = requireEnv('DEPLOYER_KEY')
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
     const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
@@ -190,23 +194,13 @@ const ACTIONS = {
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
     return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, '0x'] }
   },
-  freeze: async (client, addresses) => {
-    const proxyAdmin = requireEnv('PROXY_ADMIN')
-    const target = await proxyAdminTarget(client, addresses, proxyAdmin)
+  freeze: async (client, addresses, name) => {
+    const target = await checkedProxyAdmin(client, addresses, name)
     return target.refused ? target : { target, functionName: 'renounceOwnership', args: [] }
   },
-  transfer: async (client, addresses) => {
-    const proxyAdmin = requireEnv('PROXY_ADMIN')
-    const nextName = requireEnv('NEXT')
-    const next = loadGovernance()[nextName]
-    if (next?.kind !== 'Safe' && next?.kind !== 'TimelockController') {
-      return { refused: [`NEXT must name a Safe or TimelockController entry of governance.mainnet.json, not ${nextName}`] }
-    }
+  transfer: async (client, addresses, name) => {
     const { deployer } = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
-    const failures = await entryFailures(client, next, deployer)
-    if (failures.length) return { refused: failures.map((failure) => `${nextName} ${next.address} ${failure}`) }
-    const target = await proxyAdminTarget(client, addresses, proxyAdmin)
-    return target.refused ? target : { target, functionName: 'transferOwnership', args: [next.address] }
+    return transferCall(client, addresses, loadGovernance(), name, requireEnv('NEXT'), deployer)
   },
 }
 
@@ -217,14 +211,15 @@ async function main() {
     process.exit(1)
   }
   const client = await mainnetClient(requireEnv('MAINNET_RPC_URL'))
-  const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')))
+  const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')), requireEnv('CONTRACT'))
   if (call.refused) {
     console.error(`${process.env.ACTION} refused:`)
     for (const failure of call.refused) console.error(`  ✗ ${failure}`)
     process.exit(1)
   }
-  const { target: { name, proxy, proxyAdmin, owner }, functionName, args } = call
-  console.log(`\nThe ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy ${proxy}:`)
+  const { target: { name, proxy, implementation, proxyAdmin, owner }, functionName, args } = call
+  console.log(`\nThe implementation slot of the ${name} proxy ${proxy} holds ${implementation}.`)
+  console.log(`The ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy:`)
   console.log(`  ${functionName}(${args.join(', ')})`)
   console.log(`  calldata ${encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })}`)
 }
