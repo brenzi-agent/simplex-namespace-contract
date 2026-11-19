@@ -33,6 +33,8 @@ function causes(error) {
 const transportFailure = (error) => error instanceof BaseError && Boolean(error.walk(
   (cause) => cause instanceof TimeoutError || (cause instanceof HttpRequestError && cause.status === undefined)))
 
+const outcome = (result, accepted = () => 'accepted') => (result.refused ? result.failures.join('; ') : accepted())
+
 const results = []
 function expect(what, ok, detail = '') {
   console.log(`  ${ok ? '✓' : '✗'} ${what}${detail ? `: ${detail}` : ''}`)
@@ -219,11 +221,11 @@ async function main() {
     const elsewhere = { ...addresses, ETHRegistrarController: STRANGER }
     const unnamed = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address)
     expect('the change of trustedETHController is refused when it is not named',
-      Boolean(unnamed.refused?.some((failure) => failure.includes('trustedETHController'))), unnamed.refused?.join('; '))
+      unnamed.refused && unnamed.failures.some((failure) => failure.includes('trustedETHController')), outcome(unnamed))
     const named = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address,
       { intended: ['trustedETHController'] })
     expect('the change of trustedETHController is accepted when it is named, with both values',
-      !named.refused && named.changes.length === 1, named.refused?.join('; ') ?? JSON.stringify(named.changes))
+      !named.refused && named.changes.length === 1, outcome(named, () => JSON.stringify(named.changes)))
 
     const upgrade = async (prepared) => {
       verification.contracts[`${prepared.name}@${prepared.candidate}`] = prepared.entry
@@ -237,7 +239,7 @@ async function main() {
     console.log(`\n=== prepare-upgrade accepts an identical rebuild, and the admin Safe upgrades ===`)
     for (const name of Object.keys(UPGRADEABLE)) {
       const prepared = await prepareUpgrade(dry, client, name, addresses, verification, account.address)
-      expect(`${name} candidate accepted`, !prepared.refused, prepared.refused?.join('; ') ?? prepared.candidate)
+      expect(`${name} candidate accepted`, !prepared.refused, outcome(prepared, () => prepared.candidate))
       if (!prepared.refused) await upgrade(prepared)
     }
     const afterUpgrades = await readBackTwo(client, addresses, inputs, account.address)
@@ -248,21 +250,21 @@ async function main() {
       account.address, { call: { signature, args } })
     const missing = await withData('migrate(uint256)', [1])
     expect('data naming a function the candidate lacks is refused',
-      Boolean(missing.refused?.includes('it has no function migrate(uint256)')), missing.refused?.join('; '))
+      missing.refused && missing.failures.includes('it has no function migrate(uint256)'), outcome(missing))
     const unguarded = await withData('owner()')
     expect('data for a candidate without a _proxyAdmin immutable is refused before its deployment',
-      Boolean(unguarded.refused?.some((failure) => failure.startsWith('DATA owner() requires an immutable _proxyAdmin')))
-        && unguarded.candidate === undefined,
-      unguarded.refused?.join('; '))
+      unguarded.refused && unguarded.candidate === undefined &&
+        unguarded.failures.some((failure) => failure.startsWith('DATA owner() requires an immutable _proxyAdmin')),
+      outcome(unguarded))
 
     console.log(`\n=== Freezes and transfers address the ProxyAdmin of the contract they name ===`)
     for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
       const target = await checkedProxyAdmin(client, addresses, name)
-      expect(`${name} names its proxy's ProxyAdmin`, target.proxyAdmin === proxyAdminOf(addresses[key]),
-        target.refused?.join('; ') ?? `${target.proxyAdmin}, implementation ${target.implementation}`)
+      expect(`${name} names its proxy's ProxyAdmin`, !target.refused && target.proxyAdmin === proxyAdminOf(addresses[key]),
+        outcome(target, () => `${target.proxyAdmin}, implementation ${target.implementation}`))
     }
     const unknown = await checkedProxyAdmin(client, addresses, addresses.ETHRegistrarController)
-    expect('a proxy address given as CONTRACT is refused', Boolean(unknown.refused), unknown.refused?.join('; '))
+    expect('a proxy address given as CONTRACT is refused', unknown.refused, outcome(unknown))
 
     console.log(`\n=== The deploy key restores v1 ===`)
     console.log(await v1State())

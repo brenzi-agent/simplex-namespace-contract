@@ -21,6 +21,9 @@ const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.att
 const UUPS_SELECTORS = new Set(['0x3659cfe6', '0x4f1ef286', '0x52d1902d'])
 const PROXY_ADMIN_NAME = '_proxyAdmin'
 
+const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
+const accepted = (fields) => ({ refused: false, ...fields })
+
 const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
 const endSlot = ({ slot, type }) => BigInt(slot) + BigInt(type.numberOfBytes) / 32n
@@ -128,15 +131,15 @@ export function dataGuardFailures({ immutableReferences }, names, call) {
 }
 
 export function upgradeData(abi, call) {
-  if (!call) return { data: '0x' }
+  if (!call) return accepted({ data: '0x' })
   const { signature, args } = call
   try {
     const selector = toFunctionSelector(signature)
     const item = abi.find((entry) => entry.type === 'function' && toFunctionSelector(entry) === selector)
-    if (!item) return { refused: [`it has no function ${signature}`] }
-    return { data: encodeFunctionData({ abi: [item], functionName: item.name, args }) }
+    if (!item) return refusal([`it has no function ${signature}`])
+    return accepted({ data: encodeFunctionData({ abi: [item], functionName: item.name, args }) })
   } catch (error) {
-    return { refused: [`DATA ${signature} with DATA_ARGS ${JSON.stringify(args)} does not encode: ${error.shortMessage ?? error.message}`] }
+    return refusal([`DATA ${signature} with DATA_ARGS ${JSON.stringify(args)} does not encode: ${error.shortMessage ?? error.message}`])
   }
 }
 
@@ -145,14 +148,14 @@ export function candidateArgs(abi, given, proxyAdmin) {
   const at = inputs.findIndex(({ name }) => name === PROXY_ADMIN_NAME)
   const complete = given.length === inputs.length
   if (at !== -1 && complete && String(given[at]).toLowerCase() !== proxyAdmin.toLowerCase()) {
-    return { refused: [`CTOR_ARGS sets ${PROXY_ADMIN_NAME} to ${given[at]}, not the proxy's ProxyAdmin ${proxyAdmin}`] }
+    return refusal([`CTOR_ARGS sets ${PROXY_ADMIN_NAME} to ${given[at]}, not the proxy's ProxyAdmin ${proxyAdmin}`])
   }
   const args = at !== -1 && !complete ? given.toSpliced(at, 0, proxyAdmin) : given
   try {
     constructorArgs(abi, args)
-    return { args }
+    return accepted({ args })
   } catch (error) {
-    return { refused: [`the constructor arguments ${JSON.stringify(args)} do not encode: ${error.shortMessage ?? error.message}`] }
+    return refusal([`the constructor arguments ${JSON.stringify(args)} do not encode: ${error.shortMessage ?? error.message}`])
   }
 }
 
@@ -172,28 +175,28 @@ export async function upgradeCallFailures(client, { proxy, proxyAdmin, owner }, 
 
 export async function checkedProxyAdmin(client, addresses, name) {
   if (!Object.hasOwn(UPGRADEABLE, name)) {
-    return { refused: [`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`] }
+    return refusal([`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`])
   }
   const proxy = addresses[UPGRADEABLE[name].key]
   const { implementation, admin } = await proxySlots(client, proxy)
   if (admin !== proxyAdminOf(proxy)) {
-    return { refused: [`the admin slot of the ${name} proxy ${proxy} holds ${admin}, not ${proxyAdminOf(proxy)}`] }
+    return refusal([`the admin slot of the ${name} proxy ${proxy} holds ${admin}, not ${proxyAdminOf(proxy)}`])
   }
   const owner = await client.readContract({ address: admin, abi: PROXY_ADMIN_ABI, functionName: 'owner' })
   return owner === zeroAddress
-    ? { refused: [`the ProxyAdmin ${admin} of ${name} is renounced`] }
-    : { name, proxy, implementation, proxyAdmin: admin, owner }
+    ? refusal([`the ProxyAdmin ${admin} of ${name} is renounced`])
+    : accepted({ name, proxy, implementation, proxyAdmin: admin, owner })
 }
 
 export async function transferCall(client, addresses, governance, name, nextName, deployer) {
   const next = governance[nextName]
   if (next?.kind !== 'TimelockController') {
-    return { refused: [`NEXT must name a TimelockController entry of governance.mainnet.json, not ${nextName}`] }
+    return refusal([`NEXT must name a TimelockController entry of governance.mainnet.json, not ${nextName}`])
   }
   const failures = await entryFailures(client, next, deployer)
-  if (failures.length) return { refused: failures.map((failure) => `${nextName} ${next.address} ${failure}`) }
+  if (failures.length) return refusal(failures.map((failure) => `${nextName} ${next.address} ${failure}`))
   const target = await checkedProxyAdmin(client, addresses, name)
-  return target.refused ? target : { target, functionName: 'transferOwnership', args: [next.address] }
+  return target.refused ? target : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
 }
 
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, request = {}) {
@@ -201,23 +204,24 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const definition = UPGRADEABLE[name]
   const admin = await checkedProxyAdmin(client, addresses, name)
   if (admin.refused) return admin
-  const current = Object.values(verification.contracts).find(({ address, storageLayout, immutables }) =>
-    address.toLowerCase() === admin.implementation.toLowerCase() && storageLayout && immutables)
+  const current = Object.values(verification.contracts).find((entry) =>
+    entry.address.toLowerCase() === admin.implementation.toLowerCase() && entry.storageLayout && entry.immutables)
   if (!current) throw new Error(`${VERIFICATION_PATH} does not record ${admin.implementation}, the implementation of ${name}`)
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const { args, refused: argsFailures = [] } =
-    candidateArgs(compiled.abi, requestedArgs ?? definition.args(addresses, { tld: TLD }), admin.proxyAdmin)
-  const { data, refused: dataFailures = [] } = upgradeData(compiled.abi, call)
+  const constructed = candidateArgs(compiled.abi, requestedArgs ?? definition.args(addresses, { tld: TLD }), admin.proxyAdmin)
+  const encoded = upgradeData(compiled.abi, call)
   const refused = [
     ...artifactFailures(compiled, names, layout, current, intended),
-    ...argsFailures,
-    ...dataFailures,
+    ...(constructed.refused ? constructed.failures : []),
+    ...(encoded.refused ? encoded.failures : []),
     ...dataGuardFailures(compiled, names, call),
   ]
-  if (refused.length) return { refused }
+  if (refused.length) return refusal(refused)
 
+  const { args } = constructed
+  const { data } = encoded
   const initcode = encodeDeployData({ abi: compiled.abi, bytecode: compiled.bytecode, args })
   const { address: candidate } = await deploy(`${name}@${keccak256(initcode).slice(0, 18)}`, compiled.abi, compiled.bytecode, args)
   const code = await client.getCode({ address: candidate })
@@ -228,9 +232,9 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const errors = compiled.abi.filter(({ type }) => type === 'error')
   const reverting = await upgradeCallFailures(client, admin, candidate, data, errors)
   if (failures.length || uninitialized.length || reverting.length) {
-    return { refused: [...failures, ...uninitialized, ...reverting], candidate }
+    return refusal([...failures, ...uninitialized, ...reverting], { candidate })
   }
-  return {
+  return accepted({
     ...admin,
     candidate,
     data,
@@ -243,7 +247,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
       immutables: immutablesIn(compiled, names, code),
       buildInfoId: compiled.buildInfoId,
     },
-  }
+  })
 }
 
 function jsonArrayEnv(name) {
@@ -301,11 +305,11 @@ const ACTIONS = {
     }
     console.log(`  upgradeAndCall from the ProxyAdmin owner ${prepared.owner} succeeds in a simulation`)
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
-    return { target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, prepared.data] }
+    return accepted({ target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, prepared.data] })
   },
   freeze: async (client, addresses, name) => {
     const target = await checkedProxyAdmin(client, addresses, name)
-    return target.refused ? target : { target, functionName: 'renounceOwnership', args: [] }
+    return target.refused ? target : accepted({ target, functionName: 'renounceOwnership', args: [] })
   },
   transfer: async (client, addresses, name) => {
     const { deployer } = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
@@ -323,7 +327,7 @@ async function main() {
   const call = await action(client, JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')), requireEnv('CONTRACT'))
   if (call.refused) {
     console.error(`${process.env.ACTION} refused:`)
-    for (const failure of call.refused) console.error(`  ✗ ${failure}`)
+    for (const failure of call.failures) console.error(`  ✗ ${failure}`)
     process.exit(1)
   }
   const { target: { name, proxy, implementation, proxyAdmin, owner }, functionName, args } = call
