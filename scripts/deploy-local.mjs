@@ -259,6 +259,8 @@ async function main() {
     ETHRegistrarController: controller.address,
     SimplexSponsor: sponsor.address,
     SimplexNamePolicy: namePolicy.address,
+    SimplexSettlement: settlementProxy.address,
+    SimplexSettlementImpl: settlementImpl.address,
     [tld === 'testing' ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
       priceOracle.address,
     DummyOracle: dummyOracle.address,
