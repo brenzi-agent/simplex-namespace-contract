@@ -2,12 +2,11 @@
 import { createPublicClient, getAddress, http, isHex, keccak256, parseAbi, toHex, zeroAddress } from 'viem'
 import { mainnet } from 'viem/chains'
 import { existsSync, readFileSync } from 'fs'
-import { dirname, join } from 'path'
-import { fileURLToPath, pathToFileURL } from 'url'
+import { join } from 'path'
+import { pathToFileURL } from 'url'
+import { REPO_ROOT, VERIFICATION_PATH } from './stack.mjs'
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const GOVERNANCE_PATH = join(REPO_ROOT, 'governance.mainnet.json')
-const VERIFICATION_PATH = join(REPO_ROOT, 'verification.mainnet.simplex.json')
 
 const SAFE_PROXY_CODE_HASH = '0x4e381985ca68b3e5d27b4425fa581c19cf33146d3f887a3cfca96f55528ea46f'
 const SAFE_SINGLETON = '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
@@ -136,7 +135,10 @@ const KINDS = {
       if (!/^\d+$/.test(allowance)) throw new Error(`${where}.allowance: expected attoUSD as a decimal string`)
       return { address: checksummed(`${where}.address`, address), allowance: BigInt(allowance), placeholder }
     },
-    failures: async (client, entry, code) => (code ? [`has code ${code.slice(0, 18)}…`] : []),
+    failures: async (client, { placeholder }, code) => [
+      ...(placeholder ? [`is a placeholder: ${placeholder}`] : []),
+      ...(code ? [`has code ${code.slice(0, 18)}…`] : []),
+    ],
   },
 }
 

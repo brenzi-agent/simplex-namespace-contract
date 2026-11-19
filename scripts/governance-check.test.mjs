@@ -70,6 +70,11 @@ test('a registrar wallet with code is refused', async () => {
   assert.deepEqual(await entryFailures(clientOf({ code: '0xef0100' }), wallet), ['has code 0xef0100…'])
 })
 
+test('a placeholder registrar wallet is refused', async () => {
+  assert.deepEqual(await entryFailures(clientOf({ code: undefined }), { ...wallet, placeholder: 'not chosen yet' }),
+    ['is a placeholder: not chosen yet'])
+})
+
 const TIMELOCK_CODE = '0x6001'
 const ROLE = (name) => keccak256(toHex(name))
 const ADMIN_ROLE = pad('0x00', { size: 32 })
@@ -111,7 +116,3 @@ for (const [refused, changes, failure] of [
     assert.match(failures[0], failure)
   })
 }
-
-test('governance.mainnet.json marks the registrar wallet as a placeholder', () => {
-  assert.match(loadGovernance().registrarWallet.placeholder, /not chosen yet/)
-})
