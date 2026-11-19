@@ -332,18 +332,23 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   return { addresses, upgradeable, priceOracle }
 }
 
-async function handOver({ deploy, write }, { addresses, upgradeable, priceOracle }, admin) {
+async function handOver({ deploy, write }, { addresses, upgradeable, priceOracle }, client, adminSafe, deployer) {
   const { ENSRegistry: ensRegistry, BaseRegistrarImplementation: baseRegistrar, SimplexController: controller } = upgradeable
-  await write(baseRegistrar, 'transferOwnership', [admin])
+  const admin = adminSafe.address
+  const transferToAdminSafe = async (contract, functionName, args) => {
+    await requireGovernance(client, { adminSafe }, deployer, `${functionName} to the admin Safe`)
+    await write(contract, functionName, args)
+  }
+  await transferToAdminSafe(baseRegistrar, 'transferOwnership', [admin])
   // The registry assigns a node to someone other than the caller only under
   // the root or a TLD. data.eth is neither, so the deploy key sets the owner
   // of eth-usd.data.eth to zero; data.eth's new owner can take it back.
   await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
-  await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), admin])
-  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), admin])
+  await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), admin])
+  await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), admin])
   const root = await deployImmutable(deploy, 'Root', addresses, {})
-  await write(root, 'setController', [admin, true])
-  await write(root, 'transferOwnership', [admin])
+  await transferToAdminSafe(root, 'setController', [admin, true])
+  await transferToAdminSafe(root, 'transferOwnership', [admin])
   await write(ensRegistry, 'setOwner', [zeroHash, root.address])
   await write(controller, 'transferOwnership', [admin])
   await write(priceOracle, 'transferOwnership', [admin])
@@ -644,8 +649,7 @@ export async function runOne(runner, client, inputs, deployer) {
     )
   }
   console.log(`  all run-1 read-back checks passed`)
-  await requireGovernance(client, inputs.governance, deployer, 'the handover')
-  const root = await handOver(runner, deployed, inputs.governance.adminSafe.address)
+  const root = await handOver(runner, deployed, client, inputs.governance.adminSafe, deployer)
   await retireV1(runner.write, inputs.v1)
   return addressesFile({ ...deployed.addresses, Root: root })
 }
