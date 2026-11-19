@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { keccak256, pad, toHex, zeroAddress } from 'viem'
-import { entryFailures, loadGovernance } from './governance-check.mjs'
+import { checkGovernance, entryFailures, loadGovernance } from './governance-check.mjs'
 
 const SAFE_PROXY_CODE = '0x608060405260005463a619486e60003560e01c14156024578060601b606c5260206060f35b3660008037600080366000845af43d6000803e806040573d6000fd5b3d6000f3fea2646970667358221220e61834ebd2d8cd909d362bf67c47ef58fd665df38e6dd036ce65611101d072e964736f6c63430007060033'
 const SINGLETON = '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
@@ -76,6 +76,11 @@ test('a registrar wallet with code is refused', async () => {
 test('a placeholder registrar wallet is refused', async () => {
   assert.deepEqual(await entryFailures(clientOf({ code: undefined }), { ...wallet, placeholder: 'not chosen yet' }),
     ['is a placeholder: not chosen yet'])
+})
+
+test('the governance check fails when an entry before the last one fails', async () => {
+  const client = { ...clientOf({}), getCode: async ({ address }) => (address === OTHER ? '0xef0100' : undefined) }
+  assert.equal(await checkGovernance(client, { first: wallet, last: { ...wallet, address: SECOND } }), false)
 })
 
 const TIMELOCK_CODE = '0x6001'
