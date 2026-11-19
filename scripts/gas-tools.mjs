@@ -102,7 +102,7 @@ function sumSpent(journal) {
   return journal.reduce((acc, e) => acc + BigInt(e.costWei || 0), 0n)
 }
 
-async function promptYesNo(question) {
+export async function promptYesNo(question) {
   if (process.env.CONFIRM === 'yes') {
     console.log(`${question}y  [auto via CONFIRM=yes]`)
     return true

@@ -63,7 +63,6 @@ import {
 import { mainnet } from 'viem/chains'
 import { normalize } from 'viem/ens'
 import { privateKeyToAccount } from 'viem/accounts'
-import { execFileSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
@@ -80,8 +79,8 @@ import {
 } from './simplex-price-curve.mjs'
 import {
   ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, OWNABLE_ABI, REPO_ROOT, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, deployBehindProxy, deployImmutable, mainnetClient,
-  proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
+  V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy, deployImmutable,
+  mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses, storedValue,
 } from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
@@ -682,27 +681,6 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
   return failures
 }
 
-function assertTaggedSources() {
-  const git = (...args) => execFileSync('git', ['-C', ENS_CONTRACTS_DIR, ...args], { encoding: 'utf8' }).trim()
-  let tagged
-  try {
-    tagged = git('rev-parse', '--verify', '--quiet', `refs/tags/${SOURCE_TAG}^{commit}`)
-  } catch {
-    console.error(`ens-contracts has no tag ${SOURCE_TAG}: tag the commit run 1 deploys, and fetch the tag.`)
-    process.exit(1)
-  }
-  const head = git('rev-parse', 'HEAD')
-  if (head !== tagged) {
-    console.error(`ens-contracts is at ${head}, but ${SOURCE_TAG} is ${tagged}: check out the tagged commit.`)
-    process.exit(1)
-  }
-  const changes = git('status', '--porcelain')
-  if (changes) {
-    console.error(`ens-contracts has changes outside ${SOURCE_TAG}:\n${changes}`)
-    process.exit(1)
-  }
-}
-
 // Track the spawned fork at module scope so cleanup handlers can reach it.
 let activeFork = null
 function cleanupFork() {
@@ -731,7 +709,7 @@ async function runOneOnMainnet(rpcUrl, inputs) {
 
   // Cheap and first: a stale build must not cost a fork spawn, let alone a
   // transaction.
-  assertTaggedSources()
+  assertTaggedSource(SOURCE_TAG)
   assertBuildFresh()
 
   // A populated addresses file with no journal beside it means a previous

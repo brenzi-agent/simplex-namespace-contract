@@ -8,12 +8,12 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { createWaitForBaseRunner, DEFAULTS } from './gas-tools.mjs'
+import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
 import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, REPO_ROOT, TLD, UPGRADEABLE, VERIFICATION_PATH,
-  artifact, assertBuildFresh, constructorArgs, immutableNames, immutablesIn, mainnetClient, placeImmutables,
-  proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
+  artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames, immutablesIn, mainnetClient,
+  placeImmutables, proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -166,6 +166,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
       constructorArgs: constructorArgs(compiled.abi, args),
       storageLayout: layout,
       immutables: immutablesIn(compiled, names, code),
+      buildInfoId: compiled.buildInfoId,
     },
   }
 }
@@ -178,6 +179,7 @@ const ACTIONS = {
     const intended = (process.env.INTENDED ?? '').split(',').filter(Boolean)
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
+    const source = assertTaggedSource()
     assertBuildFresh()
     const verification = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
     const runner = createWaitForBaseRunner({
@@ -186,9 +188,20 @@ const ACTIONS = {
       bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
       journalPath, attemptsLogPath,
     })
-    const prepared = await prepareUpgrade(runner, client, name, addresses, verification, account.address, intended)
+    const confirmed = {
+      ...runner,
+      deploy: async (step, abi, bytecode, args) => {
+        if (!runner.completedSteps().has(`deploy:${step}`)) {
+          console.log(`\nThe deploy key ${account.address} deploys the ${name} candidate ${step}, built from ens-contracts ` +
+            `${source.commit} (${source.tags.join(', ')}), at a base fee of at most ${maxBaseFeeGwei} gwei.`)
+          if (!(await promptYesNo('Proceed? [y/N] '))) throw new Error(`the ${name} candidate was not deployed`)
+        }
+        return runner.deploy(step, abi, bytecode, args)
+      },
+    }
+    const prepared = await prepareUpgrade(confirmed, client, name, addresses, verification, account.address, intended)
     if (prepared.refused) return prepared
-    verification.contracts[`${name}@${prepared.candidate}`] = prepared.entry
+    verification.contracts[`${name}@${prepared.candidate}`] = { ...prepared.entry, ensContractsCommit: source.commit }
     writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
     console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout and the current immutables`)
     for (const { name: immutable, current, next } of prepared.changes) {
