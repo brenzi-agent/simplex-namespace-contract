@@ -163,7 +163,7 @@ and the local order is that of `scripts/deploy-local.mjs`.
 10. UniversalResolver = impl(deploy key, registry, gateway provider) + proxy; Multicall3
 11. `baseRegistrar.setMaxLabelLength(63)` — not optional: the label is written to `labelOf` permanently
 12. `setBeneficiary(guardian)` is the last call of the wiring, before any handover (owner-callable only while unset). After the read-back, hand over: BaseRegistrar, `eth` and `data.eth` to the admin in single steps, the registry root into a `Root` that the admin owns and controls, and the controller and the oracle as `Ownable2Step` proposals, which the admin accepts in one batch (launch-to-freeze plan A2). The registrar allowance is set later, in a step of its own, once the owner provides the registrar wallet (launch-to-freeze plan A3)
-13. Output addresses to `deployments/<network>-<tld>.json`
+13. Output addresses: run 1 writes `deployments.mainnet.simplex.json`; `scripts/deploy-local.mjs` writes `deployments.local.json`
 
 No reverse registrar is deployed. `Root` comes after the deploy and `Root.lock` at GOV9 — while the label is unlocked a redeploy can keep the registry and re-point the TLD, which is the cheap recovery path until real users exist.
 
