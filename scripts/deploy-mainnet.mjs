@@ -228,11 +228,6 @@ export function loadInputs() {
   }
 }
 
-/**
- * The deployment and wiring of run 1, parameterised by a runner: a dry-run
- * runner (forked node) to capture gas, then the real wait-for-base runner
- * against mainnet.
- */
 async function deployAndWire({ deploy, write }, { governance, reservedByReason, terms, communityNames }, deployer, client) {
   const setup = { tld: TLD, deployer, chainlinkEthUsd }
   const addresses = {}
@@ -257,9 +252,6 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   // ReverseClaimer, so nothing needs to own addr.reverse for the resolver to deploy.
   await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(TLD), deployer])
 
-  // SimplexPriceOracle's curve and feed are both settable by call afterwards, so
-  // it never has to be redeployed to change what a name costs. Its base price
-  // covers every length, so lowering minCharLength never hands out free names.
   const priceOracle = await immutable('SimplexPriceOracle')
 
   const controller = await proxied('SimplexController')
@@ -295,9 +287,6 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   // ever holding ETH.
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
-  // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
-  // and the owner's signature check. Only this contract may call the controller's
-  // sponsored entry points. The guardian funds registrars here.
   const sponsor = await proxied('SimplexSponsor')
   await write(controller, 'setSponsor', [sponsor.address])
 
@@ -558,8 +547,6 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
   report(`community names read back`, unlisted.length === 0,
     `${communityNames.length - unlisted.length} of ${communityNames.length}` +
       (unlisted.length ? `; missing ${unlisted.slice(0, 5).join(', ')}${unlisted.length > 5 ? ', …' : ''}` : ''))
-  // A six-character name must quote the cheapest rung; zero means the oracle is
-  // misconfigured and every name would be free.
   try {
     const p = await client.readContract({
       address: controller,

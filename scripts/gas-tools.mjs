@@ -17,11 +17,6 @@
  * monotonic step labels, JSONL attempts log.
  *
  * Exports:
- *   spawnHardhatFork({mainnetRpcUrl, port, ensContractsDir})
- *     → { url, chainId, stop(), state() } — spawns `npx hardhat node`, waits
- *       for the port, returns the local URL, the chain id, a stop function and
- *       a function that returns the node's exit status, stdout and stderr.
- *
  *   fundOnFork({forkUrl, address, weiHex})
  *     → uses `hardhat_setBalance` so the deployer EOA can pay gas on the fork.
  *

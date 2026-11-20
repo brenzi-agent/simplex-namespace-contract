@@ -35,11 +35,6 @@ import {
   placeImmutables, proxySlots, refusal, requireEnv, storageLayout,
 } from './stack.mjs'
 
-/**
- * Given the deployment addresses, the deploy key and the admin Safe, return the
- * verification metadata object. Used by deploy-mainnet.mjs at the end of run 1,
- * where every input is already in scope.
- */
 export async function assembleVerification({ client, addresses, deployer, adminSafe }) {
   const ensContractsCommit = ensContractsHead()
   const parentCommit = parentHead()
