@@ -80,7 +80,7 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 import {
-  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
   UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy,
   deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses,
   storedValue,
@@ -356,6 +356,9 @@ async function handOver({ deploy, write }, { addresses, upgradeable, priceOracle
   await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), admin])
   await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), admin])
   const root = await deployImmutable(deploy, 'Root', addresses, {})
+  if ((await client.getCode({ address: root.address })) !== runtimeCode(artifact(IMMUTABLE.Root.artifact), {})) {
+    throw new Error(`the code at ${root.address} is not the Root artifact's: Root is not called, and ens.setOwner(0x0, root) is not sent`)
+  }
   await transferToAdminSafe(root, 'setController', [admin, true])
   await transferToAdminSafe(root, 'transferOwnership', [admin])
   await write(ensRegistry, 'setOwner', [zeroHash, root.address])
@@ -613,6 +616,9 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
       async () => (await proxySlots(client, proxy)).admin)
     await check(`${name} ProxyAdmin owner is the admin Safe`, governance.adminSafe.address,
       () => client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' }))
+  }
+  for (const name of Object.keys(IMMUTABLE).filter((name) => Object.hasOwn(addresses, name))) {
+    await matchesCode(`${name} code`, addresses[name], () => runtimeCode(artifact(IMMUTABLE[name].artifact), {}))
   }
   await check('registrar ens', registry, () => read(registrar, [], ADDR, 'ens'))
   await check('registrar baseNode', TLD_NODE, () => read(registrar, [], BYTES32, 'baseNode'))
