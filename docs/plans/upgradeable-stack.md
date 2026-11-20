@@ -77,8 +77,10 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - the guardian Safe executes the batch
   - `RUN=registrar-read-back`: `sponsor.registrarAllowance(wallet)` read back
 - D22. Store orders across the switch. The store service keeps, per order, a commitment on the controller of its ini and the owner's `RegisterName` and terms-acceptance signatures, whose EIP-712 domains name the sponsor and the name policy (simplex-chat `apps/simplex-store-service`, `Names/Store.hs`, `Names/Registration.hs`, `Names/Reveal.hs`); after the switch such an order's commitment is absent on the v2 controller, its signatures name v1's addresses, and v1 reverts from step 8 of section 6. Therefore:
-  - before run 1, an operator check (the owner, 20 Nov): purchase entry stays closed in the webstore and the SimpleX app, and the operator confirms that no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1; with purchase entry closed, that state is reached by waiting, since such an order registers or fails (`Names/Worker.hs`). The check is made with the store service as it is
-  - for the check, the store's metrics endpoint is read; it listens on 127.0.0.1 at `listener.metrics_port` (optional; set first where the deployed ini lacks it): `curl -s http://127.0.0.1:<metrics_port>/metrics | grep simplex_store_names_orders` prints 0 for the four phases (gauge `simplex_store_names_orders{phase="…"}`, counted from each order's stored phase, `Metrics.hs`, `Names/Store.hs`). A committed order past its `revealBefore` is counted as committed until the worker saves it as failed, so the operator waits for that
+  - before run 1, an operator check (the owner, 20 Nov): purchase entry stays closed in the webstore and the SimpleX app, and the operator confirms that no name invoice is open and that no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1; with purchase entry closed, that state is reached by waiting, since such an order registers or fails (`Names/Worker.hs`). The check is made with the store service as it is
+  - for the check, the store's metrics endpoint is read; it listens on 127.0.0.1 at `listener.metrics_port`, optional: where the deployed ini lacks it, it is set and the store service is restarted, since the ini is read only at start (`Main.hs`). `curl -s http://127.0.0.1:<metrics_port>/metrics | grep -E 'simplex_store_names_(invoices_open|orders)'` prints, read in this order, 0 for `simplex_store_names_invoices_open`, then 0 for the four phases (gauge `simplex_store_names_orders{phase="…"}`, counted from each order's stored phase, `Metrics.hs`, `Names/Store.hs`)
+  - an unpaid order whose invoice is paid while open is queued in the same settlement, and a payment of an invoice no longer open queues nothing (`Orders.hs`, `nameSettled`); an order whose invoice expired is closed and keeps the phase unpaid until its deletion 30 days later, or for good with a recorded payment (`Poller.hs`), so the `unpaid` count need not be 0
+  - a committed order past its `revealBefore` is counted as committed until the worker saves it as failed, so the operator waits for that
   - a failed paid order is closed with `//close`, with a refund recorded for support; a failed code order's code is released after 30 days
   - after the registrar step (D21) and the re-registration of the two v1 names (D14): purchase entry opens; an order is not committed or signed again
 
@@ -533,8 +535,8 @@ Unchanged:
 | # | Actor | Step |
 |---|---|---|
 | 1 | maintainers | the conditions version of D13 merged, tagged and mirrored to git.simplex.chat |
-| 2 | operator | `terms.simplex.json` set to its links and committed to the task branch; v1 files renamed on the operator's checkout (section 9) |
-| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, and no store order in the phase queued, committing, committed or registering (D22) |
+| 2 | operator | `terms.simplex.json` set to its links, both links checked with `scripts/terms-check.mjs` without a key, and the file committed to main; v1 files renamed on the operator's checkout (section 9) |
+| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, no open name invoice, and no store order in the phase queued, committing, committed or registering (D22) |
 | 4 | deploy key, run 1 | governance checks (section 7) |
 | 5 | deploy key, run 1 | implementations and proxies deployed and wired; beneficiary set |
 | 6 | deploy key, run 1 | read-back |
@@ -558,7 +560,7 @@ sequenceDiagram
   participant A as admin Safe
   participant N as names service
   M->>M: tag and mirror the conditions version
-  O->>O: terms.simplex.json, rename v1 files
+  O->>O: terms.simplex.json: links checked, committed; rename v1 files
   O->>O: check: purchase entry closed, no store order in flight
   D->>D: run 1: checks, deploy, wire, read-back
   D->>D: run 1: single-step transfers, proposals, v1 retirement
