@@ -23,12 +23,16 @@
  *   5. Every successful tx appends to a JSONL journal; re-running the
  *      script picks up where it left off and reads its state back again.
  *
- * Run 2, without a key, after the guardian Safe has set the registrar allowance
- * and the admin Safe has accepted the controller and the oracle: the read-back
- * of the handover.
+ * Run 2, without a key, after the admin Safe has accepted the controller and the
+ * oracle: the read-back of the handover.
+ *
+ * The registrar step, without a key, once governance.mainnet.json holds a
+ * registrarWallet entry: RUN=registrar checks that entry and writes the guardian
+ * Safe's batch for SimplexSponsor.setRegistrarAllowance; RUN=registrar-read-back
+ * reads the allowance back.
  *
  * Required env vars:
- *   RUN                1 | 2
+ *   RUN                1 | 2 | registrar | registrar-read-back
  *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real), serving
  *                      eth_getLogs from old blocks
  *   DEPLOYER_KEY       run 1: hex private key (0x...) of the deploy key
@@ -54,6 +58,9 @@
  *   deployments.mainnet.simplex.journal.jsonl   ← per-tx journal (resume source)
  *   deployments.mainnet.simplex.attempts.log    ← every attempt + reason
  *   verification.mainnet.simplex.json           ← Etherscan targets
+ *   safe-transaction.mainnet.simplex.run-1.json ← the admin Safe's batch
+ * by the registrar step:
+ *   safe-transaction.mainnet.simplex.registrar.json ← the guardian Safe's batch
  *
  * Commit the addresses file, the journal and the verification file to the repo.
  * See docs/deployment.md → Mainnet.
@@ -73,7 +80,7 @@ import {
   fundOnFork, loadJournal, spawnHardhatFork, DEFAULTS,
 } from './gas-tools.mjs'
 import { assembleVerification } from './build-verification.mjs'
-import { checkGovernance, loadGovernance } from './governance-check.mjs'
+import { checkGovernance, entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   SIMPLEX_PRICE_BASE,
   SIMPLEX_PRICE_RUNGS,
@@ -81,9 +88,9 @@ import {
 } from './simplex-price-curve.mjs'
 import {
   ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
-  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, deployBehindProxy,
-  deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses,
-  storedValue,
+  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource,
+  deployBehindProxy, deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, refusal, requireEnv, runtimeCode,
+  safeBatch, sortedAddresses, storedValue,
 } from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
@@ -103,6 +110,12 @@ const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
 const FRESH_RUN_LOG_DEPTH = 50_400n
 const RUN_ONE_INPUTS = ['scripts', 'governance.mainnet.json', `reserved-names.${TLD}.csv`, `terms.${TLD}.json`, `community-names.${TLD}.csv`]
+const REGISTRAR_STEP_INPUTS = ['scripts', 'governance.mainnet.json', `deployments.mainnet.${TLD}.json`]
+const ACCEPT_OWNERSHIP_ABI = parseAbi(['function acceptOwnership()'])
+const SPONSOR_ABI = parseAbi([
+  'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
+  'function registrarAllowance(address registrar) view returns (uint256)',
+])
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
@@ -219,8 +232,9 @@ function loadV1Addresses() {
 }
 
 export function loadInputs() {
+  const { registrarWallet, ...governance } = loadGovernance()
   return {
-    governance: loadGovernance(),
+    governance,
     reservedByReason: loadReservedNames(join(REPO_ROOT, `reserved-names.${TLD}.csv`)),
     terms: loadTerms(join(REPO_ROOT, `terms.${TLD}.json`)),
     communityNames: loadCommunityNames(join(REPO_ROOT, `community-names.${TLD}.csv`)),
@@ -689,8 +703,6 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
   await owner('controller pendingOwner', zeroAddress, () => read(addresses.ETHRegistrarController, [], ADDR, 'pendingOwner'))
   await check('controller beneficiary', governance.guardianSafe.address,
     () => read(addresses.ETHRegistrarController, [], ADDR, 'beneficiary'))
-  await check('sponsor registrarAllowance of the registrar wallet', governance.registrarWallet.allowance,
-    () => read(addresses.SimplexSponsor, ADDR, [{ type: 'uint256' }], 'registrarAllowance', [governance.registrarWallet.address]))
   await owner('registrar owner', admin, () => read(addresses.BaseRegistrarImplementation, [], ADDR, 'owner'))
   await owner('oracle owner', admin, () => read(addresses.SimplexPriceOracle, [], ADDR, 'owner'))
   await owner('oracle pendingOwner', zeroAddress, () => read(addresses.SimplexPriceOracle, [], ADDR, 'pendingOwner'))
@@ -719,6 +731,45 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
   return failures
 }
 
+export const acceptanceBatch = (adminSafe, addresses) => safeBatch({
+  safe: adminSafe,
+  transactions: [addresses.ETHRegistrarController, addresses.SimplexPriceOracle]
+    .map((to) => ({ to, data: encodeFunctionData({ abi: ACCEPT_OWNERSHIP_ABI, functionName: 'acceptOwnership' }) })),
+  name: 'run 1: accept the controller and the oracle',
+  description: `acceptOwnership() on the controller proxy ${addresses.ETHRegistrarController} and on SimplexPriceOracle ${addresses.SimplexPriceOracle}`,
+})
+
+export async function registrarAllowanceBatch(client, { registrarWallet: wallet, guardianSafe }, addresses) {
+  if (!wallet) return refusal(['governance.mainnet.json has no registrarWallet entry'])
+  const failures = await entryFailures(client, wallet)
+  if (failures.length) return refusal(failures.map((failure) => `registrarWallet ${wallet.address} ${failure}`))
+  const args = [wallet.address, wallet.allowance]
+  return accepted({
+    wallet,
+    batch: safeBatch({
+      safe: guardianSafe.address,
+      transactions: [{ to: addresses.SimplexSponsor, data: encodeFunctionData({ abi: SPONSOR_ABI, functionName: 'setRegistrarAllowance', args }) }],
+      name: 'registrar allowance',
+      description: `setRegistrarAllowance(${args.join(', ')}) on the sponsor proxy ${addresses.SimplexSponsor}`,
+    }),
+  })
+}
+
+export async function registrarAllowanceReadBack(client, { registrarWallet: wallet }, addresses) {
+  if (!wallet) return ['governance.mainnet.json has no registrarWallet entry']
+  console.log(`\n--- Registrar allowance read-back ---`)
+  const { failures, check } = readBack(client)
+  await check(`sponsor registrarAllowance of the registrar wallet ${wallet.address}`, wallet.allowance,
+    () => client.readContract({ address: addresses.SimplexSponsor, abi: SPONSOR_ABI, functionName: 'registrarAllowance', args: [wallet.address] }))
+  return failures
+}
+
+function printCall(to, signature, args) {
+  const abi = parseAbi([`function ${signature}`])
+  console.log(`    to ${to}: ${signature.replace(/\(.*/, '')}(${args.join(', ')})`)
+  console.log(`      calldata ${encodeFunctionData({ abi, args })}`)
+}
+
 // Track the spawned fork at module scope so cleanup handlers can reach it.
 let activeFork = null
 function cleanupFork() {
@@ -744,11 +795,6 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   const forkPort = parseInt(process.env.FORK_PORT || '18545', 10)
   const account = privateKeyToAccount(deployerKey)
   const { governance } = inputs
-  if (governance.registrarWallet.placeholder) {
-    console.error(`governance.mainnet.json registrarWallet ${governance.registrarWallet.address} is a placeholder: ` +
-      `${governance.registrarWallet.placeholder}. Run 1 refuses it before the fork.`)
-    process.exit(1)
-  }
 
   // Cheap and first: a stale build must not cost a fork spawn, let alone a
   // transaction.
@@ -873,18 +919,13 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   writeFileSync(VERIFICATION_PATH, JSON.stringify(verificationMeta, null, 2))
   console.log(`Wrote ${VERIFICATION_PATH}`)
 
-  const call = (to, signature, args) => {
-    const abi = parseAbi([`function ${signature}`])
-    console.log(`    to ${to}: ${signature.replace(/\(.*/, '')}(${args.join(', ')})`)
-    console.log(`      calldata ${encodeFunctionData({ abi, args })}`)
-  }
-  console.log(`\n--- Run 1 complete; the Safes act next ---`)
-  console.log(`  The guardian Safe ${governance.guardianSafe.address} sets the registrar allowance:`)
-  call(addresses.SimplexSponsor, 'setRegistrarAllowance(address,uint256)',
-    [governance.registrarWallet.address, governance.registrarWallet.allowance])
+  console.log(`\n--- Run 1 complete; the admin Safe acts next ---`)
   console.log(`  The admin Safe ${governance.adminSafe.address} accepts both proposals in one batch:`)
-  call(addresses.ETHRegistrarController, 'acceptOwnership()', [])
-  call(addresses.SimplexPriceOracle, 'acceptOwnership()', [])
+  printCall(addresses.ETHRegistrarController, 'acceptOwnership()', [])
+  printCall(addresses.SimplexPriceOracle, 'acceptOwnership()', [])
+  const batchPath = join(REPO_ROOT, `safe-transaction.mainnet.${TLD}.run-1.json`)
+  writeFileSync(batchPath, JSON.stringify(acceptanceBatch(governance.adminSafe.address, addresses), null, 2))
+  console.log(`  Wrote ${batchPath}: load it into the Transaction Builder of the admin Safe.`)
   console.log(`  Then run this command again with RUN=2: it reads the handover back.`)
   console.log(`  Until the switch, the deploy key ${account.address} restores v1 if needed — treat it as hot.`)
   console.log(`\nCommit ${ADDRESSES_PATH}, ${JOURNAL_PATH} and ${VERIFICATION_PATH} to the repo at the switch.`)
@@ -904,15 +945,50 @@ async function runTwoOnMainnet(rpcUrl, inputs) {
   }
 }
 
-async function main() {
-  const run = process.env.RUN
-  if (run !== '1' && run !== '2') {
-    console.error(`RUN must be 1 or 2 (got ${JSON.stringify(run)})`)
+async function registrarStepOnMainnet(rpcUrl, readBackOnly) {
+  assertCommitted(REGISTRAR_STEP_INPUTS)
+  const governance = loadGovernance()
+  const addresses = JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8'))
+  const client = await mainnetClient(rpcUrl)
+  if (readBackOnly) {
+    const failures = await registrarAllowanceReadBack(client, governance, addresses)
+    if (failures.length) {
+      console.error(`\n  ${failures.length} registrar read-back check(s) FAILED: ${failures.join(', ')}`)
+      process.exitCode = 1
+    } else {
+      console.log(`  the registrar allowance reads back`)
+    }
+    return
+  }
+  const prepared = await registrarAllowanceBatch(client, governance, addresses)
+  if (prepared.refused) {
+    for (const failure of prepared.failures) console.error(`  ✗ ${failure}`)
     process.exit(1)
   }
-  const rpcUrl = requireEnv('MAINNET_RPC_URL')
-  const inputs = loadInputs()
-  await (run === '1' ? runOneOnMainnet(rpcUrl, inputs) : runTwoOnMainnet(rpcUrl, inputs))
+  const { wallet, batch } = prepared
+  console.log(`  ✓ registrarWallet ${wallet.address}`)
+  console.log(`  The guardian Safe ${governance.guardianSafe.address} sets the registrar allowance:`)
+  printCall(addresses.SimplexSponsor, 'setRegistrarAllowance(address,uint256)', [wallet.address, wallet.allowance])
+  const batchPath = join(REPO_ROOT, `safe-transaction.mainnet.${TLD}.registrar.json`)
+  writeFileSync(batchPath, JSON.stringify(batch, null, 2))
+  console.log(`  Wrote ${batchPath}: load it into the Transaction Builder of the guardian Safe.`)
+  console.log(`  Then run this command again with RUN=registrar-read-back: it reads the allowance back.`)
+}
+
+const RUNS = {
+  1: (rpcUrl) => runOneOnMainnet(rpcUrl, loadInputs()),
+  2: (rpcUrl) => runTwoOnMainnet(rpcUrl, loadInputs()),
+  registrar: (rpcUrl) => registrarStepOnMainnet(rpcUrl, false),
+  'registrar-read-back': (rpcUrl) => registrarStepOnMainnet(rpcUrl, true),
+}
+
+async function main() {
+  const run = process.env.RUN
+  if (!Object.hasOwn(RUNS, run)) {
+    console.error(`RUN must be one of ${Object.keys(RUNS).join(', ')} (got ${JSON.stringify(run)})`)
+    process.exit(1)
+  }
+  await RUNS[run](requireEnv('MAINNET_RPC_URL'))
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -20,11 +20,5 @@
       "0x6c519199411C51731d3Ad1F95D932F48CfF1847E",
       "0xDa064C4567fAD2c9Da7b6DD08b5C2B2607960340"
     ]
-  },
-  "registrarWallet": {
-    "kind": "EOA",
-    "address": "0x000000000000000000000000000000000000dEaD",
-    "allowance": "100000000000000000000000",
-    "placeholder": "the names service's registrar wallet and its allowance in attoUSD are not chosen yet"
   }
 }

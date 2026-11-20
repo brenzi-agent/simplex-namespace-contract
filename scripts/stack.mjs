@@ -1,6 +1,6 @@
 import {
-  createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, http, namehash, pad,
-  parseAbi, toEventSelector, toEventSignature, toFunctionSelector, toFunctionSignature, toHex, zeroAddress,
+  createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, http, keccak256, namehash,
+  pad, parseAbi, toBytes, toEventSelector, toEventSignature, toFunctionSelector, toFunctionSignature, toHex, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { execFileSync } from 'child_process'
@@ -57,6 +57,28 @@ export const sortedAddresses = (list) => list.map((address) => getAddress(addres
 
 export const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
 export const accepted = (fields) => ({ refused: false, ...fields })
+
+function checksumInput(json) {
+  if (Array.isArray(json)) return `[${json.map(checksumInput).join(',')}]`
+  if (typeof json === 'object' && json !== null) {
+    const keys = Object.keys(json).sort()
+    return `{${JSON.stringify(keys)}${keys.map((key) => `${checksumInput(json[key])},`).join('')}}`
+  }
+  return JSON.stringify(json === undefined ? null : json)
+}
+
+export const batchChecksum = (batch) => keccak256(toBytes(checksumInput({ ...batch, meta: { ...batch.meta, name: null } })))
+
+export function safeBatch({ safe, transactions, name, description, createdAt = Date.now() }) {
+  const batch = {
+    version: '1.0',
+    chainId: '1',
+    createdAt,
+    meta: { name, description, createdFromSafeAddress: safe, createdFromOwnerAddress: '' },
+    transactions: transactions.map(({ to, data }) => ({ to, value: '0', data })),
+  }
+  return { ...batch, meta: { ...batch.meta, checksum: batchChecksum(batch) } }
+}
 
 export const addressAt = async (client, address, slot) =>
   getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
