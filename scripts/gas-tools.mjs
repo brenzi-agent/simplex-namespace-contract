@@ -269,15 +269,13 @@ export async function fundOnFork({ forkUrl, address, weiHex }) {
 
 export function createDryRunRunner({ forkUrl, forkChainId, account, alreadyDone = new Set() }) {
   const transport = http(forkUrl, { timeout: 120_000 })
-  // The fork keeps mainnet *state* but uses its own chainId (Hardhat
-  // defaults to 31337 even with `--fork`). Sign with the fork's id, not
-  // mainnet's, or the node rejects every raw tx.
   const chain = { ...mainnet, id: forkChainId }
   const publicClient = createPublicClient({ chain, transport })
-  const walletClient = createWalletClient({ chain, transport, account })
+  const walletClient = createWalletClient({ chain, transport, account: account.address })
   const nextKey = makeStepKeys()
   let totalGas = 0n
   const perStep = []
+  let impersonated
 
   async function send(label, name, { to, data, value = 0n }) {
     if (alreadyDone.has(label)) {
@@ -287,6 +285,8 @@ export function createDryRunRunner({ forkUrl, forkChainId, account, alreadyDone 
       perStep.push({ step: label, name, gasUsed: 0n, skipped: true })
       return null
     }
+    impersonated ??= publicClient.request({ method: 'hardhat_impersonateAccount', params: [account.address] })
+    await impersonated
     const hash = await walletClient.sendTransaction({
       to, data, value,
       // Generous fees — hardhat node accepts anything; we only care about gasUsed.
