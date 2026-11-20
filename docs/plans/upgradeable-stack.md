@@ -42,10 +42,10 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
 - D9. Deploy key of v2: the v1 deploy key `0x38D19404644fe24EE7d638229a732CbE8275E333`. The ens-contracts commit of run 1 is tagged `simplex-mainnet-v2` before run 1.
 - D10. Governance addresses are committed in `governance.mainnet.json`, the only source of these addresses for `deploy-mainnet.mjs`; the names service's registrar wallet is added to it for the registrar step (D21). `scripts/governance-check.mjs` checks a governance address against its entry (section 7); each check validates the address and its configuration at the moment of checking. The checks run:
   - in run 1, before its first transaction: every entry except the registrar wallet
+  - in run 1, before each of the eight upgradeable contracts is deployed with its proxy: the admin Safe
   - in run 1, before `setBeneficiary`: the guardian Safe
   - in run 1, before each single-step transfer to the admin Safe: the admin Safe
   - in the registrar step, before its batch is written: the registrar wallet
-  - in `prepare-upgrade.mjs`, before a transfer of a `ProxyAdmin` is prepared: the timelock that receives it
 - D11. The Safes as deployed: admin Safe 2 of 4, guardian Safe `0xE6623AA6b8d335367828C2A8b06A714678d22e2c` 1 of 4, the same four owners. The guardian Safe moves to 2 of 4 before public sales open (GOV7). The eight `ProxyAdmin`s stay with the admin Safe, without delay, past GOV7; the 7-day timelock of GOV8 follows GOV7, at a date not set.
 - D12. v2 state comes from the committed files, as in the v1 run:
   - `reserved-names.simplex.csv`, unchanged: `evgeny`, `brenzi` and `evgenypoberezkin` are left unreserved
@@ -70,10 +70,10 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `removeController(v1 name policy)` on the v1 registrar
   - `transferOwnership(0x0)` on the v1 controller, which clears its pending owner
   - `transferOwnership(0x0)` on the v1 oracle, which clears its pending owner
-- D19. simplex-network/ens-contracts#49 lands after v2, as upgrades of the v2 controller, name policy and sponsor. Its storage-slot statements are recomputed for the layout without UUPS. brenzi/simplex-namespace-contract#18 is rewritten for v2.
+- D19. simplex-network/ens-contracts#49 lands after v2, as upgrades of the v2 controller, name policy and sponsor. Its storage-slot statements are recomputed for the layout without UUPS. brenzi/simplex-namespace-contract#18 is rewritten for v2. These interdependent upgrades are one admin Safe batch, prepared with the batch extension of `scripts/prepare-upgrade.mjs`, delivered with the tooling of simplex-network/ens-contracts#51 in brenzi/simplex-namespace-contract#19 before #51's batch, and reused by #18. With the extension, each candidate is prepared, the Safe MultiSend is assembled and simulated on a mainnet fork with the admin Safe impersonated, and each implementation slot is compared with its candidate (ens-contracts `docs/upgrades.md`).
 - D20. A sponsor replaced by `setSponsor` instead of an upgrade, for instance after its freeze, is replaced in this order: the guardian funds the new sponsor; the names service accepts both sponsors; the owner calls `setSponsor`; the names service drops the old sponsor.
-- D21. The owner provides the registrar wallet after run 1; only then is its entry added to `governance.mainnet.json`. Runs 1 and 2 neither set nor read a registrar allowance. The registrar step runs after the upgrade batch of simplex-network/ens-contracts#51 has executed: #51 replaces `RegisterName` and `registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2 sponsor, and sponsored registrations start with the new form. The re-registration of the two v1 names (D14) follows the registrar step. The registrar step, once the entry is committed:
-  - `RUN=registrar`: the entry checked; the guardian Safe's batch of `sponsor.setRegistrarAllowance(wallet, allowance)` written
+- D21. The owner provides the registrar wallet after run 1; only then is its entry added to `governance.mainnet.json`. Runs 1 and 2 neither set nor read a registrar allowance. The registrar step runs after the upgrade batch of simplex-network/ens-contracts#51 has executed, a batch prepared with the batch extension of `scripts/prepare-upgrade.mjs` (D19): #51 replaces `RegisterName` and `registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2 sponsor, and sponsored registrations start with the new form. The re-registration of the two v1 names (D14) follows the registrar step. The registrar step, once the entry is committed:
+  - `RUN=registrar`: refused while the implementation run 1 deployed (`deploy:SimplexSponsor` of the journal) is in the sponsor proxy's implementation slot; the entry checked; the guardian Safe's batch of `sponsor.setRegistrarAllowance(wallet, allowance)` written
   - the guardian Safe executes the batch
   - `RUN=registrar-read-back`: `sponsor.registrarAllowance(wallet)` read back
 - D22. Store orders across the switch. The store service keeps, per order, a commitment on the controller of its ini and the owner's `RegisterName` and terms-acceptance signatures, whose EIP-712 domains name the sponsor and the name policy (simplex-chat `apps/simplex-store-service`, `Names/Store.hs`, `Names/Registration.hs`, `Names/Reveal.hs`); after the switch such an order's commitment is absent on the v2 controller, its signatures name v1's addresses, and v1 reverts from step 8 of section 6. Therefore:
@@ -254,7 +254,7 @@ The immutable references bind the upgradeable contracts to each other: a swap of
 |---|---|---|
 | upgrade | `ProxyAdmin.upgradeAndCall(proxy, implementation, data)` | `ProxyAdmin` owner |
 | freeze | `ProxyAdmin.renounceOwnership()` | `ProxyAdmin` owner |
-| move upgrade authority | `ProxyAdmin.transferOwnership(next)` | `ProxyAdmin` owner, after `scripts/governance-check.mjs` passes for `next`, a `TimelockController` entry |
+| move upgrade authority | `ProxyAdmin.transferOwnership(next)` | `ProxyAdmin` owner, after the GOV8 prerequisites, to a `TimelockController` entry for which `scripts/governance-check.mjs` passes |
 
 `ProxyAdmin`, per proxy:
 
@@ -285,7 +285,7 @@ Calls prepared by `scripts/prepare-upgrade.mjs`, per owner of the `ProxyAdmin`:
 
 | Owner | upgrade | freeze | move upgrade authority |
 |---|---|---|---|
-| admin Safe, before GOV8 | admin Safe batch | none: a freeze waits for GOV8 (launch-to-freeze plan, A7) | admin Safe batch, to a `TimelockController` entry |
+| admin Safe, before GOV8 | admin Safe batch | none: a freeze waits for GOV8 (launch-to-freeze plan, A7) | none until the GOV8 prerequisites; then an admin Safe batch, to a `TimelockController` entry |
 | timelock, from GOV8 | after the GOV8 prerequisites: admin Safe batches of `schedule` and `execute` | after the GOV8 prerequisites: admin Safe batches of `schedule` and `execute` | after the GOV8 prerequisites |
 | any other | none | none | none |
 
@@ -293,6 +293,8 @@ GOV8 prerequisites, before the timelock is deployed (launch-to-freeze plan, A5):
 
 - OpenZeppelin 5.1.0 `TimelockController` in the ens-contracts build; the timelock is deployed from that artifact, and `scripts/governance-check.mjs` compares the timelock's runtime code with the keccak256 of that artifact's `deployedBytecode`, which holds no immutables, in place of the `codeHash` of its entry
 - `scripts/prepare-upgrade.mjs` for a `ProxyAdmin` owned by the timelock: two admin-Safe batches, the timelock's `schedule` and `execute` of the call, with `hashOperation` printed and the call simulated from the timelock
+
+Until both exist, `ACTION=transfer` of `scripts/prepare-upgrade.mjs` is refused: the `codeHash` of a `TimelockController` entry is written by the operator in the entry itself, so the timelock is tied to the OpenZeppelin 5.1.0 artifact only by the comparison.
 
 ### Owners of each contract's own calls
 
@@ -323,8 +325,13 @@ Until a `ProxyAdmin` is renounced, its owner can replace the code behind its pro
 | | resolver `ProxyAdmin` renounced |
 | | subname registrar `ProxyAdmin` renounced |
 | | controller `ProxyAdmin` renounced |
+| the answers that the dApp and integrators get through `UniversalResolver` are read from the registry and the name's resolver | `UniversalResolver` `ProxyAdmin` renounced |
+| | registry `ProxyAdmin` renounced |
+| | resolver `ProxyAdmin` renounced |
 
-`root.lock(labelhash("simplex"))` is a further condition of both guarantees, scheduled by the launch-to-freeze plan (D15).
+Until the `UniversalResolver` `ProxyAdmin` is renounced, an upgrade of `UniversalResolver` can change the answers that the dApp and integrators get through it.
+
+`root.lock(labelhash("simplex"))` is a further condition of the three guarantees, scheduled by the launch-to-freeze plan (D15).
 
 ### Paths open after every freeze
 
@@ -600,7 +607,7 @@ Until step 11, v1 is restored by the deploy key: `addController` for the v1 cont
 | TimelockController | `hasRole` of the proposer, executor and canceller roles | `true` for the entry's Safes; `false` for every other account named by the `RoleGranted` logs of these roles since the entry's deploy block, and for `0x0` |
 | TimelockController | `hasRole` of its admin role | `false` for every account named by its `RoleGranted` logs since the entry's deploy block, every account of the entry and the deploy key, except the timelock itself |
 
-The registrar wallet's entry, added for the registrar step (D21), holds its address and its allowance N, in attoUSD; `scripts/governance-check.mjs` checks that its `getCode` is empty.
+The registrar wallet's entry, added for the registrar step (D21), holds its address and its allowance N, in attoUSD, as a JSON string of decimal digits; `scripts/governance-check.mjs` checks that its `getCode` is empty.
 
 ### Contracts of run 1
 
@@ -724,6 +731,7 @@ After step 11 of section 6, after the upgrade batch of simplex-network/ens-contr
 |---|---|---|
 | `governance.mainnet.json` entry `registrarWallet` | operator, committed | kind `EOA`, `address`, allowance N in attoUSD |
 | governance check of the entry | `RUN=registrar` | no code at the address |
+| sponsor proxy's implementation slot | `RUN=registrar` | not the implementation of `deploy:SimplexSponsor` in the committed journal, the one run 1 deployed |
 | batch `safe-transaction.mainnet.simplex.registrar.json` | `RUN=registrar` | one transaction: `sponsor.setRegistrarAllowance(registrar wallet, N)` |
 | the batch executed | guardian Safe | – |
 | `sponsor.registrarAllowance(registrar wallet)` | `RUN=registrar-read-back` | N |
@@ -886,7 +894,7 @@ brenzi/simplex-namespace-contract:
   - a `ProxyAdmin` owner other than the admin Safe stops run 1 before section 8
   - run 1 stopped after each step of section 8 and resumed sends each remaining step once and passes both read-backs
   - run 1 resumed while a step's transaction is pending waits for it and sends nothing new
-  - run 2 passes without a registrar wallet; the registrar step's read-back fails before the guardian Safe executes its batch and passes after it
+  - run 2 passes without a registrar wallet; the registrar step is refused while the sponsor proxy is at the implementation run 1 deployed; after the upgrades, its read-back fails before the guardian Safe executes its batch and passes after it
   - the restore path of section 6 returns v1 to its state before step 8
 - `scripts/governance-check.test.mjs`, run with `node --test`; a Safe is refused for each of:
   - a different threshold
@@ -897,6 +905,7 @@ brenzi/simplex-namespace-contract:
   - a different fallback handler
   - nonce 0
   - an address without code
+- `scripts/governance-check.test.mjs`: a `registrarWallet` allowance given as a JSON number is refused
 - `scripts/prepare-upgrade.test.mjs`, run with `node --test`:
   - refused: a different `trustedETHController`
   - accepted: a different `trustedETHController` named as an intended change, printed with both values
@@ -910,6 +919,8 @@ brenzi/simplex-namespace-contract:
   - refused: a `_proxyAdmin` immutable that differs from the proxy's `ProxyAdmin`, also when named as an intended change
   - refused: an upgrade whose simulation from the `ProxyAdmin`'s owner reverts
   - refused: a non-empty `data` for a candidate without a `_proxyAdmin` immutable
+  - refused: `data` of `multicall(bytes[])` or `multicallWithNodeCheck(bytes32,bytes[])`, also for a candidate with a `_proxyAdmin` immutable
+  - refused: a candidate without a custom error of the current implementation
   - refused: a new variable placed before an existing one
   - refused: an `upgradeToAndCall` function
   - refused: a `fallback` or `receive` function
@@ -952,8 +963,11 @@ brenzi/simplex-namespace-contract:
   - deploys the candidate with the proxy's `ProxyAdmin` as a constructor argument where the candidate declares a `_proxyAdmin` immutable, and checks that immutable against the proxy's `ProxyAdmin`
   - compares the members of every stored struct, and of every stored enum from the build output's AST, as well
   - a candidate without a function selector or an event topic of the current implementation, or with another shape for one (a function's state mutability or outputs, an event's indexing or anonymity), is rejected, unless `INTENDED` names its signature; the other contracts of the stack call these functions through fixed addresses
-  - prepares a call only through a `ProxyAdmin` the admin Safe owns, until the GOV8 prerequisites (section 4); a freeze waits for GOV8 and is prepared on no path today
-  - prints the Safe transaction of a freeze (`renounceOwnership()`, from the GOV8 prerequisites on) or of an upgrade-authority transfer (`transferOwnership(next)`, after `scripts/governance-check.mjs` passes for `next`, a `TimelockController` entry), for one contract named by `CONTRACT`, with its target read from that proxy's ERC-1967 admin slot and checked to be the proxy's CREATE address at nonce 1; each action prints the proxy's implementation slot
+  - a candidate without a custom error selector of the current implementation is rejected, unless `INTENDED` names its signature: the names service treats a `TermsNotAccepted` revert as a signal to read the name policy again
+  - upgrade `data` of `multicall(bytes[])` or `multicallWithNodeCheck(bytes32,bytes[])` is rejected: each entry is executed by a `delegatecall` to the proxy with the `ProxyAdmin` as its sender, so an entry with the selector of `upgradeToAndCall` would install another implementation
+  - prepares a call only through a `ProxyAdmin` the admin Safe owns, until the GOV8 prerequisites (section 4)
+  - refuses a freeze and an upgrade-authority transfer until the GOV8 prerequisites exist: a freeze is prepared after GOV8 (launch-to-freeze plan, A7), as the timelock's `schedule` and `execute` of `renounceOwnership()`; a transfer, as `transferOwnership(next)` to a `TimelockController` entry whose code is compared with the OpenZeppelin 5.1.0 artifact
+  - reads the target of each call from the ERC-1967 admin slot of the proxy of the contract named by `CONTRACT`, checked to be the proxy's CREATE address at nonce 1, and prints the proxy's implementation slot with the call
 - `scripts/build-verification.mjs`
 - `scripts/verify-etherscan.mjs`
 - `docs/deployment.md`, with the sponsor replacement of D20

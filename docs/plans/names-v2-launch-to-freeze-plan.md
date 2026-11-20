@@ -479,7 +479,8 @@ Prerequisites, before step 1:
 - `scripts/prepare-upgrade.mjs` for a `ProxyAdmin` owned by the timelock: two admin-Safe
   batches, the timelock's `schedule` and `execute` of the call, with `hashOperation` printed
   and the call simulated from the timelock. Until then an upgrade is prepared only while
-  the admin Safe owns the `ProxyAdmin`, and a freeze on no path (A7).
+  the admin Safe owns the `ProxyAdmin`, and a freeze (A7) and a transfer of a `ProxyAdmin`
+  (step 5) on no path.
 
 | # | Caller | Call |
 |---|---|---|
@@ -527,7 +528,7 @@ brackets. The guardian Safe needs one signature until GOV7 and two from GOV7.
 | Action | Caller | Call |
 |---|---|---|
 | Upgrade one contract | admin Safe *(timelock, 7 days)* | `scripts/prepare-upgrade.mjs` deploys and checks the candidate implementation and writes the call as an admin Safe batch *(after GOV8: batches of `schedule` and `execute`, a GOV8 prerequisite, A5)*; then `upgradeAndCall(proxy, implementation, data)` on that contract's `ProxyAdmin` |
-| Move one contract's upgrade authority | admin Safe *(timelock, 7 days)* | the transaction `scripts/prepare-upgrade.mjs` writes as an admin Safe batch *(after GOV8: batches of `schedule` and `execute`, a GOV8 prerequisite, A5)*: `transferOwnership(next)` on that contract's `ProxyAdmin`, after `scripts/governance-check.mjs` passes for `next` |
+| Move one contract's upgrade authority | admin Safe *(timelock, 7 days)* | the transaction `scripts/prepare-upgrade.mjs` writes as an admin Safe batch once the GOV8 prerequisites exist (A5), and refuses before *(after GOV8: batches of `schedule` and `execute`)*: `transferOwnership(next)` on that contract's `ProxyAdmin`, after `scripts/governance-check.mjs` passes for `next` |
 | Reserve a brand name under threat | guardian Safe | `namePolicy.addReservedNames([name], reason)`, sent privately (see below) |
 | Give a brand its name | admin Safe *(timelock, 7 days)* | `namePolicy.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
 | List community names | guardian Safe | `namePolicy.addCommunityNames([names])`, sent privately; names that are registered or in grace are skipped (`CommunityNameSkipped`) |
