@@ -375,8 +375,10 @@ const ACTIONS = {
     const target = await checkedProxyAdmin(client, addresses, verification, name)
     return target.refused ? target : refusal(freezeFailures(target, loadGovernance().adminSafe.address))
   },
-  transfer: (client, addresses, verification, name) =>
-    transferCall(client, addresses, verification, loadGovernance(), name, requireEnv('NEXT')),
+  transfer: async () => refusal([
+    'a transfer of a ProxyAdmin waits for the GOV8 prerequisites: the code of the TimelockController compared with the ' +
+      'OpenZeppelin 5.1.0 artifact, and its schedule and execute batches for the admin Safe',
+  ]),
 }
 
 async function main() {
