@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { encodeFunctionData, pad, parseAbi, zeroAddress } from 'viem'
 import { acceptanceBatch, logsFailures, registrarAllowanceBatch, registrarAllowanceReadBack } from './deploy-mainnet.mjs'
-import { ERC1967_ADMIN_SLOT, batchChecksum, proxyAdminOf } from './stack.mjs'
+import { ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, batchChecksum, proxyAdminOf } from './stack.mjs'
 
 const HEAD = 30_000_000n
 const SERVED = 1_000n
@@ -67,17 +67,23 @@ const SAFE_CALLS = parseAbi([
 ])
 const governance = { adminSafe: { kind: 'Safe', address: ADMIN_SAFE }, guardianSafe: { kind: 'Safe', address: GUARDIAN_SAFE } }
 const withWallet = { ...governance, registrarWallet: { kind: 'EOA', address: WALLET, allowance: 7n } }
-const sponsorChain = ({ code, allowance = 7n, proxied = true, links = {} } = {}) => {
+const RUN_ONE_SPONSOR = '0x0000000000000000000000000000000000000031'
+const UPGRADED_SPONSOR = '0x0000000000000000000000000000000000000032'
+const journal = [{ step: 'deploy:SimplexSponsor', address: RUN_ONE_SPONSOR }]
+const sponsorChain = ({ code, allowance = 7n, proxied = true, implementation = UPGRADED_SPONSOR, links = {} } = {}) => {
   const reads = {
     [`${deployment.ETHRegistrarController}.sponsor`]: deployment.SimplexSponsor,
     [`${deployment.SimplexSponsor}.controller`]: deployment.ETHRegistrarController,
     [`${deployment.ETHRegistrarController}.beneficiary`]: GUARDIAN_SAFE,
     ...links,
   }
+  const slots = {
+    [ERC1967_ADMIN_SLOT]: proxied ? proxyAdminOf(deployment.SimplexSponsor) : zeroAddress,
+    [ERC1967_IMPLEMENTATION_SLOT]: proxied ? implementation : zeroAddress,
+  }
   return {
     getCode: async () => code,
-    getStorageAt: async ({ address, slot }) =>
-      pad(proxied && address === deployment.SimplexSponsor && slot === ERC1967_ADMIN_SLOT ? proxyAdminOf(address) : zeroAddress),
+    getStorageAt: async ({ address, slot }) => pad(address === deployment.SimplexSponsor ? slots[slot] : zeroAddress),
     readContract: async ({ address, functionName, args }) => (functionName === 'registrarAllowance'
       ? (address === deployment.SimplexSponsor && args[0] === WALLET ? allowance : 0n)
       : reads[`${address}.${functionName}`]),
@@ -97,19 +103,19 @@ test("run 1's batch has the admin Safe accept the controller and the oracle", ()
 })
 
 test('the registrar step without a registrarWallet entry is refused', async () => {
-  assert.deepEqual(await registrarAllowanceBatch(sponsorChain(), governance, deployment),
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain(), governance, deployment, journal),
     { refused: true, failures: ['governance.mainnet.json has no registrarWallet entry'] })
   assert.deepEqual(await registrarAllowanceReadBack(sponsorChain(), governance, deployment),
     ['governance.mainnet.json has no registrarWallet entry'])
 })
 
 test('the registrar step refuses a registrar wallet with code', async () => {
-  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ code: '0xef0100' }), withWallet, deployment),
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ code: '0xef0100' }), withWallet, deployment, journal),
     { refused: true, failures: [`registrarWallet ${WALLET} has code 0xef0100…`] })
 })
 
 test("the registrar step writes the guardian Safe's setRegistrarAllowance to the sponsor proxy", async () => {
-  const prepared = await registrarAllowanceBatch(sponsorChain(), withWallet, deployment)
+  const prepared = await registrarAllowanceBatch(sponsorChain(), withWallet, deployment, journal)
   assert.equal(prepared.refused, false)
   assert.equal(prepared.batch.meta.createdFromSafeAddress, GUARDIAN_SAFE)
   assert.deepEqual(prepared.batch.transactions, [{
@@ -121,7 +127,7 @@ test("the registrar step writes the guardian Safe's setRegistrarAllowance to the
 })
 
 test('the registrar step refuses a sponsor that is not a v2 proxy, as in the v1 addresses file', async () => {
-  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ proxied: false }), withWallet, deployment), {
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ proxied: false }), withWallet, deployment, journal), {
     refused: true,
     failures: [`the sponsor ${deployment.SimplexSponsor} is not a v2 proxy: its admin slot holds ${zeroAddress}, ` +
       `not ${proxyAdminOf(deployment.SimplexSponsor)}`],
@@ -133,12 +139,24 @@ test('the registrar step refuses a sponsor the controller does not name, and a b
     [`${deployment.ETHRegistrarController}.sponsor`]: WALLET,
     [`${deployment.ETHRegistrarController}.beneficiary`]: ADMIN_SAFE,
   }
-  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ links }), withWallet, deployment), {
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ links }), withWallet, deployment, journal), {
     refused: true,
     failures: [
       `sponsor() of ${deployment.ETHRegistrarController} is ${WALLET}, not ${deployment.SimplexSponsor}`,
       `beneficiary() of ${deployment.ETHRegistrarController} is ${ADMIN_SAFE}, not ${GUARDIAN_SAFE}`,
     ],
+  })
+})
+
+test('the registrar step waits while the sponsor runs the implementation run 1 deployed, and without that journal entry', async () => {
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ implementation: RUN_ONE_SPONSOR }), withWallet, deployment, journal), {
+    refused: true,
+    failures: [`the sponsor ${deployment.SimplexSponsor} still runs ${RUN_ONE_SPONSOR}, the implementation run 1 deployed: ` +
+      `the allowance waits for the sponsor's upgrade`],
+  })
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain(), withWallet, deployment, []), {
+    refused: true,
+    failures: ['the journal records no deploy:SimplexSponsor, the implementation run 1 deployed'],
   })
 })
 

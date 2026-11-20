@@ -155,6 +155,7 @@ function loadArtifactAndBuildInfo(artifactRelPath) {
 }
 
 const ETHERSCAN_API = 'https://api.etherscan.io/v2/api'
+const ALREADY_VERIFIED = /^(Contract source code already verified|Already Verified)/i
 
 async function verify(target) {
   console.log(`\n--- ${target.label} ---`)
@@ -179,13 +180,17 @@ async function verify(target) {
   const url = `${ETHERSCAN_API}?chainid=${chainId}&apikey=${apiKey}`
   const res = await fetch(url, { method: 'POST', body })
   const json = await res.json()
+  if (json.status !== '1' && ALREADY_VERIFIED.test(json.result ?? '')) {
+    console.log(`  OK: ${json.result}`)
+    return { verified: true }
+  }
   if (json.status !== '1') {
     console.error(`  FAILED: ${json.result || json.message}`)
     return null
   }
   const guid = json.result
   console.log(`  submitted, guid=${guid}`)
-  return guid
+  return { guid }
 }
 
 async function pollStatus(guid) {
@@ -199,7 +204,7 @@ async function pollStatus(guid) {
       continue
     }
     process.stdout.write('\n')
-    if (json.status === '1') return { ok: true, msg: json.result }
+    if (json.status === '1' || ALREADY_VERIFIED.test(json.result ?? '')) return { ok: true, msg: json.result }
     return { ok: false, msg: json.result }
   }
   return { ok: false, msg: 'timed out after 2 minutes' }
@@ -223,12 +228,16 @@ for (const t of TARGETS) {
     skipped.push(t)
     continue
   }
-  const guid = await verify(t)
-  if (!guid) {
+  const submission = await verify(t)
+  if (!submission) {
     failures++
     continue
   }
-  const status = await pollStatus(guid)
+  if (submission.verified) {
+    verified++
+    continue
+  }
+  const status = await pollStatus(submission.guid)
   console.log(`  ${status.ok ? 'OK' : 'FAIL'}: ${status.msg}`)
   if (status.ok) verified++
   else failures++

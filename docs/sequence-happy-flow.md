@@ -244,7 +244,7 @@ passing the stored label; the delegation is internal, so callers see one self-co
 call. Subnames are not tokens, so wallets never list them — by design; they are visible in
 the dApp via `getChildren` (flow 5).
 
-The `MetadataRenderer` sits behind a registrar-held pointer, swappable by the multisig via
+The `MetadataRenderer` is reached through a registrar-held pointer, swappable by the multisig via
 `setMetadataRenderer` (an auditable on-chain event), so rendering can be fixed without a TLD
 redeploy; the renderer JSON/XML-escapes labels (`_jsonEscape` / `_xmlEscape`), so arbitrary
 characters can't break the JSON/SVG — there is no on-chain charset restriction.

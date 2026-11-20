@@ -2,7 +2,7 @@ import {
   createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, http, keccak256, namehash,
   pad, parseAbi, toBytes, toEventSelector, toFunctionSelector, toHex, zeroAddress,
 } from 'viem'
-import { formatAbiParams } from 'viem/utils'
+import { formatAbiItem, formatAbiParams } from 'viem/utils'
 import { mainnet } from 'viem/chains'
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
@@ -318,6 +318,7 @@ export function interfaceOf(abi) {
   return {
     functions: shapes('function', toFunctionSelector, functionShape),
     events: shapes('event', toEventSelector, eventShape),
+    errors: shapes('error', (item) => toFunctionSelector(formatAbiItem(item)), formatAbiItem),
   }
 }
 

@@ -85,7 +85,11 @@ export function slotFailures(bytecode) {
     .map(([which]) => `its bytecode contains the ERC-1967 ${which} slot`)
 }
 
-const INTERFACE = { functions: ['function', toFunctionSignature], events: ['event', toEventSignature] }
+const INTERFACE = {
+  functions: ['function', toFunctionSignature],
+  events: ['event', toEventSignature],
+  errors: ['error', toFunctionSignature],
+}
 
 export function interfaceChanges(current, abi) {
   const next = interfaceOf(abi)
@@ -113,7 +117,7 @@ export function artifactFailures({ abi, deployedBytecode, immutableReferences },
         ? `it lacks the ${kind} ${signature} of the current implementation`
         : `its ${kind} ${signature} is ${next}, the current implementation's is ${shape}`)),
     ...intended.filter((name) => !nameable.has(name))
-      .map((name) => `INTENDED names ${name}, neither an immutable nor a function or event of the current implementation`),
+      .map((name) => `INTENDED names ${name}, neither an immutable nor a function, event or error of the current implementation`),
   ]
 }
 
@@ -142,11 +146,25 @@ export function ownImmutables(name, addresses, deployer, candidate, proxyAdmin) 
   }
 }
 
+const MULTICALLS = new Set(['multicall(bytes[])', 'multicallWithNodeCheck(bytes32,bytes[])'].map((signature) => toFunctionSelector(signature)))
+
+const selectorOf = (signature) => {
+  try {
+    return toFunctionSelector(signature)
+  } catch {
+    return undefined
+  }
+}
+
 export function dataGuardFailures({ immutableReferences }, names, call) {
+  if (!call) return []
   const guarded = Object.keys(immutableReferences).some((id) => names.get(Number(id)) === PROXY_ADMIN_IMMUTABLE)
-  return call && !guarded
-    ? [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_IMMUTABLE}, which the candidate lacks: its data function would stay callable by anyone`]
-    : []
+  return [
+    ...(guarded ? [] : [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_IMMUTABLE}, which the candidate lacks: its data function would stay callable by anyone`]),
+    ...(MULTICALLS.has(selectorOf(call.signature))
+      ? [`DATA ${call.signature} is a multicall, whose entries run for the ProxyAdmin: one with the selector of upgradeToAndCall would install another implementation`]
+      : []),
+  ]
 }
 
 export function upgradeData(abi, call) {
@@ -192,7 +210,7 @@ export async function upgradeCallFailures(client, { proxy, proxyAdmin, owner }, 
   }
 }
 
-export async function checkedProxyAdmin(client, addresses, verification, name) {
+export async function checkedProxyAdmin(client, addresses, verification, name, adminSafe = loadGovernance().adminSafe.address) {
   if (!Object.hasOwn(UPGRADEABLE, name)) {
     return refusal([`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`])
   }
@@ -208,9 +226,9 @@ export async function checkedProxyAdmin(client, addresses, verification, name) {
     return refusal([`${VERIFICATION_PATH} records no ${path} at ${implementation}, the implementation of the ${name} proxy ${proxy}`])
   }
   const owner = await client.readContract({ address: admin, abi: PROXY_ADMIN_ABI, functionName: 'owner' })
-  return owner === zeroAddress
-    ? refusal([`the ProxyAdmin ${admin} of ${name} is renounced`])
-    : accepted({ name, proxy, implementation, proxyAdmin: admin, owner, current })
+  if (owner === zeroAddress) return refusal([`the ProxyAdmin ${admin} of ${name} is renounced`])
+  const unowned = ownerFailures({ name, proxyAdmin: admin, owner }, adminSafe)
+  return unowned.length ? refusal(unowned) : accepted({ name, proxy, implementation, proxyAdmin: admin, owner, current })
 }
 
 export function ownerFailures({ name, proxyAdmin, owner }, adminSafe) {
@@ -235,10 +253,8 @@ export async function transferCall(client, addresses, verification, governance, 
   }
   const failures = await entryFailures(client, next, verification.deployer)
   if (failures.length) return refusal(failures.map((failure) => `${nextName} ${next.address} ${failure}`))
-  const target = await checkedProxyAdmin(client, addresses, verification, name)
-  if (target.refused) return target
-  const unowned = ownerFailures(target, governance.adminSafe.address)
-  return unowned.length ? refusal(unowned) : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
+  const target = await checkedProxyAdmin(client, addresses, verification, name, governance.adminSafe.address)
+  return target.refused ? target : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
 }
 
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, request = {}) {
@@ -247,7 +263,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const admin = await checkedProxyAdmin(client, addresses, verification, name)
   if (admin.refused) return admin
   const { current } = admin
-  const unrecorded = ['storageLayout', 'immutables', 'functions', 'events'].filter((field) => !current[field])
+  const unrecorded = ['storageLayout', 'immutables', 'functions', 'events', 'errors'].filter((field) => !current[field])
   if (unrecorded.length) return refusal([`the entry of ${admin.implementation} records no ${unrecorded.join(' and no ')}`])
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
@@ -324,10 +340,6 @@ function jsonArrayEnv(name) {
 
 const ACTIONS = {
   upgrade: async (client, addresses, verification, name) => {
-    const target = await checkedProxyAdmin(client, addresses, verification, name)
-    if (target.refused) return target
-    const unowned = ownerFailures(target, loadGovernance().adminSafe.address)
-    if (unowned.length) return refusal(unowned)
     const deployerKey = requireEnv('DEPLOYER_KEY')
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
     const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
@@ -381,8 +393,10 @@ const ACTIONS = {
     const target = await checkedProxyAdmin(client, addresses, verification, name)
     return target.refused ? target : refusal(freezeFailures(target, loadGovernance().adminSafe.address))
   },
-  transfer: (client, addresses, verification, name) =>
-    transferCall(client, addresses, verification, loadGovernance(), name, requireEnv('NEXT')),
+  transfer: async () => refusal([
+    'a transfer of a ProxyAdmin waits for the GOV8 prerequisites: the code of the TimelockController compared with the ' +
+      'OpenZeppelin 5.1.0 artifact, and its schedule and execute batches for the admin Safe',
+  ]),
 }
 
 async function main() {

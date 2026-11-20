@@ -522,6 +522,28 @@ export function createWaitForBaseRunner({
     let hash
     let deadline
     const unsent = `resolve it by hand; this run does not send the step again`
+    const nonceUsed = async () =>
+      (await publicClient.getTransactionCount({ address: account.address, blockTag: 'latest' })) > nonce
+    const usedByAnother = () =>
+      new Error(`[${step}] nonce ${nonce} of ${hashes.join(', ')} is used, and none of them has a receipt: ${unsent}.`)
+    let gasEstimate
+    const estimate = async () => {
+      // Real estimateGas once per step. A revert here = the tx would fail.
+      try {
+        const raw = await publicClient.estimateGas({
+          account: account.address, to, data, value,
+        })
+        const buffered = (raw * 110n) / 100n
+        logAttempt({ ts: nowIso(), step, outcome: 'estimated',
+          gasEstimate: buffered.toString(), gasEstimateRaw: raw.toString() })
+        console.log(`  [${step}] estimated gas: ${buffered.toLocaleString()} (raw ${raw.toLocaleString()} + 10%)`)
+        return buffered
+      } catch (e) {
+        const msg = e.shortMessage || e.message || String(e)
+        logAttempt({ ts: nowIso(), step, outcome: 'estimate-error', reason: msg })
+        throw new Error(`[${step}] estimateGas reverted — would fail on chain: ${msg}`)
+      }
+    }
     const latest = recorded.at(-1)
     if (latest) {
       if (latest.nonce === undefined) {
@@ -530,12 +552,12 @@ export function createWaitForBaseRunner({
       nonce = latest.nonce
       cap = latest.cap ?? maxBaseFeeWei
       bumps = latest.bumps ?? 0
-      if ((await publicClient.getTransactionCount({ address: account.address, blockTag: 'latest' })) > nonce) {
+      if (await nonceUsed()) {
         for (const h of hashes) {
           const r = await publicClient.getTransactionReceipt({ hash: h }).catch(() => null)
           if (r) return recordSuccess(step, r, digest)
         }
-        throw new Error(`[${step}] nonce ${nonce} of ${hashes.join(', ')} is used, and none of them has a receipt: ${unsent}.`)
+        throw usedByAnother()
       }
       const known = recorded.filter((attempt) => attempt.known).at(-1)
       if (known) {
@@ -547,21 +569,7 @@ export function createWaitForBaseRunner({
         console.log(`  ⤿ ${step}: the node knows none of ${hashes.join(', ')} — sending the step again at their nonce ${nonce}`)
       }
     } else {
-      // Real estimateGas once per step. A revert here = the tx would fail.
-      let gasEstimate
-      try {
-        const raw = await publicClient.estimateGas({
-          account: account.address, to, data, value,
-        })
-        gasEstimate = (raw * 110n) / 100n
-        logAttempt({ ts: nowIso(), step, outcome: 'estimated',
-          gasEstimate: gasEstimate.toString(), gasEstimateRaw: raw.toString() })
-        console.log(`  [${step}] estimated gas: ${gasEstimate.toLocaleString()} (raw ${raw.toLocaleString()} + 10%)`)
-      } catch (e) {
-        const msg = e.shortMessage || e.message || String(e)
-        logAttempt({ ts: nowIso(), step, outcome: 'estimate-error', reason: msg })
-        throw new Error(`[${step}] estimateGas reverted — would fail on chain: ${msg}`)
-      }
+      gasEstimate = await estimate()
       nonce = await publicClient.getTransactionCount({
         address: account.address, blockTag: 'pending',
       })
@@ -570,32 +578,26 @@ export function createWaitForBaseRunner({
     while (true) {
       if (!hash) {
         await waitForCheapBase(step, cap)
-        try {
-          hash = await walletClient.sendTransaction({
-            to, data, value, nonce,
-            maxFeePerGas: cap, maxPriorityFeePerGas: 0n,
-          })
-        } catch (e) {
-          const msg = e.shortMessage || e.message || String(e)
-          // If the tx was already mined under an earlier hash, collect it.
-          for (const h of hashes) {
-            const r = await publicClient.getTransactionReceipt({ hash: h }).catch(() => null)
-            if (r) return recordSuccess(step, r, digest)
-          }
-          if (/nonce too low/i.test(msg)) {
-            logAttempt({ ts: nowIso(), step, nonce, outcome: 'nonce-used', reason: msg })
-            throw new Error(`[${step}] nonce ${nonce} is used, and no transaction of this step has a receipt: ${unsent}.`)
-          }
-          if (/insufficient funds/i.test(msg)) throw e
-          logAttempt({ ts: nowIso(), step, outcome: 'submit-error', reason: msg })
-          throw e
-        }
+        gasEstimate ??= await estimate()
+        const signed = await walletClient.signTransaction({
+          to, data, value, nonce, gas: gasEstimate,
+          maxFeePerGas: cap, maxPriorityFeePerGas: 0n,
+        })
+        hash = keccak256(signed)
         hashes.push(hash)
         logAttempt({ ts: nowIso(), step, txHash: hash, nonce,
           maxFeePerGas: cap.toString(), bumps,
           outcome: 'submitted' })
-        console.log(`  [${step}] submitted ${hash}  (cap=${fmtGwei(cap)} gwei, bumps=${bumps})`)
         deadline = Date.now() + bumpAfterMs
+        try {
+          await walletClient.sendRawTransaction({ serializedTransaction: signed })
+          console.log(`  [${step}] submitted ${hash}  (cap=${fmtGwei(cap)} gwei, bumps=${bumps})`)
+        } catch (e) {
+          const msg = e.shortMessage || e.message || String(e)
+          logAttempt({ ts: nowIso(), step, txHash: hash, outcome: 'broadcast-error', reason: msg })
+          if (/insufficient funds/i.test(msg)) throw e
+          console.warn(`  [${step}] the broadcast of ${hash} failed (${msg}) — waiting for it as submitted`)
+        }
       }
 
       const result = await waitForInclusion(step, hash, deadline)
@@ -607,6 +609,7 @@ export function createWaitForBaseRunner({
         const r = await publicClient.getTransactionReceipt({ hash: h }).catch(() => null)
         if (r) return recordSuccess(step, r, digest)
       }
+      if (await nonceUsed()) throw usedByAnother()
       bumps += 1
       const nextCap = (cap * (100n + bumpPct)) / 100n
       if (nextCap > hardCap) {

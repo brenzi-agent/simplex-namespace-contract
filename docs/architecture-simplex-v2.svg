@@ -1,25 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1620" width="2400" height="1620" font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" role="img" aria-label=".simplex v2 — goal architecture">
 <rect x="0" y="0" width="2400" height="1620" fill="#ffffff"/>
 <text x="40" y="38" font-size="26" font-weight="600" fill="#111827">.simplex v2 — goal architecture</text>
-<rect x="420" y="710" width="1450" height="670" rx="14" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2" stroke-dasharray="10 6"/>
+<rect x="420" y="510" width="1450" height="870" rx="14" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2" stroke-dasharray="10 6"/>
 <polyline points="220,200 220,290" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="220,290 215,279 225,279" fill="#374151"/>
 <polyline points="470,200 470,290" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="470,290 465,279 475,279" fill="#374151"/>
 <polyline points="760,200 1000,290" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1000,290 987.9447618387985,290.8192880303729 991.4559962546825,281.4559962546825" fill="#374151"/>
-<polyline points="205,470 205,520" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="205,520 200,509 210,509" fill="#374151"/>
+<polyline points="470,470 470,560" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="470,560 465,549 475,549" fill="#374151"/>
 <polyline points="40,380 20,380 20,1225 450,1225" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="450,1225 439,1230 439,1220" fill="#374151"/>
-<polyline points="500,420 1010,760" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="1010,760 998.0739457811576,758.0585493132116 1003.6209477434099,749.7380463698332" fill="#374151"/>
+<polyline points="500,450 1000,450 1000,760" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1000,760 995,749 1005,749" fill="#374151"/>
 <polyline points="1120,430 1120,760" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1120,760 1115,749 1125,749" fill="#374151"/>
-<polyline points="1290,430 1560,760" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="1560,760 1549.1645978111535,754.6526586600498 1556.9041708031866,748.3202807574771" fill="#374151"/>
-<polyline points="370,620 470,790" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="470,790 460.1131075320138,783.0538242660815 468.73244968359154,777.9836230004477" fill="#374151"/>
+<polyline points="1290,430 1500,760" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1500,760 1489.8760621472147,753.4041010959127 1498.3126770245358,748.035346173981" fill="#374151"/>
+<polyline points="520,700 520,760" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="520,760 515,749 525,749" fill="#374151"/>
 <polyline points="450,830 370,830" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="370,830 381,825 381,835" fill="#374151"/>
 <polyline points="205,900 205,940" fill="none" stroke="#374151" stroke-width="1.6"/>
@@ -63,20 +63,20 @@
 <polygon points="770,990 782.0769230769231,989.6153846153846 778.2307692307693,998.8461538461539" fill="#374151"/>
 <polyline points="1330,1460 1400,1460 1400,950 1330,950" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1330,950 1341,945 1341,955" fill="#374151"/>
-<polyline points="1330,1570 1910,1570 1910,545 1840,545" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="1840,545 1851,540 1851,550" fill="#374151"/>
-<polyline points="1540,610 1250,760" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="1250,760 1257.4732794803465,750.5052596766088 1262.0675086690842,759.3874361081682" fill="#374151"/>
-<polyline points="1760,610 1760,760" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polyline points="1330,1570 1890,1570 1890,640 1840,640" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1840,640 1851,635 1851,645" fill="#374151"/>
+<polyline points="1540,690 1250,760" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1250,760 1259.5197016287866,752.5585430929907 1261.8661069598256,762.2793651787235" fill="#374151"/>
+<polyline points="1760,690 1760,760" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1760,760 1755,749 1765,749" fill="#374151"/>
-<polyline points="1840,520 1990,520" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="1990,520 1979,525 1979,515" fill="#374151"/>
+<polyline points="1840,580 1990,580" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1990,580 1979,585 1979,575" fill="#374151"/>
 <polyline points="1990,700 1840,800" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1840,800 1846.3790522565903,789.7380463698332 1851.9260542188424,798.0585493132116" fill="#374151"/>
 <polyline points="2330,865 2365,865 2365,1230 2330,1230" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="2330,1230 2341,1225 2341,1235" fill="#374151"/>
-<polyline points="1990,1300 1870,1300" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="1870,1300 1881,1295 1881,1305" fill="#374151"/>
+<polyline points="2160,1310 2160,1360 1870,1360" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1870,1360 1881,1355 1881,1365" fill="#374151"/>
 <rect x="40" y="60" width="360" height="140" rx="10" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
 <text x="54" y="82" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#6d28d9">OFF-CHAIN</text>
 <text x="54" y="106" font-size="17" font-weight="600" fill="#111827">Webstore — simplex.domains</text>
@@ -102,15 +102,16 @@
 <rect x="960" y="290" width="370" height="140" rx="10" fill="#fae8ff" stroke="#a21caf" stroke-width="1.5"/>
 <text x="974" y="312" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#a21caf">OFF-CHAIN</text>
 <text x="974" y="336" font-size="17" font-weight="600" fill="#111827">Resolver service — names role</text>
-<text x="974" y="362" font-size="14" fill="#1f2937">answers SimpleX lookups over SMP;</text>
-<text x="974" y="381" font-size="14" fill="#1f2937">reads the registry and the resolver</text>
-<text x="974" y="400" font-size="14" fill="#1f2937">(snrc-resolve)</text>
-<rect x="40" y="520" width="330" height="150" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
-<text x="54" y="542" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
-<text x="54" y="566" font-size="17" font-weight="600" fill="#111827">SimplexSponsor</text>
-<text x="54" y="592" font-size="14" fill="#1f2937">registrar allowances in attoUSD;</text>
-<text x="54" y="611" font-size="14" fill="#1f2937">registerWithCredit, renewWithCredit,</text>
-<text x="54" y="630" font-size="14" fill="#1f2937">with the owner's signature</text>
+<text x="974" y="362" font-size="14" fill="#1f2937">answers lookups over SMP; reads the</text>
+<text x="974" y="381" font-size="14" fill="#1f2937">registry, registrar, subname registrar,</text>
+<text x="974" y="400" font-size="14" fill="#1f2937">controller, name policy, oracle and</text>
+<text x="974" y="419" font-size="14" fill="#1f2937">resolver (snrc-resolve)</text>
+<rect x="450" y="560" width="330" height="140" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="464" y="582" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="464" y="606" font-size="17" font-weight="600" fill="#111827">SimplexSponsor</text>
+<text x="464" y="632" font-size="14" fill="#1f2937">registrar allowances in attoUSD;</text>
+<text x="464" y="651" font-size="14" fill="#1f2937">registerWithCredit, renewWithCredit,</text>
+<text x="464" y="670" font-size="14" fill="#1f2937">with the owner's signature</text>
 <rect x="40" y="760" width="330" height="140" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
 <text x="54" y="782" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE · setPriceOracle swaps it</text>
 <text x="54" y="806" font-size="17" font-weight="600" fill="#111827">SimplexPriceOracle</text>
@@ -174,14 +175,14 @@
 <text x="1484" y="1442" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#6d28d9">OFF-CHAIN</text>
 <text x="1484" y="1466" font-size="17" font-weight="600" fill="#111827">Wallets and marketplaces</text>
 <text x="1484" y="1492" font-size="14" fill="#1f2937">ERC-721 view of each name</text>
-<rect x="1520" y="480" width="320" height="130" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
-<text x="1534" y="502" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
-<text x="1534" y="526" font-size="17" font-weight="600" fill="#111827">UniversalResolver</text>
-<text x="1534" y="552" font-size="14" fill="#1f2937">resolve(name, data)</text>
-<rect x="1990" y="480" width="340" height="100" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
-<text x="2004" y="502" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE</text>
-<text x="2004" y="526" font-size="17" font-weight="600" fill="#111827">DummyGatewayProvider</text>
-<text x="2004" y="552" font-size="14" fill="#1f2937">gateways()</text>
+<rect x="1520" y="560" width="320" height="130" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="1534" y="582" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="1534" y="606" font-size="17" font-weight="600" fill="#111827">UniversalResolver</text>
+<text x="1534" y="632" font-size="14" fill="#1f2937">resolve(name, data)</text>
+<rect x="1990" y="500" width="340" height="100" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="2004" y="522" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE</text>
+<text x="2004" y="546" font-size="17" font-weight="600" fill="#111827">DummyGatewayProvider</text>
+<text x="2004" y="572" font-size="14" fill="#1f2937">gateways()</text>
 <rect x="1990" y="620" width="340" height="130" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
 <text x="2004" y="642" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE</text>
 <text x="2004" y="666" font-size="17" font-weight="600" fill="#111827">Root</text>
@@ -207,8 +208,8 @@
 <text x="2004" y="1241" font-size="14" fill="#1f2937">created by its proxy;</text>
 <text x="2004" y="1260" font-size="14" fill="#1f2937">upgradeAndCall upgrades it;</text>
 <text x="2004" y="1279" font-size="14" fill="#1f2937">renounceOwnership freezes it</text>
-<rect x="862" y="704" width="255.04000000000002" height="20" rx="4" fill="#eff6ff"/>
-<text x="868" y="719" font-size="14" font-weight="600" fill="#1d4ed8">CORE · UPGRADEABLE UNTIL FROZEN</text>
+<rect x="554" y="504" width="200.16000000000003" height="20" rx="4" fill="#eff6ff"/>
+<text x="560" y="519" font-size="14" font-weight="600" fill="#1d4ed8">UPGRADEABLE UNTIL FROZEN</text>
 <rect x="127.63999999999999" y="219.5" width="184.72000000000003" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="220" y="234.5" font-size="12" text-anchor="middle" fill="#374151">HTTPS /api: search, order,</text>
 <text x="220" y="249.5" font-size="12" text-anchor="middle" fill="#374151">pay, signed RegisterName,</text>
@@ -218,23 +219,23 @@
 <text x="470" y="257" font-size="12" text-anchor="middle" fill="#374151">signed RegisterName</text>
 <rect x="821.24" y="234.5" width="117.52000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="880" y="249.5" font-size="12" text-anchor="middle" fill="#374151">SMP: name lookup</text>
-<rect x="139.51999999999998" y="484.5" width="130.96" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="205" y="499.5" font-size="12" text-anchor="middle" fill="#374151">registerWithCredit</text>
+<rect x="404.52" y="482" width="130.96" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="470" y="497" font-size="12" text-anchor="middle" fill="#374151">registerWithCredit</text>
 <rect x="122.50999999999996" y="1207" width="225.04000000000002" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="235.02999999999997" y="1222" font-size="12" text-anchor="middle" fill="#374151">commitUnderGeneralTermsWithSig,</text>
 <text x="235.02999999999997" y="1237" font-size="12" text-anchor="middle" fill="#374151">commitUnderCommunityTermsWithSig</text>
-<rect x="682.8" y="564.5" width="144.4" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="755" y="579.5" font-size="12" text-anchor="middle" fill="#374151">setTextWithSig,</text>
-<text x="755" y="594.5" font-size="12" text-anchor="middle" fill="#374151">clearRecordsWithSig,</text>
-<text x="755" y="609.5" font-size="12" text-anchor="middle" fill="#374151">multicall of two</text>
+<rect x="687" y="424.5" width="144.4" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="759.2" y="439.5" font-size="12" text-anchor="middle" fill="#374151">setTextWithSig,</text>
+<text x="759.2" y="454.5" font-size="12" text-anchor="middle" fill="#374151">clearRecordsWithSig,</text>
+<text x="759.2" y="469.5" font-size="12" text-anchor="middle" fill="#374151">multicall of two</text>
 <rect x="1044.44" y="616.6" width="151.12" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="1120" y="631.6" font-size="12" text-anchor="middle" fill="#374151">text(simplex.contact,</text>
 <text x="1120" y="646.6" font-size="12" text-anchor="middle" fill="#374151">simplex.channel)</text>
-<rect x="1405.3600000000001" y="624.1" width="104.08000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="1457.4" y="639.1" font-size="12" text-anchor="middle" fill="#374151">resolver(node)</text>
-<rect x="349.52" y="678.5" width="130.96" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="415" y="693.5" font-size="12" text-anchor="middle" fill="#374151">registerSponsored,</text>
-<text x="415" y="708.5" font-size="12" text-anchor="middle" fill="#374151">renewSponsored</text>
+<rect x="1368.16" y="624.1" width="104.08000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1420.2" y="639.1" font-size="12" text-anchor="middle" fill="#374151">resolver(node)</text>
+<rect x="454.52" y="712" width="130.96" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="520" y="727" font-size="12" text-anchor="middle" fill="#374151">registerSponsored,</text>
+<text x="520" y="742" font-size="12" text-anchor="middle" fill="#374151">renewSponsored</text>
 <rect x="378.12" y="812" width="63.760000000000005" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="410" y="827" font-size="12" text-anchor="middle" fill="#374151">price,</text>
 <text x="410" y="842" font-size="12" text-anchor="middle" fill="#374151">priceUSD</text>
@@ -288,38 +289,36 @@
 <text x="890" y="1331.2" font-size="12" text-anchor="middle" fill="#374151">renew (payable)</text>
 <rect x="1371.48" y="1162" width="57.040000000000006" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="1400" y="1177" font-size="12" text-anchor="middle" fill="#374151">setText</text>
-<rect x="1881.48" y="1503" width="57.040000000000006" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="1910" y="1518" font-size="12" text-anchor="middle" fill="#374151">resolve</text>
-<rect x="1395.48" y="659.5" width="57.040000000000006" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="1424" y="674.5" font-size="12" text-anchor="middle" fill="#374151">resolve</text>
-<rect x="1714.68" y="674.5" width="90.64000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="1760" y="689.5" font-size="12" text-anchor="middle" fill="#374151">findResolver</text>
-<rect x="1876.4" y="509.5" width="77.2" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="1915" y="524.5" font-size="12" text-anchor="middle" fill="#374151">gateways()</text>
-<rect x="1884.68" y="722" width="90.64000000000001" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="1930" y="737" font-size="12" text-anchor="middle" fill="#374151">owner of the</text>
-<text x="1930" y="752" font-size="12" text-anchor="middle" fill="#374151">root node</text>
+<rect x="1671.08" y="1559.5" width="57.040000000000006" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1699.6" y="1574.5" font-size="12" text-anchor="middle" fill="#374151">resolve</text>
+<rect x="1395.48" y="707.5" width="57.040000000000006" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1424" y="722.5" font-size="12" text-anchor="middle" fill="#374151">resolve</text>
+<rect x="1714.68" y="714.5" width="90.64000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1760" y="729.5" font-size="12" text-anchor="middle" fill="#374151">findResolver</text>
+<rect x="1876.4" y="569.5" width="77.2" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1915" y="584.5" font-size="12" text-anchor="middle" fill="#374151">gateways()</text>
+<rect x="1892.18" y="717" width="90.64000000000001" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1937.5" y="732" font-size="12" text-anchor="middle" fill="#374151">owner of the</text>
+<text x="1937.5" y="747" font-size="12" text-anchor="middle" fill="#374151">root node</text>
 <rect x="2343.2" y="1037" width="43.6" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="2365" y="1052" font-size="12" text-anchor="middle" fill="#374151">owner</text>
-<rect x="1864.52" y="1217" width="130.96" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="1930" y="1232" font-size="12" text-anchor="middle" fill="#374151">upgradeAndCall,</text>
-<text x="1930" y="1247" font-size="12" text-anchor="middle" fill="#374151">renounceOwnership</text>
-<text x="1930" y="1262" font-size="12" text-anchor="middle" fill="#374151">(also sponsor and</text>
-<text x="1930" y="1277" font-size="12" text-anchor="middle" fill="#374151">UniversalResolver)</text>
-<rect x="1990" y="1350" width="340" height="218" rx="8" fill="#ffffff" stroke="#9ca3af"/>
-<text x="2004" y="1374" font-size="13" font-weight="600" fill="#111827">LEGEND</text>
-<rect x="2004" y="1384" width="22" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
-<text x="2036" y="1397" font-size="13" fill="#1f2937">upgradeable: own proxy and ProxyAdmin</text>
-<rect x="2004" y="1410" width="22" height="16" rx="3" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.2"/>
-<text x="2036" y="1423" font-size="13" fill="#1f2937">immutable, swappable without downtime</text>
-<rect x="2004" y="1436" width="22" height="16" rx="3" fill="#eff6ff" stroke="#1d4ed8" stroke-width="1.2"/>
-<text x="2036" y="1449" font-size="13" fill="#1f2937">dashed: the core whose swap interrupts users</text>
-<rect x="2004" y="1462" width="22" height="16" rx="3" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.2"/>
-<text x="2036" y="1475" font-size="13" fill="#1f2937">off-chain: users' clients</text>
-<rect x="2004" y="1488" width="22" height="16" rx="3" fill="#fae8ff" stroke="#a21caf" stroke-width="1.2"/>
-<text x="2036" y="1501" font-size="13" fill="#1f2937">off-chain: SimpleX services</text>
-<rect x="2004" y="1514" width="22" height="16" rx="3" fill="#dcfce7" stroke="#15803d" stroke-width="1.2"/>
-<text x="2036" y="1527" font-size="13" fill="#1f2937">governance</text>
-<rect x="2004" y="1540" width="22" height="16" rx="3" fill="#fef3c7" stroke="#b45309" stroke-width="1.2"/>
-<text x="2036" y="1553" font-size="13" fill="#1f2937">external</text>
+<rect x="1937.08" y="1342" width="124.24000000000001" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1999.2" y="1357" font-size="12" text-anchor="middle" fill="#374151">upgradeAndCall,</text>
+<text x="1999.2" y="1372" font-size="12" text-anchor="middle" fill="#374151">renounceOwnership</text>
+<rect x="40" y="1270" width="340" height="218" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+<text x="54" y="1294" font-size="13" font-weight="600" fill="#111827">LEGEND</text>
+<rect x="54" y="1304" width="22" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+<text x="86" y="1317" font-size="13" fill="#1f2937">upgradeable: own proxy and ProxyAdmin</text>
+<rect x="54" y="1330" width="22" height="16" rx="3" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.2"/>
+<text x="86" y="1343" font-size="13" fill="#1f2937">immutable, swappable without downtime</text>
+<rect x="54" y="1356" width="22" height="16" rx="3" fill="#eff6ff" stroke="#1d4ed8" stroke-width="1.2"/>
+<text x="86" y="1369" font-size="13" fill="#1f2937">dashed: the eight upgradeable contracts</text>
+<rect x="54" y="1382" width="22" height="16" rx="3" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.2"/>
+<text x="86" y="1395" font-size="13" fill="#1f2937">off-chain: users' clients</text>
+<rect x="54" y="1408" width="22" height="16" rx="3" fill="#fae8ff" stroke="#a21caf" stroke-width="1.2"/>
+<text x="86" y="1421" font-size="13" fill="#1f2937">off-chain: SimpleX services</text>
+<rect x="54" y="1434" width="22" height="16" rx="3" fill="#dcfce7" stroke="#15803d" stroke-width="1.2"/>
+<text x="86" y="1447" font-size="13" fill="#1f2937">governance</text>
+<rect x="54" y="1460" width="22" height="16" rx="3" fill="#fef3c7" stroke="#b45309" stroke-width="1.2"/>
+<text x="86" y="1473" font-size="13" fill="#1f2937">external</text>
 </svg>

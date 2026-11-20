@@ -98,6 +98,11 @@ test('a registrarWallet entry, where present, loads as an EOA with its allowance
     { kind: 'EOA', address: SECOND, allowance: 5n })
 })
 
+test('an allowance given as a JSON number is refused', () => {
+  assert.throws(() => loadWith({ ...committed, registrarWallet: { kind: 'EOA', address: SECOND, allowance: 1e23 } }),
+    { message: /: registrarWallet\.allowance: expected attoUSD as a decimal string$/ })
+})
+
 test('a registrarWallet entry of another kind is refused', () => {
   assert.throws(() => loadWith({ ...committed, registrarWallet: committed.guardianSafe }),
     { message: /: registrarWallet, where present, must be an entry of kind EOA$/ })
