@@ -893,7 +893,7 @@ async function runOneOnMainnet(rpcUrl, inputs) {
       weiHex: '0x56bc75e2d63100000',  // 100 ETH
     })
     const dry = createDryRunRunner({ forkUrl: activeFork.url, forkChainId: activeFork.chainId, account })
-    const forkClient = createPublicClient({ chain: { ...mainnet, id: activeFork.chainId }, transport: http(activeFork.url) })
+    const forkClient = createPublicClient({ chain: { ...mainnet, id: activeFork.chainId }, transport: http(activeFork.url, { timeout: 120_000 }) })
     console.log(`\n--- Dry-run on fork ---`)
     await runOne(dry, forkClient, inputs, account.address)
     dryTotals = dry.totals()
