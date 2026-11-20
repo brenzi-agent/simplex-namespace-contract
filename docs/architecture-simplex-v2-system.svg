@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" width="960" height="600" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" role="img" aria-label="System — who uses the .simplex contracts">
+<rect x="0" y="0" width="960" height="600" fill="#ffffff"/>
+<text class="title" x="24" y="28" font-size="16" font-weight="600" fill="#111827">System — who uses the .simplex contracts</text>
+<rect class="frame" x="24" y="296" width="912" height="132" rx="12" fill="#f8fafc" stroke="#1d4ed8" stroke-width="1.5"/>
+<text class="frame-label" x="40" y="314" font-size="13" font-weight="600" fill="#1d4ed8">.simplex contracts</text>
+<polyline class="arrow" points="760,104 760,176" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="760,176 756,167 764,167" fill="#4b5563"/>
+<polyline class="arrow" points="640,70 392,70" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="392,70 401,66 401,74" fill="#4b5563"/>
+<polyline class="arrow" points="640,92 500,92 500,188 392,188" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="6 4"/>
+<polygon class="head" points="392,188 401,184 401,192" fill="#4b5563"/>
+<polyline class="arrow" points="242,104 242,176" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="242,176 238,167 246,167" fill="#4b5563"/>
+<polyline class="arrow" points="200,228 200,336" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="200,336 196,327 204,327" fill="#4b5563"/>
+<polyline class="arrow" points="372,228 372,336" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="372,336 368,327 376,327" fill="#4b5563"/>
+<polyline class="arrow" points="392,220 570,220 570,276 690,276 690,336" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="6 4"/>
+<polygon class="head" points="690,336 686,327 694,327" fill="#4b5563"/>
+<polyline class="arrow" points="820,228 820,336" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="820,336 816,327 824,327" fill="#4b5563"/>
+<polyline class="arrow" points="640,214 590,214 590,336" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="590,336 586,327 594,327" fill="#4b5563"/>
+<polyline class="arrow" points="344,522 180,522 180,388" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="180,388 184,397 176,397" fill="#4b5563"/>
+<polyline class="arrow" points="616,522 660,522 660,388" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="660,388 664,397 656,397" fill="#4b5563"/>
+<polyline class="arrow" points="480,496 480,388" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="480,388 484,397 476,397" fill="#4b5563"/>
+<polyline class="arrow" points="860,496 860,388" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="860,388 864,397 856,397" fill="#4b5563"/>
+<rect class="box" x="112" y="52" width="280" height="52" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="124" y="74" font-size="15" font-weight="600" fill="#111827">Webstore — simplex.domains</text>
+<text x="124" y="93" font-size="13" fill="#4b5563">buys names, edits links</text>
+<rect class="box" x="640" y="52" width="248" height="52" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="652" y="74" font-size="15" font-weight="600" fill="#111827">SimpleX app</text>
+<text x="652" y="93" font-size="13" fill="#4b5563">finds names, opens the webstore</text>
+<rect class="box" x="112" y="176" width="280" height="52" rx="8" fill="#fae8ff" stroke="#a21caf" stroke-width="1.5"/>
+<text x="124" y="198" font-size="15" font-weight="600" fill="#111827">StoreService</text>
+<text x="124" y="217" font-size="13" fill="#4b5563">pays gas from its sponsor allowance</text>
+<rect class="box" x="640" y="176" width="248" height="52" rx="8" fill="#fae8ff" stroke="#a21caf" stroke-width="1.5"/>
+<text x="652" y="198" font-size="15" font-weight="600" fill="#111827">Resolver service</text>
+<text x="652" y="217" font-size="13" fill="#4b5563">answers name lookups over SMP</text>
+<rect class="box" x="44" y="336" width="272" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="56" y="358" font-size="15" font-weight="600" fill="#111827">Registration</text>
+<text x="56" y="377" font-size="13" fill="#4b5563">controller, name policy, sponsor</text>
+<rect class="box" x="344" y="336" width="272" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="356" y="358" font-size="15" font-weight="600" fill="#111827">Records</text>
+<text x="356" y="377" font-size="13" fill="#4b5563">resolver, universal resolver</text>
+<rect class="box" x="644" y="336" width="272" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="656" y="358" font-size="15" font-weight="600" fill="#111827">Names</text>
+<text x="656" y="377" font-size="13" fill="#4b5563">registry, NFT registrar, subnames</text>
+<rect class="box" x="344" y="496" width="272" height="52" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="356" y="518" font-size="15" font-weight="600" fill="#111827">dApp — app.simplex.domains</text>
+<text x="356" y="537" font-size="13" fill="#4b5563">the user's own wallet</text>
+<rect class="box" x="680" y="496" width="236" height="52" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="692" y="518" font-size="15" font-weight="600" fill="#111827">Wallets and marketplaces</text>
+<text x="692" y="537" font-size="13" fill="#4b5563">names as NFTs</text>
+<rect class="label" x="693.225" y="129" width="133.55" height="22" rx="4" fill="#ffffff"/>
+<text x="760" y="144" font-size="13" text-anchor="middle" fill="#111827">name lookup (SMP)</text>
+<rect class="label" x="442.075" y="59" width="147.85000000000002" height="22" rx="4" fill="#ffffff"/>
+<text x="516" y="74" font-size="13" text-anchor="middle" fill="#111827">opens to buy a name</text>
+<rect class="label" x="429.65" y="121" width="140.70000000000002" height="38" rx="4" fill="#ffffff"/>
+<text x="500" y="136" font-size="13" text-anchor="middle" fill="#111827">planned: buy names</text>
+<text x="500" y="152" font-size="13" text-anchor="middle" fill="#111827">in the app</text>
+<rect class="label" x="178.8" y="121" width="126.4" height="38" rx="4" fill="#ffffff"/>
+<text x="242" y="136" font-size="13" text-anchor="middle" fill="#111827">orders, payment,</text>
+<text x="242" y="152" font-size="13" text-anchor="middle" fill="#111827">signed requests</text>
+<rect class="label" x="136.8" y="243" width="126.4" height="38" rx="4" fill="#ffffff"/>
+<text x="200" y="258" font-size="13" text-anchor="middle" fill="#111827">registers names,</text>
+<text x="200" y="274" font-size="13" text-anchor="middle" fill="#111827">sponsored</text>
+<rect class="label" x="319.525" y="243" width="104.95" height="38" rx="4" fill="#ffffff"/>
+<text x="372" y="258" font-size="13" text-anchor="middle" fill="#111827">writes signed</text>
+<text x="372" y="274" font-size="13" text-anchor="middle" fill="#111827">record edits</text>
+<rect class="label" x="407.075" y="201" width="147.85000000000002" height="38" rx="4" fill="#ffffff"/>
+<text x="481" y="216" font-size="13" text-anchor="middle" fill="#111827">planned: transfers,</text>
+<text x="481" y="232" font-size="13" text-anchor="middle" fill="#111827">subnames</text>
+<rect class="label" x="767.525" y="243" width="104.95" height="38" rx="4" fill="#ffffff"/>
+<text x="820" y="258" font-size="13" text-anchor="middle" fill="#111827">reads owners,</text>
+<text x="820" y="274" font-size="13" text-anchor="middle" fill="#111827">expiry</text>
+<rect class="label" x="537.525" y="305" width="104.95" height="22" rx="4" fill="#ffffff"/>
+<text x="590" y="320" font-size="13" text-anchor="middle" fill="#111827">reads records</text>
+<rect class="label" x="195.225" y="503" width="133.55" height="38" rx="4" fill="#ffffff"/>
+<text x="262" y="518" font-size="13" text-anchor="middle" fill="#111827">registers, renews</text>
+<text x="262" y="534" font-size="13" text-anchor="middle" fill="#111827">(pays ETH)</text>
+<rect class="label" x="600.375" y="439" width="119.25000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="660" y="454" font-size="13" text-anchor="middle" fill="#111827">offers, claims,</text>
+<text x="660" y="470" font-size="13" text-anchor="middle" fill="#111827">subnames</text>
+<rect class="label" x="409.65" y="439" width="140.70000000000002" height="38" rx="4" fill="#ffffff"/>
+<text x="480" y="454" font-size="13" text-anchor="middle" fill="#111827">edits and resolves</text>
+<text x="480" y="470" font-size="13" text-anchor="middle" fill="#111827">records</text>
+<rect class="label" x="828.975" y="447" width="62.050000000000004" height="22" rx="4" fill="#ffffff"/>
+<text x="860" y="462" font-size="13" text-anchor="middle" fill="#111827">ERC-721</text>
+<rect class="legend" x="24" y="571" width="20" height="14" rx="3" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text class="legend" x="52" y="583" font-size="13" fill="#4b5563">client</text>
+<rect class="legend" x="118.9" y="571" width="20" height="14" rx="3" fill="#fae8ff" stroke="#a21caf" stroke-width="1.5"/>
+<text class="legend" x="146.9" y="583" font-size="13" fill="#4b5563">SimpleX service</text>
+<rect class="legend" x="278.15" y="571" width="20" height="14" rx="3" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text class="legend" x="306.15" y="583" font-size="13" fill="#4b5563">contracts</text>
+<line class="legend" x1="394.5" y1="578" x2="414.5" y2="578" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text class="legend" x="422.5" y="583" font-size="13" fill="#4b5563">planned</text>
+</svg>

@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" width="960" height="600" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" role="img" aria-label="Contracts — how they call each other">
+<rect x="0" y="0" width="960" height="600" fill="#ffffff"/>
+<text class="title" x="24" y="28" font-size="16" font-weight="600" fill="#111827">Contracts — how they call each other</text>
+<rect class="frame" x="16" y="120" width="928" height="336" rx="12" fill="#f8fafc" stroke="#1d4ed8" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text class="frame-label" x="32" y="138" font-size="13" font-weight="600" fill="#1d4ed8">upgradeable until frozen</text>
+<polyline class="arrow" points="744,172 600,172" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="600,172 609,168 609,176" fill="#4b5563"/>
+<polyline class="arrow" points="420,178 276,178" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="276,178 285,174 285,182" fill="#4b5563"/>
+<polygon class="head" points="420,178 411,182 411,174" fill="#4b5563"/>
+<polyline class="arrow" points="510,152 510,96" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="510,96 514,105 506,105" fill="#4b5563"/>
+<polyline class="arrow" points="600,70 744,70" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="744,70 735,74 735,66" fill="#4b5563"/>
+<polyline class="arrow" points="436,204 436,236 220,236 220,268" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="220,268 216,259 224,259" fill="#4b5563"/>
+<polyline class="arrow" points="584,204 584,236 790,236 790,268" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="790,268 786,259 794,259" fill="#4b5563"/>
+<polyline class="arrow" points="100,268 100,204" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="100,204 104,213 96,213" fill="#4b5563"/>
+<polygon class="head" points="100,268 96,259 104,259" fill="#4b5563"/>
+<polyline class="arrow" points="250,320 250,410 420,410" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="420,410 411,414 411,406" fill="#4b5563"/>
+<polyline class="arrow" points="276,294 420,294" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="420,294 411,298 411,290" fill="#4b5563"/>
+<polyline class="arrow" points="100,320 100,492" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="100,492 96,483 104,483" fill="#4b5563"/>
+<polyline class="arrow" points="510,320 510,384" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="510,384 506,375 514,375" fill="#4b5563"/>
+<polyline class="arrow" points="744,284 600,284" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="600,284 609,280 609,288" fill="#4b5563"/>
+<polygon class="head" points="744,284 735,288 735,280" fill="#4b5563"/>
+<polyline class="arrow" points="744,312 690,312 690,360 580,360 580,384" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="580,384 576,375 584,375" fill="#4b5563"/>
+<polyline class="arrow" points="744,420 600,420" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="600,420 609,416 609,424" fill="#4b5563"/>
+<polyline class="arrow" points="834,384 834,320" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="834,320 838,329 830,329" fill="#4b5563"/>
+<rect class="box" x="420" y="44" width="180" height="52" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="432" y="66" font-size="15" font-weight="600" fill="#111827">SimplexPriceOracle</text>
+<text x="432" y="85" font-size="13" fill="#4b5563">prices in US cents</text>
+<rect class="box" x="744" y="44" width="180" height="52" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="756" y="66" font-size="15" font-weight="600" fill="#111827">Chainlink ETH/USD</text>
+<text x="756" y="85" font-size="13" fill="#4b5563">price feed</text>
+<rect class="box" x="36" y="152" width="240" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="48" y="174" font-size="15" font-weight="600" fill="#111827">SimplexNamePolicy</text>
+<text x="48" y="193" font-size="13" fill="#4b5563">reserved names, terms</text>
+<rect class="box" x="420" y="152" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="432" y="174" font-size="15" font-weight="600" fill="#111827">SimplexController</text>
+<text x="432" y="193" font-size="13" fill="#4b5563">registers and renews</text>
+<rect class="box" x="744" y="152" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="756" y="174" font-size="15" font-weight="600" fill="#111827">SimplexSponsor</text>
+<text x="756" y="193" font-size="13" fill="#4b5563">registrar allowances</text>
+<rect class="box" x="36" y="268" width="240" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="48" y="290" font-size="15" font-weight="600" fill="#111827">BaseRegistrarImplementation</text>
+<text x="48" y="309" font-size="13" fill="#4b5563">NFT registrar</text>
+<rect class="box" x="420" y="268" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="432" y="290" font-size="15" font-weight="600" fill="#111827">SubnameRegistrar</text>
+<text x="432" y="309" font-size="13" fill="#4b5563">subnames of a name</text>
+<rect class="box" x="744" y="268" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="756" y="290" font-size="15" font-weight="600" fill="#111827">SimplexResolver</text>
+<text x="756" y="309" font-size="13" fill="#4b5563">records of each name</text>
+<rect class="box" x="420" y="384" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="432" y="406" font-size="15" font-weight="600" fill="#111827">ENSRegistry</text>
+<text x="432" y="425" font-size="13" fill="#4b5563">owner and resolver</text>
+<rect class="box" x="744" y="384" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="756" y="406" font-size="15" font-weight="600" fill="#111827">UniversalResolver</text>
+<text x="756" y="425" font-size="13" fill="#4b5563">resolution for apps</text>
+<rect class="box" x="36" y="492" width="240" height="52" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="48" y="514" font-size="15" font-weight="600" fill="#111827">MetadataRenderer</text>
+<text x="48" y="533" font-size="13" fill="#4b5563">NFT image and metadata</text>
+<rect class="label" x="623.1" y="153" width="97.80000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="672" y="168" font-size="13" text-anchor="middle" fill="#111827">sponsored</text>
+<text x="672" y="184" font-size="13" text-anchor="middle" fill="#111827">registration</text>
+<rect class="label" x="291.95" y="159" width="112.10000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="348" y="174" font-size="13" text-anchor="middle" fill="#111827">reservations,</text>
+<text x="348" y="190" font-size="13" text-anchor="middle" fill="#111827">terms, commits</text>
+<rect class="label" x="486.125" y="125" width="47.75" height="22" rx="4" fill="#ffffff"/>
+<text x="510" y="140" font-size="13" text-anchor="middle" fill="#111827">price</text>
+<rect class="label" x="640.975" y="59" width="62.050000000000004" height="22" rx="4" fill="#ffffff"/>
+<text x="672" y="74" font-size="13" text-anchor="middle" fill="#111827">ETH/USD</text>
+<rect class="label" x="286.25" y="217" width="83.5" height="38" rx="4" fill="#ffffff"/>
+<text x="328" y="232" font-size="13" text-anchor="middle" fill="#111827">registers,</text>
+<text x="328" y="248" font-size="13" text-anchor="middle" fill="#111827">renews</text>
+<rect class="label" x="634.525" y="225" width="104.95" height="22" rx="4" fill="#ffffff"/>
+<text x="687" y="240" font-size="13" text-anchor="middle" fill="#111827">first records</text>
+<rect class="label" x="40.37499999999999" y="217" width="119.25000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="100" y="232" font-size="13" text-anchor="middle" fill="#111827">transfer check,</text>
+<text x="100" y="248" font-size="13" text-anchor="middle" fill="#111827">reserved names</text>
+<rect class="label" x="286.1" y="391" width="97.80000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="335" y="406" font-size="13" text-anchor="middle" fill="#111827">sets the</text>
+<text x="335" y="422" font-size="13" text-anchor="middle" fill="#111827">name's owner</text>
+<rect class="label" x="284.8" y="275" width="126.4" height="38" rx="4" fill="#ffffff"/>
+<text x="348" y="290" font-size="13" text-anchor="middle" fill="#111827">re-registration,</text>
+<text x="348" y="306" font-size="13" text-anchor="middle" fill="#111827">expiry</text>
+<rect class="label" x="51.099999999999994" y="399" width="97.80000000000001" height="22" rx="4" fill="#ffffff"/>
+<text x="100" y="414" font-size="13" text-anchor="middle" fill="#111827">NFT metadata</text>
+<rect class="label" x="475.4" y="333" width="69.2" height="38" rx="4" fill="#ffffff"/>
+<text x="510" y="348" font-size="13" text-anchor="middle" fill="#111827">creates</text>
+<text x="510" y="364" font-size="13" text-anchor="middle" fill="#111827">subnames</text>
+<rect class="label" x="615.95" y="265" width="112.10000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="672" y="280" font-size="13" text-anchor="middle" fill="#111827">subname owner,</text>
+<text x="672" y="296" font-size="13" text-anchor="middle" fill="#111827">clears records</text>
+<rect class="label" x="596.825" y="341" width="76.35000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="635" y="356" font-size="13" text-anchor="middle" fill="#111827">checks</text>
+<text x="635" y="372" font-size="13" text-anchor="middle" fill="#111827">the owner</text>
+<rect class="label" x="633.825" y="401" width="76.35000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="672" y="416" font-size="13" text-anchor="middle" fill="#111827">finds the</text>
+<text x="672" y="432" font-size="13" text-anchor="middle" fill="#111827">resolver</text>
+<rect class="label" x="802.975" y="333" width="62.050000000000004" height="38" rx="4" fill="#ffffff"/>
+<text x="834" y="348" font-size="13" text-anchor="middle" fill="#111827">reads</text>
+<text x="834" y="364" font-size="13" text-anchor="middle" fill="#111827">records</text>
+<rect class="legend" x="24" y="571" width="20" height="14" rx="3" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text class="legend" x="52" y="583" font-size="13" fill="#4b5563">upgradeable</text>
+<rect class="legend" x="154.65" y="571" width="20" height="14" rx="3" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text class="legend" x="182.65" y="583" font-size="13" fill="#4b5563">immutable, swappable</text>
+<rect class="legend" x="349.65" y="571" width="20" height="14" rx="3" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text class="legend" x="377.65" y="583" font-size="13" fill="#4b5563">external</text>
+</svg>

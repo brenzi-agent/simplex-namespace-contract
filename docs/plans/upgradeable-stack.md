@@ -88,7 +88,21 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
 
 ### Goal architecture
 
-![.simplex v2 goal architecture](../architecture-simplex-v2.svg)
+Who uses the contracts: the users' clients and the SimpleX services, with the three groups of contracts they call; dashed arrows are planned.
+
+![.simplex v2 system view](../architecture-simplex-v2-system.svg)
+
+How the contracts call each other; the dashed frame holds the eight upgradeable contracts.
+
+![.simplex v2 contracts view](../architecture-simplex-v2-contracts.svg)
+
+Who controls what: the admin Safe, the guardian Safe, the ProxyAdmins and the planned timelock.
+
+![.simplex v2 governance view](../architecture-simplex-v2-governance.svg)
+
+Every call between the components in one picture: solid arrows for calls in the code, dashed arrows for calls the plans assign.
+
+![.simplex v2 goal architecture, every call](../architecture-simplex-v2.svg)
 
 The `.simplex` contracts after run 2, and the off-chain components that call them:
 
@@ -98,7 +112,7 @@ The `.simplex` contracts after run 2, and the off-chain components that call the
 - Resolver service, the names role (simplex-chat/simplexmq `scripts/resolver/service/snrc-resolve.py`, configured with `SNRC_REGISTRY_<TLD>`, `SNRC_REGISTRAR_<TLD>` and `SNRC_CONTROLLER_<TLD>`): reads `resolver(node)` and `owner(node)` from the registry; `nameExpires`, `GRACE_PERIOD`, `labelOf` and `subnameHook()` from the registrar; `ownerOf(node)` of a subname from the subname registrar; `namePolicy()`, `prices()` and `minCharLength()` from the controller; `reservedNames` from the name policy; the prices from the oracle; and `text` and `addr(bytes32,uint256)` from the resolver.
 - dApp, `simplex-app`: the user's own wallet calls the controller, the name policy, the registrar, the subname registrar and the resolver, and resolves through `UniversalResolver`.
 
-Source: `docs/architecture-simplex-v2.gen.mjs`, which writes `docs/architecture-simplex-v2.excalidraw` and `docs/architecture-simplex-v2.svg`.
+Sources: `docs/architecture-simplex-v2-views.gen.mjs` writes `docs/architecture-simplex-v2-system.svg`, `docs/architecture-simplex-v2-contracts.svg` and `docs/architecture-simplex-v2-governance.svg`, each with an `.excalidraw` file of the same name; `docs/architecture-simplex-v2.gen.mjs` writes `docs/architecture-simplex-v2.excalidraw` and `docs/architecture-simplex-v2.svg`.
 
 ### Sizes
 
