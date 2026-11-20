@@ -1,6 +1,6 @@
 // Exercises the resume logic changed for M5/M6 with stub clients: no chain.
 import { writeFileSync, rmSync, readFileSync, existsSync } from 'fs'
-import { encodeFunctionData } from 'viem'
+import { TransactionNotFoundError, encodeFunctionData } from 'viem'
 import { createWaitForBaseRunner, makeStepKeys, DEFAULTS } from './gas-tools.mjs'
 
 const J = '/tmp/j.jsonl', A = '/tmp/a.jsonl'
@@ -174,6 +174,56 @@ console.assert(sent === 0, `a pending tx was sent again: ${sent} sends`)
 console.assert(readFileSync(J, 'utf8').includes(pendingHash), 'the pending tx was not journalled once mined')
 console.assert(readFileSync(A, 'utf8').includes('adopted-pending'), 'the adoption was not logged')
 console.log('10 ok: a tx still pending from an earlier run is waited for, not sent again')
+
+const submitted = (txHash) => JSON.stringify({ ts: new Date().toISOString(), step: 'write:setBeneficiary', txHash, nonce: 5, maxFeePerGas: '10', bumps: 0, outcome: 'submitted' }) + '\n'
+const unknown = async ({ hash }) => { throw new TransactionNotFoundError({ hash }) }
+
+clean(); receipts.clear()
+writeFileSync(A, submitted('0xdropped'))
+const nonces = []
+r = createWaitForBaseRunner({
+  publicClient: {
+    getBlock: async () => ({ baseFeePerGas: 1n }),
+    getBlockNumber: async () => 200n,
+    estimateGas: async () => 21000n,
+    getTransactionCount: async () => 5,
+    getTransactionReceipt: async ({ hash }) => { const r = receipts.get(hash); if (!r) throw new Error('none'); return r },
+    getTransaction: unknown,
+  },
+  walletClient: { sendTransaction: async ({ nonce }) => {
+    nonces.push(nonce); receipts.set('0xdropped', mk('0xdropped')); return `0xagain${nonces.length}`
+  } },
+  account: { address: ADDR },
+  maxBaseFeeWei: 10n, bumpAfterMs: 20, bumpPct: 20n, pollReceiptMs: 1,
+  journalPath: J, attemptsLogPath: A,
+})
+await r.write(C, 'setBeneficiary', [ADDR])
+console.assert(JSON.stringify(nonces) === '[5]', `sent at nonces [${nonces}], not once at the recorded nonce 5`)
+console.assert(readFileSync(J, 'utf8').includes('0xdropped'), 'the dropped tx, mined elsewhere, was not journalled')
+console.log('11 ok: a tx the node dropped is sent again only at its recorded nonce, and its mined hash is journalled')
+
+clean(); sent = 0
+writeFileSync(A, submitted('0xunreadable'))
+r = stub({ publicClient: { getTransaction: async () => { throw new Error('fetch failed') } } })
+threw = null
+try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
+console.assert(threw === 'fetch failed' && sent === 0, `expected a stop without a send, got ${threw} after ${sent} sends`)
+console.log('12 ok: an attempts-log tx that cannot be read stops the run before any send')
+
+clean(); sent = 0; receipts.clear()
+writeFileSync(A, submitted('0xlost'))
+r = stub({ publicClient: { getTransaction: unknown, getTransactionCount: async () => 6, getTransactionReceipt: async () => { throw new Error('none') } } })
+threw = null
+try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
+console.assert(threw && /nonce 5 of 0xlost is used/.test(threw) && sent === 0, `expected a stop without a send, got ${threw} after ${sent} sends`)
+console.log('13 ok: a recorded nonce used by another tx stops the run')
+
+clean(); sent = 0; receipts.clear()
+r = stub({ walletClient: { sendTransaction: async () => { sent++; throw new Error('nonce too low') } } })
+threw = null
+try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
+console.assert(threw && /nonce 0 is used/.test(threw) && sent === 1, `expected a stop after one send, got ${threw} after ${sent} sends`)
+console.log('14 ok: "nonce too low" stops the run instead of sending the step at the next nonce')
 
 clean()
 console.log('\nall journal checks passed')
