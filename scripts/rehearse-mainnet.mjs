@@ -399,7 +399,7 @@ async function main() {
     await sendAs(account.address, v1.SimplexPriceOracle, V1_ABI, 'transferOwnership', [admin])
     const v1Restored = await v1State()
     console.log(v1Restored)
-    expect('v1 is in its state before step 7', JSON.stringify(v1Restored) === JSON.stringify(v1Before))
+    expect('v1 is in its state before the v1 retirement', JSON.stringify(v1Restored) === JSON.stringify(v1Before))
   } catch (error) {
     const { exit, stdout, stderr } = fork.state()
     console.error(`\nThe fork ${exit ? `exited with code ${exit.code} and signal ${exit.signal}` : 'still runs'}.`)
