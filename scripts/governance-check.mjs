@@ -153,7 +153,7 @@ const KINDS = {
   },
   EOA: {
     parse: (where, { address, allowance }) => {
-      if (!/^\d+$/.test(allowance)) throw new Error(`${where}.allowance: expected attoUSD as a decimal string`)
+      if (typeof allowance !== 'string' || !/^\d+$/.test(allowance)) throw new Error(`${where}.allowance: expected attoUSD as a decimal string`)
       return { address: checksummed(`${where}.address`, address), allowance: BigInt(allowance) }
     },
     failures: async (client, entry, code) => (code ? [`has code ${code.slice(0, 18)}…`] : []),
