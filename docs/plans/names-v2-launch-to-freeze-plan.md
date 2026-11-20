@@ -15,63 +15,74 @@ Who controls the contracts, from deployment until the powers are given up.
 
 ## 2. Timeline
 
-Four keys act in this plan: the deploy key, the admin key, the guardian key and the registrar
-hot wallet.
+Four keys act in this plan: the deploy key, the admin Safe, the guardian Safe and the
+registrar hot wallet.
 
 | Milestone | Change |
 |---|---|
-| GOV1 | The deploy key deploys `.simplex` and reserves the roughly 3000 names chosen in advance. Public sales closed. |
-| GOV2 | Handover: `setBeneficiary` first, then four ownership transfers and the registry root moved into `Root`, all on one day. The deploy key stops being used. |
-| GOV3 | The guardian gives the registrar hot wallet its spending allowance. First real use of the new keys. |
+| GOV1 | The deploy key deploys `.simplex` v2, eight contracts behind proxies whose upgrade authority is the admin Safe's from creation, and reserves the 797 names of `reserved-names.simplex.csv`. Public sales closed. |
+| GOV2 | Handover, in the same run: `setBeneficiary` first, then the single-step transfers to the admin Safe, the registry root moved into `Root`, and the two-step transfers proposed; v1 retired. The deploy key stops being used. |
+| GOV3 | The guardian Safe gives the registrar hot wallet its spending allowance, and the admin Safe accepts the two-step transfers, in either order. |
 | GOV4 | Contracts, registrar, app and codes all live. |
 | GOV5 | The handover is verified and the deploy key is destroyed. |
 | GOV6 | The investor window opens. Hard deadline for the handover, because names now start belonging to third parties. |
-| GOV7 | Public sales open. |
-| GOV8 | Hardening: the hardware wallets are replaced by multi-signature Safes, and admin actions start taking seven days instead of taking effect at once. No fixed date. |
-| GOV9 | The freeze: `Root.lock` ends the ability to replace the deployment, and `controller.freeze()` ends the ability to upgrade the controller's and the name policy's code. No fixed date, and never before GOV8. |
+| GOV7 | The guardian Safe moves to 2 of 4, then public sales open. |
+| GOV8 | Hardening: a 7-day timelock is placed in front of the admin Safe, for its own calls and for every `ProxyAdmin`. No fixed date. |
+| GOV9 | The freeze, per contract: a contract's code is fixed when its `ProxyAdmin` is renounced, at a time of its own; `Root.lock` ends the ability to replace the deployment. No fixed date, never before GOV8; expected 12 to 24 months from the first registration, as the names conditions state (D13 of `docs/plans/upgradeable-stack.md`). |
 
 GOV1 to GOV7 are dated and binding. GOV8 and GOV9 are not: both wait until the namespace is
 big enough to be worth the work they cost.
 
+`docs/plans/upgradeable-stack.md` holds the deployment of GOV1 and GOV2 in full.
+
 ## 3. The keys
 
-**Deploy key.** A hot wallet, a plain EOA. It owns everything from GOV1 to GOV5, then is
-destroyed.
+**Deploy key.** A hot wallet, a plain EOA: the v1 deploy key
+`0x38D19404644fe24EE7d638229a732CbE8275E333`. It deploys and wires v2, holds every owner role
+except the upgrade authority until the handover, and is destroyed at GOV5.
 
-**Admin key.** A hardware wallet. From GOV2 it owns `Root`, `BaseRegistrarImplementation`,
-`SimplexController` and `SimplexPriceOracle`. Its calls take effect the moment they are
-signed. The price oracle is a separate contract with its own owner, so it is handed over
-separately. It holds the price curve, the ETH/USD feed pointer and the expired-name auction;
-the controller holds none of those.
+**Admin Safe.** `0xf38920389740E46A7f4160DaF1672f3df2754Df4`, Safe 1.5.0, 2 of 4. It owns
+the eight `ProxyAdmin`s from their creation, so it alone holds the upgrade authority. From GOV2
+it also owns `Root`, `BaseRegistrarImplementation`, `SimplexController` and
+`SimplexPriceOracle`. Its calls take effect once two owners sign. The price oracle is a
+separate contract with its own owner, so it is handed over separately. It holds the price
+list and the ETH/USD feed pointer; the controller holds neither.
 
-**Guardian key.** A hardware wallet, separate from the admin key. It is the controller's
-`beneficiary`, so it receives the revenue and holds the powers that stop things quickly. Its
-calls are also immediate.
+**Guardian Safe.** `0xE6623AA6b8d335367828C2A8b06A714678d22e2c`, Safe 1.5.0, 1 of 4 until
+GOV7 and 2 of 4 from GOV7, with the same four owners as the admin Safe. It is the
+controller's `beneficiary`, so it receives the revenue and holds the powers that stop things
+quickly. Its calls are immediate.
 
 **Registrar hot wallet.** Owns nothing. It lives in KMS, run by the names service. It pays
 gas, spends the allowance the guardian gives it, and relays users' signed requests.
 
-The admin key and the guardian key are two authorisation tiers, ranked by how much damage a
-compromised key can do. The admin tier can replace the controller's code, and new code can do
-anything the contracts allow, so its reach has no bound. The guardian tier is bounded in kind:
-halt sales, set registrar allowances, redirect revenue, reserve names (which also stops their
-renewal), and nothing else. It is not bounded in amount: it can give itself any allowance and
-mint unreserved names with it, an accepted risk (`docs/security.md`, V1). They are separate
-keys so that one compromise does not hand over both tiers. The timelock, the Safes and the
-multi-signer rotation are deferred to GOV8, not abandoned.
+The admin Safe and the guardian Safe are two authorisation tiers, ranked by how much damage a
+compromise can do. The admin tier can replace the code of each upgradeable contract until its
+freeze, and new code can do anything the contracts allow, so its reach has no bound. The
+guardian tier is bounded in kind: halt sales, set registrar allowances, redirect revenue,
+reserve names (which also stops their renewal), and nothing else. It is not bounded in amount:
+it can give itself any allowance and mint unreserved names with it, an accepted risk
+(`docs/security.md`, V1). The two Safes have the same signers. Until GOV7 the tiers differ in
+threshold and in the calls each may make; from GOV7 to GOV8 only in the calls; from GOV8 the
+admin's calls also wait seven days. The timelock is deferred to GOV8, not abandoned.
+
+`governance.mainnet.json` records both Safes, their owners and thresholds, and the registrar
+hot wallet. `scripts/governance-check.mjs` checks each Safe against its entry before the
+deployment and before any single-step transfer to it.
 
 ## 4. Powers, before and after the freeze
 
 | Key | GOV2 until GOV9 | After GOV9 |
 |---|---|---|
 | Deploy key | nothing | nothing |
-| Admin key | upgrade the controller and the name policy; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `priceOracle.setPremium`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setGeneralTerms`; `namePolicy.setCommunityTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `freeze()` | the same list without the upgrade calls, `setSponsor` and `freeze()`, since all are used up |
-| Guardian key | `namePolicy.addReservedNames`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list without `setPublicSalesOpen` |
+| Admin Safe | `ProxyAdmin.upgradeAndCall`, `ProxyAdmin.transferOwnership` and `ProxyAdmin.renounceOwnership` for each of the registry, the registrar, the resolver, the subname registrar, the controller, the name policy, the sponsor and `UniversalResolver`; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setGeneralTerms`; `namePolicy.setCommunityTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock` | the same list without the `ProxyAdmin` calls, and without any call that the controller's last upgrade seals (A7) |
+| Guardian Safe | `namePolicy.addReservedNames`; `namePolicy.setReservationReason`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list, without `setPublicSalesOpen` if the controller's last upgrade seals it (A7) |
 | Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderGeneralTermsWithSig`, `commitUnderCommunityTermsWithSig`, `acceptGeneralTermsForClaimWithSig`, `acceptCommunityTermsForClaimWithSig` | same |
 | Anyone | `commit`; `commitUnderGeneralTerms`; `commitUnderCommunityTerms`; `acceptGeneralTermsForClaim`; `acceptCommunityTermsForClaim`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
 
-Until GOV8 every call in this table takes effect when it is signed. After GOV8 the admin's
-calls wait seven days and the guardian's stay immediate.
+Until GOV8 every call in this table takes effect when the Safe's threshold signs. After GOV8
+the admin's calls, the `ProxyAdmin` calls among them, wait seven days and the guardian's stay
+immediate.
 
 `disableNftGate` is the one owner function missing from the table. `.simplex` deploys with
 the gate off, and the function reverts when the gate is off, so it does nothing from day one.
@@ -90,31 +101,61 @@ These powers outlive GOV9 because losing them would be worse than keeping them.
 `setMetadataRenderer` updates NFT artwork, since the renderer is immutable and is replaced
 rather than edited.
 
+A frozen contract keeps the owner calls of its own code: renouncing a `ProxyAdmin` fixes the
+code, not the contract's owner.
+
 ## 5. What no key can ever do
 
-No key can take, transfer or re-point a name somebody owns. `_register` requires
-`available(id)`, false until 90 days past expiry, and that check lives in the immutable
-registrar. `reclaim` needs the token holder. `approveWithSig` needs the owner's signature, and
-only the recipient, or a controller, can complete a transfer.
-One exception lasts until GOV9. The registry root's owner, the admin key, can assign the
-`simplex` node to itself, then any name's node, and write that name's records; once the
-registry root is in `Root`, `Root`'s controller can do the same. The redeploy of section 7
-rests on that power. `root.lock(labelhash("simplex"))` at GOV9 ends it: `Root` has no call
-that reassigns a locked label or moves the registry root out.
-After GOV9 no key can change the controller's code either, so no key can write records on a
-name it does not own. That matters because the controller is `trustedETHController` on the
-resolver, and a hostile upgrade would abuse exactly that authority.
+The guarantees below hold from the freezes and the lock that each names. Until then the admin
+Safe can replace the code that enforces them.
 
-Two indirect paths stay open. Reserving a held name stops its renewal, and after its grace
-period `registerReserved` assigns it, which is how disputes are settled (A6). The admin can
-also price renewals out of reach and collect names as they lapse, either by pointing
-`setPriceOracle` at a hostile oracle or by calling `priceOracle.setPrices` with a punishing
-curve. The second adds nothing, since an arbitrary oracle can already do anything a curve
-change can. Before GOV8 there is no warning: the change takes effect when signed. What limits
-the damage is slow and public. Every name keeps its remaining term plus 90 days of grace, and
-renewal of an unreserved name is permissionless throughout, so anyone can renew anyone's name
-at the old price as soon as the change is noticed. That is months of visible behaviour rather
-than seven days of notice. GOV8 buys the notice back.
+| Guarantee | Holds once these are renounced or called |
+|---|---|
+| no key can take, transfer or re-point a name somebody owns before it expires | registry `ProxyAdmin` |
+| | registrar `ProxyAdmin` |
+| | subname registrar `ProxyAdmin` |
+| | `root.lock(labelhash("simplex"))` |
+| no key can write records on a name it does not own | registry `ProxyAdmin` |
+| | registrar `ProxyAdmin` |
+| | resolver `ProxyAdmin` |
+| | subname registrar `ProxyAdmin` |
+| | controller `ProxyAdmin` |
+| | `root.lock(labelhash("simplex"))` |
+
+Once they hold: `_register` requires `available(id)`, false until 90 days past expiry.
+`reclaim` needs the token holder. `approveWithSig` needs the owner's signature, and only the
+recipient, or a controller, can complete a transfer. The controller is `trustedETHController`
+on the resolver, so its freeze matters for the records: a hostile upgrade would abuse exactly
+that authority.
+
+Until the lock, the registry root's owner can assign the `simplex` node to itself, then any
+name's node, and write that name's records; once the registry root is in `Root`, `Root`'s
+controller, the admin Safe, can do the same. The redeploy of section 7 rests on that power.
+`root.lock(labelhash("simplex"))` ends it: through `Root`, a locked label cannot be reassigned,
+and the registry root cannot be moved out of `Root`.
+
+Indirect paths stay open after every freeze and the lock:
+
+| Path | Call | Caller |
+|---|---|---|
+| renewals stopped, so names lapse and become available | `baseRegistrar.removeController(controller)` | admin |
+| | `baseRegistrar.setSubnameHook` to a contract that reverts | admin |
+| | `controller.setNamePolicy` to a policy that reserves every name | admin |
+| renewals priced out | `controller.setPriceOracle` | admin |
+| | `priceOracle.setPrices` | admin |
+| payable renewals priced out | `priceOracle.setUsdOracle` to a feed with a low positive answer | admin |
+| renewal of one name stopped | `namePolicy.addReservedNames` | admin or guardian |
+| the previous holder's subnames and records kept under a re-registered name | `baseRegistrar.setSubnameHook(0x0)` during the re-registration | admin |
+
+Reserving a held name stops its renewal, and after its grace period `registerReserved` assigns
+it, which is how disputes are settled (A6). Pricing renewals out of reach collects names as
+they lapse; `setPrices` adds nothing to `setPriceOracle`, since an arbitrary oracle can already
+do anything a curve change can. Before GOV8 each of these takes effect when signed. What
+limits the damage is slow and public. Every name keeps its remaining term plus 90 days of
+grace, so a name is collected months after the change, in public, and the change can be
+reversed before that. After GOV8 a change is visible seven days before it takes effect, and
+renewal of an unreserved name is permissionless, so anyone can renew anyone's name at the old
+price in that time.
 
 ## 6. Why it is built this way
 
@@ -123,11 +164,11 @@ a registrar's allowance to zero. It also funds registrars and opens sales (A3, A
 permissive powers on the fast key. The admin changes things: release reserved names, hand names
 to brands.
 
-Neither key waits for a delay yet, so the split can look like a formality. It is not. It
-keeps the revenue off the upgrade key, so a stolen admin key cannot also take the
-treasury. Upgrading the controller and moving the money then need two separate keys. And it
-puts the emergency stops on the key that is not used for routine work, which is the one more
-likely to be sitting in a drawer.
+Neither Safe waits for a delay yet, so the split can look like a formality. It is not. The
+revenue is paid to the beneficiary, and only the beneficiary can change that address; the
+admin Safe reaches the controller's balance only by a controller upgrade, and after the
+controller's freeze not at all. And it puts the emergency stops on the Safe
+that is not used for routine work.
 
 The same split decides which powers get a delay at GOV8. The guardian's stay immediate,
 because the harm they answer grows with every block: a compromised registrar mints junk names
@@ -139,32 +180,27 @@ nobody loses a name while the repair sits in the queue. Fixing that feed is now 
 `priceOracle.setUsdOracle` instead of a redeploy, which shortens the outage but does not
 change which key it belongs to.
 
-**Hardware wallets now, Safes and a timelock later.** Only the date changed. Safes and a
-timelock cost coordination every week, and until the namespace has enough names and enough
-turnover that cost is real while the benefit is theoretical. The first months therefore run
-on plain hardware wallets, with snapshot and redeploy as the way out: fresh contracts, every
-name re-created on them, clients pointed at the new addresses. That fallback only works while
-the namespace is small, which is the same condition, so the arrangement ends itself.
+**Safes now, a timelock later.** A timelock costs coordination every week, and until the
+namespace has enough names and enough turnover that cost is real while the benefit is
+theoretical. The first months therefore run on the Safes without delay, with an upgrade of the
+affected contract as the way out, and snapshot and redeploy behind it (section 7).
 
-Four things are worse in the meantime:
+Three things are worse in the meantime:
 
-- **No warning period.** As section 5 describes, an admin action takes effect when signed and
-  there is no scheduled transaction for the guardian to cancel.
-- **No signing threshold.** Lose the admin key and its powers are gone; steal it and they are
-  taken. No other key recovers either case.
-- **Rotation is one-shot and unchecked.** `BaseRegistrar` and `Root` use OpenZeppelin's
-  single-step `Ownable` and are both immutable, so moving them to a new device is a
-  `transferOwnership` the recipient never has to accept. OpenZeppelin rejects the zero
-  address, not an address that is valid but wrong. `SimplexController` is `Ownable2Step` and
-  does require acceptance, so of the three it is the only one safe to rotate carelessly.
-- **Nothing records who signed.** A person leaving is an incident rather than a membership
-  change.
+- **No warning period.** As section 5 describes, an admin action, an upgrade among them, takes
+  effect when signed, and the guardian has no scheduled transaction to cancel.
+- **One signature on the guardian Safe until GOV7.** One of the four owners can halt sales,
+  fund a registrar, reserve a name or redirect the revenue.
+- **Rotation is one-shot.** The eight `ProxyAdmin`s, `BaseRegistrar` and `Root` use
+  OpenZeppelin's single-step `Ownable`, so a transfer takes effect without the recipient
+  accepting it. OpenZeppelin rejects the zero address, not an address that is valid but wrong;
+  `scripts/governance-check.mjs` runs before each such transfer for that reason.
+  `SimplexController` and `SimplexPriceOracle` are `Ownable2Step` and require acceptance.
 
-GOV8 answers all four. Waiting answers none.
+GOV7 answers the second, GOV8 the first. The third stays, checked by the script.
 
-**Prices stay changeable, and so does the oracle.** `SimplexPriceOracle` keeps the curve, the
-feed pointer and the auction in storage rather than in `immutable`s, so the owner can change
-all three. Chainlink has retired feeds before. On the older `StablePriceOracle` that
+**Prices stay changeable, and so does the oracle.** `SimplexPriceOracle` keeps the price list
+and the feed pointer in storage rather than in `immutable`s, so the owner can change both. Chainlink has retired feeds before. On the older `StablePriceOracle` that
 `.testing` runs, `usdOracle` is `immutable`, so a retired feed there means a fresh oracle and
 a `setPriceOracle`. Either way, an oracle that could not be replaced and had a retired feed
 would break registration and renewal permanently, with no key able to fix it. That is why
@@ -179,11 +215,12 @@ every name by orders of magnitude and never revert. The sponsored path reads no 
 because a registrar's allowance is denominated in attoUSD through `priceUSD()`, so a dead
 feed closes the payable path and leaves the app-store flow running.
 
-**The sales switch does not stay changeable.** `freeze()` locks `publicSalesOpen` in whatever
-position it is in, and a switch left closed could never be reopened. So `freeze()` reverts
-while sales are closed. The contract enforces that ordering, not a runbook.
+**The sales switch stays changeable until the controller's last upgrade.** A seal of the
+switch, or of the sponsor, where wanted, is added by the controller's last upgrade before its
+`ProxyAdmin` is renounced (A7). A switch sealed closed could never be reopened, so the
+seal, called with that upgrade, reverts while sales are closed, as v1's `freeze()` did.
 
-**GOV9 waits for GOV8.** The freeze removes the only way to fix a bug in the controller, and
+**GOV9 waits for GOV8.** A contract's freeze removes the only way to fix a bug in its code, and
 `Root.lock` removes the redeploy this plan leans on. Slipping GOV9 costs nothing
 operationally, since brand reservation, `registerReserved` and everything else keep working.
 It does keep the upgrade power alive, and that is the one power in the system with no bound
@@ -191,13 +228,16 @@ on it.
 
 ## 7. The fallback: snapshot and redeploy
 
-This is what makes plain hardware wallets acceptable, so be precise about what it can and
-cannot save.
+Until a contract's freeze, a defect in it is repaired by an upgrade through its `ProxyAdmin`
+(A6): state and addresses stay, and users do nothing. The redeploy is the way out behind that,
+for a defect in a contract already frozen or one that an upgrade cannot repair, so be precise
+about what it can and cannot save.
 
-**Why it is possible.** `Root.lock` is deliberately not called at GOV1. While the `.simplex`
-label is unlocked, the root owner can point the TLD node at a freshly deployed registrar and
-controller and keep the same `ENSRegistry`. Every SimpleX client reads the contract addresses
-from configuration we ship, so switching them is a release, not a migration users perform.
+**Why it is possible.** `Root.lock` is deliberately not called before GOV9. While the
+`.simplex` label is unlocked, `Root`'s controller can point the TLD node at a freshly deployed
+registrar and controller and keep the same `ENSRegistry`. Every SimpleX client reads the
+contract addresses from configuration we ship, so switching them is a release, not a migration
+users perform.
 
 **What has to be carried over**, or somebody loses something: each name's owner, its
 remaining expiry, its `simplex.contact` and `simplex.channel` records, and any subnames.
@@ -209,8 +249,8 @@ migration controller or the holders' signatures.
 
 **The order that makes it safe.**
 
-1. `setPublicSalesOpen(false)`, guardian, immediate. The set of names stops growing. This is
-   what the switch is really for.
+1. `setPublicSalesOpen(false)`, guardian Safe, immediate, and `setRegistrarAllowance(registrar, 0)`.
+   The set of names stops growing.
 2. Snapshot at a stated block: owner, expiry, records, subnames.
 3. Deploy the new registrar, controller and name policy. `addReservedNames` for the whole
    set, then `registerReserved` each name to its snapshot owner for its remaining term,
@@ -233,6 +273,7 @@ of any secondary market.
 names is already several hundred million gas, and step 4's exposure grows with trading
 volume. The point where redeploy stops being credible is the point where Safes and a timelock
 become worth their weight. GOV8 is due when redeploy stops being believable, not on a date.
+The upgrade path stays open after that, for each contract until its freeze.
 
 ## 8. Appendix A: transition recipes
 
@@ -240,24 +281,29 @@ Every on-chain call, in order, with who signs it.
 
 ### A1. Deployment (GOV1)
 
-Caller: **deploy key**, alone.
+Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`.
 
-1. Deploy `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexPriceOracle`,
-   `SimplexController` implementation and proxy, `SimplexSponsor(controllerProxy)`,
-   `SimplexNamePolicy(controllerProxy, baseRegistrar)` implementation and proxy,
-   `SubnameRegistrar`, `SimplexResolver`, `MetadataRenderer`, `UniversalResolver`.
+1. Deploy each of `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexController`,
+   `SimplexNamePolicy`, `SubnameRegistrar`, `SimplexResolver`, `SimplexSponsor` and
+   `UniversalResolver` as an implementation behind an OpenZeppelin
+   `TransparentUpgradeableProxy` whose `initialOwner` is the admin Safe; each proxy creates
+   its own `ProxyAdmin`, owned by the admin Safe. Deploy `SimplexPriceOracle`,
+   `DummyGatewayProvider` and `MetadataRenderer` as immutable contracts.
+   `docs/plans/upgradeable-stack.md`, section 7, lists the constructor arguments and
+   initializer calls.
 2. `ens.setSubnodeOwner(0x0, labelhash("simplex"), baseRegistrar)`, from the deploy key, which
    holds the registry root until the handover. `Root` comes with the handover (A2).
 3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.addController(namePolicy)`;
    `controller.setNamePolicy(namePolicy)`; `baseRegistrar.setMetadataRenderer(renderer)`;
    `baseRegistrar.setMaxLabelLength(63)`; `baseRegistrar.setSubnameHook(subnameRegistrar)`.
 4. `subnameRegistrar.setResolver(simplexResolver)`.
-5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`.
+5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`;
+   `controller.setBeneficiary(guardianSafe)`.
    `namePolicy.setGeneralTerms(link)` and `namePolicy.setCommunityTerms(link)`, the links of `terms.<tld>.json`;
-   `namePolicy.addCommunityNames([...])` in batches of 200;
+   `namePolicy.addCommunityNames([...])` in batches of 100;
    `baseRegistrar.setNamePolicy(namePolicy)`.
-6. `namePolicy.addReservedNames([...])` for the roughly 3000 names chosen in advance, in
-   batches of 200. Measured cost is 25.8k gas per name: 5.2M per batch, 77M in total,
+6. `namePolicy.addReservedNames([...])` for the 797 names of `reserved-names.simplex.csv`, in
+   batches of 200. Measured cost is 25.8k gas per name: 5.2M per batch, about 21M in total,
    single-digit dollars at the base fee we expect. Run it at a low base fee;
    `deploy-mainnet.mjs` supports that through `MAX_BASE_FEE_GWEI`.
 7. Leave `publicSalesOpen == false`.
@@ -272,14 +318,14 @@ No reverse registrar is deployed. That is possible because `PublicResolver` and
 whatever owned `addr.reverse`. That was a hard dependency on a deployed reverse registrar,
 which a subclass could not work around.
 
-`SimplexPriceOracle` takes a **base price per year** plus a sparse list of **rungs**, each
-`(maxLength, priceUSDPerYear)`. A rung at `K` covers every length up to `K`, and anything
-longer than the tallest rung pays the base price. The launch curve is $50 a year ($100 for
-the two-year minimum) with no rungs, since names shorter than six characters cannot be
-registered:
+`SimplexPriceOracle` takes a **base price per year** plus a list of **exceptions**, each
+`(labelLength, priceCentsPerYear)`, in US cents. An exception applies to labels of exactly
+that length; every other length pays the base price. Lapsed names carry no premium. The
+launch list is $50 a year ($100 for the two-year minimum) with no exceptions, since names
+shorter than six characters cannot be registered:
 
 ```
-setPrices(50e18, [])
+setPrices(5000, [])
 ```
 
 The base price covers every length, so lowering `minCharLength` later never hands out free
@@ -287,58 +333,86 @@ names. `deploy-mainnet.mjs` reads the curve from `scripts/simplex-price-curve.mj
 place it is written down, and the post-deploy read-back checks it and the feed scale on chain
 before the handover.
 
-Mind the unit: these are attoUSD **per year**. The older oracle that `.testing` runs takes
-attoUSD **per second**, so the two lists are not interchangeable. Pasting one into the other
-is off by a factor of 31,536,000, and neither contract rejects it.
+Mind the unit: these are US cents **per year**. The older oracle that `.testing` runs takes
+attoUSD **per second**, so the two lists are not interchangeable, and neither contract
+rejects a list in the other's unit.
 
 Reserving at GOV1 rather than after the handover closes a hole. `publicSalesOpen` gates only
 the payable `register`, so once the guardian funds a registrar (A3) the sponsored path can
 register any label that is not reserved. The post-deploy read-back checks every reserved
 label, which makes the reserved set part of the deployment's acceptance check.
 
-Before GOV1, the hardware wallets must be initialised, their addresses recorded, and **each
-must have executed one rehearsal transaction on mainnet** from the device itself. Two of the
-handover transfers take effect with nobody having to accept them, so an address nobody can
-sign for is unrecoverable. The rehearsal proves the device, not the address.
+Before GOV1, `scripts/governance-check.mjs` checks each Safe against `governance.mainnet.json`:
+the SafeProxy 1.5.0 code and singleton, the owners, the threshold, no module and no guard,
+the fallback handler, and **a nonce of at least 1**, which proves that the Safe has executed a
+transaction on mainnet. The eight `ProxyAdmin`s and several handover transfers take effect with
+nobody having to accept them, so an address nobody can sign for is unrecoverable.
 
 ### A2. Handover (GOV2)
 
 Order matters. `setBeneficiary` is owner-callable only while the beneficiary is unset. After
-that only the beneficiary can move it, so the guardian is chosen here or not at all.
+that only the beneficiary can move it, so the guardian is chosen here or not at all. Steps 1
+to 12 run in run 1 of `deploy-mainnet.mjs`, after its read-back passes, except step 1, which
+is part of the wiring (A1 step 5). The governance addresses are read from
+`governance.mainnet.json` only.
 
 | # | Caller | Call |
 |---|---|---|
-| 1 | deploy key | `controller.setBeneficiary(guardianKey)`. Rejects the zero address, and `deploy-mainnet.mjs` refuses to run if `GUARDIAN_ADDRESS` is unset. A guardian equal to the admin key later moves itself with `controller.setBeneficiary(guardianKey)` |
-| 2 | deploy key | `controller.transferOwnership(adminKey)` |
-| 3 | admin key | `controller.acceptOwnership()`, required by `Ownable2Step` |
-| 4 | deploy key | `baseRegistrar.transferOwnership(adminKey)` |
-| 5 | deploy key | `ens.setOwner(0x0, adminKey)`, after `eth` and `data.eth` go to the admin key and `eth-usd.data.eth` to nobody |
-| 6 | deploy key | `priceOracle.transferOwnership(adminKey)` |
-| 7 | admin key | `priceOracle.acceptOwnership()`, required by `Ownable2Step` |
-| 8 | deploy key | Deploy `Root(ens)`, the upstream contract, then `root.transferOwnership(adminKey)` |
-| 9 | admin key | `root.setController(adminKey, true)` |
-| 10 | admin key | `ens.setOwner(0x0, root)`. `Root` has no call that moves the registry root out again |
+| 1 | deploy key | `controller.setBeneficiary(guardianSafe)` |
+| 2 | deploy key | `baseRegistrar.transferOwnership(adminSafe)` |
+| 3 | deploy key | `ens.setOwner(namehash("eth-usd.data.eth"), 0x0)` |
+| 4 | deploy key | `ens.setSubnodeOwner(namehash("eth"), labelhash("data"), adminSafe)` |
+| 5 | deploy key | `ens.setSubnodeOwner(0x0, labelhash("eth"), adminSafe)` |
+| 6 | deploy key | Deploy `Root(ens)`, the upstream contract |
+| 7 | deploy key | `root.setController(adminSafe, true)` |
+| 8 | deploy key | `root.transferOwnership(adminSafe)` |
+| 9 | deploy key | `ens.setOwner(0x0, root)`; the registry root cannot be moved out of `Root` again |
+| 10 | deploy key | `controller.transferOwnership(adminSafe)` |
+| 11 | deploy key | `priceOracle.transferOwnership(adminSafe)` |
+| 12 | deploy key | v1 retired: `removeController` of the v1 controller and the v1 name policy on the v1 registrar; `transferOwnership(0x0)` on the v1 controller and the v1 oracle |
+| 13 | admin Safe | `controller.acceptOwnership()` and `priceOracle.acceptOwnership()`, one batch, required by `Ownable2Step`; at GOV3, in either order with A3 |
 
-All ten complete on one day, since there is no delay to wait out. Steps 4, 5 and 8 take
-effect immediately, nobody has to accept, and the transaction gives no sign of whether
-anyone holds the key. So the admin address must be correct, and there is no second chance.
-Confirm the admin device can sign before step 4, by having it execute step 3. Step 10 is
-final as well: read `root.owner()` and `root.controllers(adminKey)` before it.
+```mermaid
+sequenceDiagram
+  participant D as deploy key
+  participant R as Root
+  participant A as admin Safe
+  participant G as guardian Safe
+  participant O as operator
+  D->>D: run 1, wiring: setBeneficiary(guardian Safe)
+  D->>D: run 1, read-back
+  D->>A: registrar, eth, data.eth (single-step)
+  D->>D: eth-usd.data.eth to 0x0
+  D->>R: deploy, setController(admin Safe), transferOwnership(admin Safe)
+  D->>R: registry root
+  D->>A: controller and oracle proposed (two-step)
+  D->>D: v1 retired
+  G->>G: GOV3: setRegistrarAllowance
+  A->>A: GOV3: acceptOwnership x2
+  O->>O: run 2: read-back, no key
+```
 
-Verify: `owner()` is the admin key on the controller, the registrar, the price oracle and
-`Root`; `ens.owner(0x0)` is `Root`, `root.controllers(adminKey)` is true and
-`root.locked(labelhash("simplex"))` is false; `beneficiary()` is the guardian
-key; `sponsor()` is the verified `SimplexSponsor`, whose `controller()` is this controller; `pendingOwner()` is empty on both the controller and the price oracle; every call the
-deploy key used to make now reverts. The oracle is the one most easily missed, because it is
-not reachable from the controller. A handover that checks only the controller looks complete
-while the price curve is still held by a key that is about to be destroyed.
+The `ProxyAdmin`s need no step: the admin Safe owns them from their creation. Steps 2 to 5
+and 7 to 9 take effect immediately, nobody has to accept, and the transaction gives no sign
+of whether anyone holds the key. `scripts/governance-check.mjs` passes for the admin Safe before
+run 1 sends its first transaction.
 
-Between steps 2 and 3 the deploy key can still redirect the controller elsewhere, so it is
-destroyed only once all ten calls have landed and those checks pass. That is GOV5.
+Verify, in run 2 of `deploy-mainnet.mjs`: `owner()` is the admin Safe on the eight
+`ProxyAdmin`s, the controller, the registrar, the price oracle and `Root`; `ens.owner(0x0)` is
+`Root`, `root.controllers(adminSafe)` is true and `root.locked(labelhash("simplex"))` is
+false; `beneficiary()` is the guardian Safe; `pendingOwner()` is empty on both the controller
+and the price oracle; the deploy key holds none of the roles read. Run 1's read-back has
+already checked the wiring, `sponsor()` among it. The oracle is the one most
+easily missed, because it is not reachable from the controller. A handover that checks only
+the controller looks complete while the price curve is still held by a key that is about to be
+destroyed.
+
+Until step 13 the deploy key can still redirect the controller and the oracle elsewhere, so it
+is destroyed only once all thirteen calls have landed and those checks pass. That is GOV5.
 
 ### A3. Guardian's first use (GOV3)
 
-Caller: **guardian key**.
+Caller: **guardian Safe**.
 
 1. `sponsor.setRegistrarAllowance(registrarHotWallet, N)`, with `N` in **attoUSD**, sized
    to expected sales plus headroom.
@@ -358,57 +432,78 @@ how far the handover has got.
 
 ### A4. Open public sales (GOV7)
 
-Caller: **guardian key**. `controller.setPublicSalesOpen(true)`.
+Caller: **guardian Safe**.
+
+1. `guardianSafe.changeThreshold(2)`, executed by the Safe itself; `scripts/governance-check.mjs`
+   then passes for the guardian Safe with threshold 2 in `governance.mainnet.json`.
+2. `controller.setPublicSalesOpen(true)`.
 
 ### A5. Hardening (GOV8)
 
-Moves both tiers onto Safes, and puts a timelock in front of the admin.
+Puts a timelock in front of the admin Safe, for its own calls and for the eight `ProxyAdmin`s.
 
 | # | Caller | Call |
 |---|---|---|
-| 1 | none | Deploy a 3-of-5 admin Safe and a 2-of-4 guardian Safe. Signers on hardware wallets, geographically distributed. |
-| 2 | none | Deploy an OpenZeppelin `TimelockController` with a 7-day delay. Proposer and executor are the admin Safe, canceller is the guardian Safe. |
-| 3 | guardian key | `controller.setBeneficiary(guardianSafe)`. Beneficiary-only once set, so the guardian moves its own role. Do this **first**, because it is the one step the admin key cannot perform. |
-| 4 | admin key | `controller.transferOwnership(timelock)`, then the admin Safe has the timelock schedule and execute `controller.acceptOwnership()`. |
-| 5 | admin key | `root.setController(timelock, true)`, then `root.setController(adminKey, false)`. |
-| 6 | admin key | `baseRegistrar.transferOwnership(timelock)` and `root.transferOwnership(timelock)`. Single-step, immediate, and nothing confirms the new owner can act. |
-| 7 | admin key | `priceOracle.transferOwnership(timelock)`, then the admin Safe has the timelock schedule and execute `priceOracle.acceptOwnership()`. |
+| 1 | none | Deploy an OpenZeppelin `TimelockController` with a 7-day delay, proposers and executors `[adminSafe]` and admin `0x0`, so its admin role is held by the timelock alone. The constructor makes the admin Safe a canceller as well. Its entry is added to `governance.mainnet.json`, and `scripts/governance-check.mjs` passes for it. |
+| 2 | admin Safe | `controller.transferOwnership(timelock)`; then the admin Safe has the timelock schedule, and execute 7 days later, one batch: `controller.acceptOwnership()` and `timelock.grantRole(CANCELLER_ROLE, guardianSafe)`. The name policy follows the controller, since its owner checks read `controller.owner()`. |
+| 3 | admin Safe | `root.setController(timelock, true)`, then `root.setController(adminSafe, false)`. |
+| 4 | admin Safe | `baseRegistrar.transferOwnership(timelock)` and `root.transferOwnership(timelock)`. Single-step and immediate. |
+| 5 | admin Safe | `ProxyAdmin.transferOwnership(timelock)` on each of the eight `ProxyAdmin`s. Single-step and immediate. |
+| 6 | admin Safe | `priceOracle.transferOwnership(timelock)`, then the admin Safe has the timelock schedule and execute `priceOracle.acceptOwnership()`. |
 
-Order matters twice. Step 3 comes before step 4, because once ownership moves the admin key
-can no longer do anything, and `setBeneficiary` was never its call to make. Step 4 comes
-before step 6, because step 4 is the only one that proves the timelock can execute, and steps
-5 and 6 cannot be undone without that proof. Step 7 goes last because it is two-step like
-step 4, so a wrong address there is still recoverable.
+Order matters. Step 2 comes before steps 4 and 5, because step 2 is the only one that proves
+the timelock can execute, and steps 3 to 5 cannot be undone without that proof. Step 6 goes
+last because it is two-step like step 2, so a wrong address there is still recoverable.
 
-Verify: `owner()` is the timelock on all four contracts; `beneficiary()` is the guardian
-Safe; the old devices revert on every admin and guardian call; a scheduled no-op executes
+```mermaid
+sequenceDiagram
+  participant A as admin Safe
+  participant T as timelock
+  participant G as guardian Safe
+  A->>A: deploy timelock; governance-check passes
+  A->>T: controller.transferOwnership(timelock)
+  A->>T: schedule: acceptOwnership, grantRole(CANCELLER, guardian Safe)
+  T->>T: 7 days later: execute
+  A->>T: Root controller: timelock in, admin Safe out
+  A->>T: registrar and Root: transferOwnership (single-step)
+  A->>T: eight ProxyAdmins: transferOwnership (single-step)
+  A->>T: oracle.transferOwnership, then scheduled acceptOwnership
+  G->>T: cancel: available from step 2 on
+```
+
+Verify: `owner()` is the timelock on the controller, the registrar, the price oracle, `Root`
+and the eight `ProxyAdmin`s; `root.controllers(adminSafe)` is false; `beneficiary()` is the
+guardian Safe; `hasRole(CANCELLER_ROLE, guardianSafe)` is true; a scheduled no-op executes
 after 7 days, and the guardian Safe can cancel one.
 
-Retire the old hardware wallets only after that. Any later signer rotation follows the same
-pattern, except that it is then a Safe transaction rather than a contract call.
+A later signer rotation is a Safe transaction: `addOwnerWithThreshold`, `removeOwner` or
+`swapOwner`, with `governance.mainnet.json` updated and `scripts/governance-check.mjs` run
+after it.
 
 ### A6. Routine operations
 
-Before GOV8 the callers are the hardware wallets and nothing waits. After GOV8, read the form
-in brackets.
+Before GOV8 the admin Safe calls directly and nothing waits. After GOV8, read the form in
+brackets. The guardian Safe needs one signature until GOV7 and two from GOV7.
 
 | Action | Caller | Call |
 |---|---|---|
-| Reserve a brand name under threat | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addReservedNames([name], reason)`, sent privately (see below) |
-| Give a brand its name | admin key *(admin Safe, timelock, 7 days)* | `namePolicy.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
-| List community names | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addCommunityNames([names])`, sent privately; names that are registered or in grace are skipped (`CommunityNameSkipped`) |
-| Publish new general terms or community terms | admin key *(admin Safe, timelock, 7 days)* | Commit the file to `simplex-chat/simplex-chat`, tag it `general-terms-vN` or `community-terms-vN`, wait until git.simplex.chat mirrors it, run `scripts/terms-check.mjs` on the link, then `namePolicy.setGeneralTerms(link)` or `namePolicy.setCommunityTerms(link)`. An acceptance of that kind not yet used at registration or claim must then be made again; existing holders are not asked to accept. |
-| Hold a disputed name | guardian key *(guardian Safe, 2 sigs)* | `namePolicy.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
-| Keep a lapsing brand name protected | guardian key *(guardian Safe, 2 sigs)* | for a name handed out by `registerReserved` and not renewed: `namePolicy.addReservedNames([name], reason)` before its grace period ends, sent privately |
-| Refill a registrar's allowance | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
-| Cut off a compromised registrar | guardian key *(guardian Safe, 2 sigs)* | `sponsor.setRegistrarAllowance(registrar, 0)` |
-| Pause payable sales | guardian key *(guardian Safe, 2 sigs)* | `controller.setPublicSalesOpen(false)` |
-| Change prices | admin key *(admin Safe, timelock, 7 days)* | `priceOracle.setPrices(base, rungs)`; replaces base and rungs together, and rejects a curve where a shorter name is cheaper than a longer one |
-| Replace a retired ETH/USD feed | admin key *(admin Safe, timelock, 7 days)* | `priceOracle.setUsdOracle(feed, decimals)`; the scale is explicit, since the interface has no `decimals()` to read |
-| Retune the expired-name auction | admin key *(admin Safe, timelock, 7 days)* | `priceOracle.setPremium(startPremium, totalDays)`; `totalDays = 0` switches it off |
-| Replace the price oracle wholesale | admin key *(admin Safe, timelock, 7 days)* | `controller.setPriceOracle(newOracle)`; the escape hatch if the oracle itself is defective |
-| Update NFT artwork | admin key *(admin Safe, timelock, 7 days)* | `baseRegistrar.setMetadataRenderer(newRenderer)` |
-| Cancel a scheduled admin action | none *(guardian Safe, 2 sigs)* | `timelock.cancel(id)`; exists only after GOV8 |
+| Upgrade one contract | admin Safe *(timelock, 7 days)* | `scripts/prepare-upgrade.mjs` deploys and checks the candidate implementation and prints the call; then `upgradeAndCall(proxy, implementation, data)` on that contract's `ProxyAdmin` |
+| Move one contract's upgrade authority | admin Safe *(timelock, 7 days)* | the transaction `scripts/prepare-upgrade.mjs` prints: `transferOwnership(next)` on that contract's `ProxyAdmin`, after `scripts/governance-check.mjs` passes for `next` |
+| Reserve a brand name under threat | guardian Safe | `namePolicy.addReservedNames([name], reason)`, sent privately (see below) |
+| Give a brand its name | admin Safe *(timelock, 7 days)* | `namePolicy.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
+| List community names | guardian Safe | `namePolicy.addCommunityNames([names])`, sent privately; names that are registered or in grace are skipped (`CommunityNameSkipped`) |
+| Publish new general terms or community terms | admin Safe *(timelock, 7 days)* | Commit the file to `simplex-chat/simplex-chat`, tag it `general-terms-vN` or `community-terms-vN`, wait until git.simplex.chat mirrors it, run `scripts/terms-check.mjs` on the link, then `namePolicy.setGeneralTerms(link)` or `namePolicy.setCommunityTerms(link)`. An acceptance of that kind not yet used at registration or claim must then be made again; existing holders are not asked to accept. |
+| Hold a disputed name | guardian Safe | `namePolicy.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
+| Keep a lapsing brand name protected | guardian Safe | for a name handed out by `registerReserved` and not renewed: `namePolicy.addReservedNames([name], reason)` before its grace period ends, sent privately |
+| Refill a registrar's allowance | guardian Safe | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
+| Cut off a compromised registrar | guardian Safe | `sponsor.setRegistrarAllowance(registrar, 0)` |
+| Pause payable sales | guardian Safe | `controller.setPublicSalesOpen(false)` |
+| Change prices | admin Safe *(timelock, 7 days)* | `priceOracle.setPrices(baseCentsPerYear, exceptions)`; replaces the base and every exception together, and rejects a length outside 1 to 64, a zero exception price and a duplicate length |
+| Replace a retired ETH/USD feed | admin Safe *(timelock, 7 days)* | `priceOracle.setUsdOracle(feed, decimals)`; the scale is explicit, since the interface has no `decimals()` to read |
+| Replace the price oracle wholesale | admin Safe *(timelock, 7 days)* | `controller.setPriceOracle(newOracle)`; the escape hatch if the oracle itself is defective |
+| Replace the sponsor by `setSponsor` instead of an upgrade, for instance after its freeze | guardian Safe, then admin Safe *(timelock, 7 days)* | the guardian funds the new sponsor; the names service accepts both sponsors; `controller.setSponsor(newSponsor)`; the names service drops the old sponsor |
+| Update NFT artwork | admin Safe *(timelock, 7 days)* | `baseRegistrar.setMetadataRenderer(newRenderer)` |
+| Cancel a scheduled admin action | *(guardian Safe)* | `timelock.cancel(id)`; exists only after GOV8 |
 
 Every label passed to `addReservedNames` or `registerReserved` must follow the dApp's label rule (`ALLOWED_LABEL_REGEX`: lowercase a-z, 0-9 and hyphens; transliterate accents and drop apostrophes). The contract hashes whatever bytes it is given, so `Coinbase` or `nestlé` reserves a name nobody can type and leaves `coinbase` and `nestle` open. The admin page enforces the rule; raw calls from a Safe, a timelock or a block explorer do not, so check each label against it first. `reason` is `Internal` (1), `Trademark` (2) or `Community` (3).
 
@@ -416,44 +511,64 @@ A reservation must not sit in public before it is mined: a squatter who sees it 
 
 ### A7. The freeze (GOV9)
 
-All four conditions must hold before anything is scheduled:
+The freeze is staged: each of the eight upgradeable contracts is frozen on its own, at a time of
+its own, and `Root.lock` is a step of its own. The guarantees of section 5 hold once the
+freezes and the lock that each names have landed.
+
+Owner of each `ProxyAdmin`, per contract:
+
+```mermaid
+stateDiagram-v2
+  [*] --> AdminSafe: GOV1, proxy created
+  AdminSafe --> AdminSafe: upgradeAndCall
+  AdminSafe --> Timelock: GOV8, transferOwnership(timelock)
+  Timelock --> Timelock: upgradeAndCall, 7 days
+  Timelock --> Renounced: GOV9, renounceOwnership(), 7 days
+  Renounced --> [*]
+```
+
+`.simplex` label in `Root`:
+
+```mermaid
+stateDiagram-v2
+  [*] --> Unlocked: GOV2, registry root moved into Root
+  Unlocked --> Locked: GOV9, root.lock(labelhash("simplex"))
+  Locked --> [*]
+```
+
+Conditions for each step, all of which must hold before it is scheduled:
 
 - GOV8 is complete. Freezing before then would make the code permanent and the weakest
   custody permanent with it.
-- No open bug or unexplained behaviour against the controller implementation.
-- The full sponsored journey has run in production since GOV7 with no defect that needed an
-  upgrade to fix.
-- No redeploy is under consideration, since `Root.lock` ends that option.
+- No open bug or unexplained behaviour against that contract's implementation.
+- The full sponsored journey has run in production since GOV7 with no defect in that contract
+  that needed an upgrade to fix.
+- For `Root.lock`: no redeploy is under consideration, since the lock ends that option.
 
-If any of them fails, wait. There is no date to move.
+If any of them fails, wait. The expected period of GOV9 (section 2) is the plan, not a deadline.
 
-**Scheduling day.** Caller: **admin Safe**, 3 of 5. Schedule two timelock operations:
+**The controller's last upgrade, where wanted.** Seals of the sponsor and of the sales switch
+are added by an upgrade before the controller's freeze (D7 of `docs/plans/upgradeable-stack.md`).
+The seal of the switch reverts while sales are closed, so a pause answering an incident between
+the scheduling and the execution makes the queued seal revert, and it is queued again, instead
+of sealing the payable path shut forever.
 
-1. `root.lock(labelhash("simplex"))`
-2. `controller.freeze()`
+**Freezing one contract.** Caller: **admin Safe**, through the timelock.
 
-**Seven days later.** Before executing, read `controller.publicSalesOpen()`. If it is false,
-the guardian Safe sets it true first, and this is the last moment it can. Also read
-`controller.sponsor()` and confirm that its code is the verified `SimplexSponsor` and its
-`controller()` is this controller: the freeze fixes the sponsor, and `freeze()` reverts only
-while none is set. Read the name policy's ERC-1967 implementation slot and confirm that it
-holds the audited `SimplexNamePolicy`: the policy's upgrades end at the freeze only because
-that implementation checks `controller.frozen()`. Then execute both operations in order. The
-executor role is open, so anyone can submit them.
+1. Read the proxy's ERC-1967 implementation slot and confirm that it holds the audited
+   implementation of that contract.
+2. Schedule the transaction that `scripts/prepare-upgrade.mjs` prints for the freeze of that
+   contract: `renounceOwnership()` on its `ProxyAdmin`, the target read from the proxy's ERC-1967
+   admin slot. The registrar and the controller have a `renounceOwnership()` of their own, with
+   the same selector, so their owner is removed by a transaction sent to the proxy by mistake.
+3. Seven days later, read the implementation slot again, then execute.
 
-The contract enforces this ordering: `freeze()` reverts with `PublicSalesClosed` while sales
-are closed. The race is real. The pause belongs to the guardian and is immediate, the freeze
-belongs to the admin and is delayed, so a pause answering an incident can land between the
-scheduling and the execution. With the guard in place the queued freeze reverts and is queued
-again, instead of sealing the payable path shut forever.
+**Locking `.simplex`.** Caller: **admin Safe**, through the timelock. Schedule
+`root.lock(labelhash("simplex"))`; execute it seven days later.
 
-Verify: `root.locked(labelhash("simplex")) == true`; `controller.frozen() == true`; simulated
-`upgradeTo`, `upgradeToAndCall`, `setPublicSalesOpen` and `setSponsor` all revert; simulated
-`setPriceOracle` still succeeds; the oracle's own `setPrices`, `setUsdOracle` and
-`setPremium` still succeed, because the freeze belongs to the controller and the oracle is a
-separate contract; `owner()` is still the timelock and not `address(0)` on both. A simulated
-`namePolicy.upgradeTo` reverts `Frozen`.
+Verify, for each frozen contract: its `ProxyAdmin`'s `owner()` is `address(0)`; a simulated
+`upgradeAndCall` reverts; the owner calls of that contract, where it has any, still succeed
+from the timelock. For the lock: `root.locked(labelhash("simplex")) == true`.
 
 Then confirm live: a sponsored registration, a relayed record edit, a signed offer and claim,
-`registerReserved`, and `withdraw()` paying the guardian Safe, which is the beneficiary by
-then because GOV9 comes after GOV8.
+`registerReserved`, and `withdraw()` paying the guardian Safe.
