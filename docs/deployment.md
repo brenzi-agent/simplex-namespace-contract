@@ -148,7 +148,7 @@ own output may still name the URL: it is printed when the fork of a dry run fail
 
 | # | Actor | Step | Tool |
 |---|---|---|---|
-| 1 | maintainers | the conditions version of the plan's D13 (simplex-chat/simplex-chat#8272) merged, tagged and mirrored to git.simplex.chat | git |
+| 1 | maintainers | the conditions version of the plan's D13 merged, tagged and mirrored to git.simplex.chat: simplex-chat/simplex-chat#8272, then #8271 (the dispute period), whose merge commit is tagged | git |
 | 2 | operator | `terms.simplex.json` set to its links, both links checked without a key, and the file committed; v1 files renamed on the operator's checkout | git, `scripts/terms-check.mjs`, `mv` |
 | 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, no open name invoice, and no store order in the phase queued, committing, committed or registering, so that every paid order has registered on v1 (The store check) | store metrics |
 | 4 | deploy key | governance check | run 1 |
@@ -328,7 +328,8 @@ checks run:
 **ens-contracts at the tag `simplex-mainnet-v2`** (run 1 and `build-verification.mjs`).
 `HEAD` of `ens-contracts/` must be the commit the parent repository pins
 (`git ls-tree HEAD ens-contracts`), the tag must point at it, and `git status --porcelain`
-there must print nothing:
+there must print nothing. The pin is `ebf76989ec5cab1c7dd49085b4c18faf303657d0` of
+simplex-network/ens-contracts `simplex`, which holds #50 and the dispute period of #51:
 
 ```sh
 git submodule update --init ens-contracts
@@ -362,10 +363,11 @@ stops on a failure:
   sha256 equals the link's
 
 The committed file holds raw GitHub links, which fail this check: step 2 replaces them
-with the links of the tagged conditions version. Recommended, pending the owner's answer
-to the question of simplex-chat/simplex-chat#8272: that pull request's merge commit is
-tagged `general-terms-v1` and `community-terms-v1`, and both links name
-`docs/NAMES-CONDITIONS.md` at that commit:
+with the links of the tagged conditions version. The conditions linked at run 1 describe
+v2 with its dispute period: simplex-chat/simplex-chat#8272 (the registry paragraph) is
+merged first, then #8271 (the dispute period), with master merged into it; #8271's merge
+commit is tagged `general-terms-v1` and `community-terms-v1` and mirrored, and both links
+name `docs/NAMES-CONDITIONS.md` at that commit (the plan's D13):
 
 ```json
 {

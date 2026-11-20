@@ -288,7 +288,9 @@ queued, committing, committed or registering, so that every paid order has regis
 before v1 is retired
 (D22 of `docs/plans/upgradeable-stack.md`; `docs/deployment.md`, "The store check").
 
-Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`. The calls and their order
+Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`, deploying
+simplex-network/ens-contracts `ebf76989`, tagged `simplex-mainnet-v2`, which holds the
+dispute period of #51 (D9 of `docs/plans/upgradeable-stack.md`). The calls and their order
 are steps 1 to 16 of `docs/deployment.md`, "Deployment and wiring";
 `docs/plans/upgradeable-stack.md`, section 7, lists the constructor arguments and
 initializer calls. Among them, for powers and reserved names:
