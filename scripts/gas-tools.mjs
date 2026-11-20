@@ -44,6 +44,7 @@ import { appendFileSync, existsSync, readFileSync } from 'fs'
 import { spawn } from 'child_process'
 import { createServer } from 'net'
 import readline from 'readline'
+import { childEnv } from './stack.mjs'
 
 const POLL_BASE_INTERVAL_MS = 12_000     // ~one mainnet block
 const POLL_RECEIPT_INTERVAL_MS = 10_000  // poll inclusion every 10s
@@ -187,7 +188,7 @@ export async function spawnHardhatFork({ mainnetRpcUrl, port = 8546, ensContract
       cwd: ensContractsDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { PATH: process.env.PATH, HOME: process.env.HOME, MAINNET_RPC_URL: mainnetRpcUrl },
+      env: childEnv({ MAINNET_RPC_URL: mainnetRpcUrl }),
     },
   )
   proc.on('error', (e) => console.error('hardhat node spawn error:', e))

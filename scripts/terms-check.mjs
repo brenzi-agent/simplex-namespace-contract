@@ -2,6 +2,7 @@
 import { execFileSync } from 'child_process'
 import { createHash } from 'crypto'
 import { pathToFileURL } from 'url'
+import { childEnv } from './stack.mjs'
 
 const REPO = 'simplex-chat/simplex-chat'
 const HOSTS = [`https://git.simplex.chat/${REPO}.git`, `https://github.com/${REPO}.git`]
@@ -23,7 +24,7 @@ export function parseTermsLink(link) {
 function taggedCommits(host, role) {
   const prefix = `refs/tags/${TAG_PREFIX[role]}`
   const peeled = new Map(
-    execFileSync('git', ['ls-remote', host, 'refs/tags/*terms-v*'], { encoding: 'utf8' })
+    execFileSync('git', ['ls-remote', host, 'refs/tags/*terms-v*'], { encoding: 'utf8', env: childEnv() })
       .split('\n')
       .filter(Boolean)
       .map((line) => line.split('\t'))

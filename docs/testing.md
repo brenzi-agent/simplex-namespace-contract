@@ -2,33 +2,33 @@
 
 Three layers.
 
-| Layer                  | Where                | Runner                                  | Count today |
-|------------------------|----------------------|-----------------------------------------|------------:|
-| Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        | 119 SNRC + upstream ENS suite |
-| Frontend unit          | `testing-app/`, `simplex-app/` | `pnpm test`                             | varies (ENS upstream) |
-| End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` | 27 |
-| End-to-end `.simplex`  | parent repo          | `npx playwright test --project=simplex-tld` | 21 |
+| Layer                  | Where                | Runner                                  |
+|------------------------|----------------------|-----------------------------------------|
+| Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        |
+| Frontend unit          | `testing-app/`, `simplex-app/` | `pnpm test`                   |
+| End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` |
+| End-to-end `.simplex`  | parent repo          | `npx playwright test --project=simplex-tld` |
 
 ## Solidity unit tests
 
-The SNRC-specific suites live under `ens-contracts/test/simplex/` — **119 tests
-across 6 files**:
+The SNRC-specific suites live under `ens-contracts/test/simplex/`, one file per contract
+or flow. Among them:
 
-| File                            | Tests | Covers |
-|---------------------------------|------:|--------|
-| `TestSimplexController.test.ts` | 80 | commit-reveal (happy + too-early/too-late), NFT gate, reserved-name flows, `setMinCharLength` monotonic guard, `disableNftGate` one-way guard, pricing/oracle swap + freeze, `onlyOwner` access control |
-| `TestRegistrarV3.test.ts`       | 18 | `registerWithLabel`/`labelOf`, ERC721Enumerable, `tokenURI`/renderer hook, `maxLabelLength`, auto-reclaim on transfer, `onReregister` |
-| `TestSubnameRegistrar.test.ts`  | 12 | `createSubname`/`deleteSubname`/`purge`, `ownerOf` walk-up, generation GC, `getChildren` index |
-| `TestMetadataRenderer.test.ts`  | 7  | on-chain JSON+SVG output, escaping |
-| `FuzzSubnameRegistrar.test.ts`  | 1  | fuzz: subname create/delete/purge invariants |
-| `FuzzMetadataRenderer.test.ts`  | 1  | fuzz: label escaping never breaks JSON/SVG |
+| File                            | Covers |
+|---------------------------------|--------|
+| `TestSimplexController.test.ts` | commit-reveal (happy + too-early/too-late), NFT gate, reserved-name flows, `setMinCharLength` monotonic guard, `disableNftGate` one-way guard, pricing/oracle swap, `onlyOwner` access control |
+| `TestRegistrarV3.test.ts`       | `registerWithLabel`/`labelOf`, ERC721Enumerable, `tokenURI`/renderer hook, `maxLabelLength`, auto-reclaim on transfer, `onReregister` |
+| `TestSubnameRegistrar.test.ts`  | `createSubname`/`deleteSubname`/`purge`, `ownerOf` walk-up, generation GC, `getChildren` index |
+| `TestMetadataRenderer.test.ts`  | on-chain JSON+SVG output, escaping |
+| `FuzzSubnameRegistrar.test.ts`  | fuzz: subname create/delete/purge invariants |
+| `FuzzMetadataRenderer.test.ts`  | fuzz: label escaping never breaks JSON/SVG |
 
 Run:
 
 ```bash
 cd ens-contracts
 npx vitest run                    # SNRC + the full upstream ENS suite
-npx vitest run test/simplex       # just our additions (119)
+npx vitest run test/simplex       # just our additions
 ```
 
 What's **not** covered in-contract today:
@@ -53,13 +53,13 @@ instead; the offer and claim flow has unit tests of its own (`snrcClaimChecks`,
 
 ## End-to-end (Playwright)
 
-**27 tests** in `test/e2e/simplex-flow.spec.ts` in the parent repo. They share one
-Hardhat instance and one Next.js dev server (`./scripts/run-local.sh`).
+The tests of `test/e2e/simplex-flow.spec.ts` in the parent repo share one Hardhat
+instance and one Next.js dev server (`./scripts/run-local.sh`).
 
 Each test is written to run individually against a fresh chain. A few mutate
 controller and policy state (admin lowering `minCharLength`, `disableNftGate`,
 `addReservedNames`/`removeReservedNames`) and are placed late in the file so
-earlier tests see a clean state. Seven tests **adapt to the current chain state**:
+earlier tests see a clean state. Some tests **adapt to the current chain state**:
 they read `minCharLength` / `nftGateEnabled` first and either parametrise or
 `test.skip` (e.g. skip an NFT-gate assertion once a previous test has disabled the
 gate) rather than asserting the initial deploy values verbatim.
@@ -108,7 +108,7 @@ npx playwright test --grep "search shows name as available"
 
 ### `.simplex`
 
-**21 tests** in `test/e2e/simplex-tld-flow.spec.ts`, against a stack started with
+The tests of `test/e2e/simplex-tld-flow.spec.ts` run against a stack started with
 `SIMPLEX_TLD=simplex ./scripts/run-local.sh`: the `.simplex` search suffix and
 minimum, the USD tier on the register page, paid registration (the controller
 keeps exactly the quoted price), records at registration, no NFT gate, reserved
@@ -170,7 +170,7 @@ pnpm dev
 - **Compile flow** — the frontend reads contract ABIs from
   `ens-contracts/artifacts/` at deploy time. If you change a contract, run
   `npx hardhat compile` before `./scripts/run-local.sh`.
-- **State pollution** — the seven adaptive tests read `minCharLength` /
+- **State pollution** — the adaptive tests read `minCharLength` /
   `nftGateEnabled` and either parametrise or skip. The non-adaptive
   registrar-state tests can still leave names registered on the chain; if you
   re-run a test that uses a fixed label, restart the stack to get a clean

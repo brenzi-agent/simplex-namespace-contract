@@ -20,9 +20,9 @@ registrar hot wallet.
 
 | Milestone | Change |
 |---|---|
-| GOV1 | The deploy key deploys `.simplex` v2, eight contracts behind proxies whose upgrade authority is the admin Safe's from creation, and reserves the 797 names of `reserved-names.simplex.csv`. Public sales closed. |
+| GOV1 | The deploy key deploys `.simplex` v2, eight contracts behind proxies whose upgrade authority is the admin Safe's from creation, and reserves 798 names: the 797 of `reserved-names.simplex.csv` and `simplex-chat`. Public sales closed. |
 | GOV2 | Handover, in the same run: `setBeneficiary` first, then the single-step transfers to the admin Safe, the registry root moved into `Root`, and the two-step transfers proposed; v1 retired. The deploy key stops being used. |
-| GOV3 | The guardian Safe gives the registrar hot wallet its spending allowance, and the admin Safe accepts the two-step transfers, in either order. |
+| GOV3 | The admin Safe accepts the two-step transfers. Once the owner provides the registrar hot wallet, the guardian Safe gives it its spending allowance, in a step of its own (A3). |
 | GOV4 | Contracts, registrar, app and codes all live. |
 | GOV5 | The handover is verified and the deploy key is destroyed. |
 | GOV6 | The investor window opens. Hard deadline for the handover, because names now start belonging to third parties. |
@@ -66,9 +66,10 @@ it can give itself any allowance and mint unreserved names with it, an accepted 
 threshold and in the calls each may make; from GOV7 to GOV8 only in the calls; from GOV8 the
 admin's calls also wait seven days. The timelock is deferred to GOV8, not abandoned.
 
-`governance.mainnet.json` records both Safes, their owners and thresholds, and the registrar
-hot wallet. `scripts/governance-check.mjs` checks each Safe against its entry before the
-deployment and before any single-step transfer to it.
+`governance.mainnet.json` records both Safes, their owners and thresholds, and, from the
+registrar step (A3), the registrar hot wallet. `scripts/governance-check.mjs` checks each
+Safe against its entry before the deployment and before any single-step transfer to it,
+and the registrar hot wallet before its allowance is prepared.
 
 ## 4. Powers, before and after the freeze
 
@@ -281,36 +282,28 @@ Every on-chain call, in order, with who signs it.
 
 ### A1. Deployment (GOV1)
 
-Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`.
+Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`. The calls and their order
+are steps 1 to 16 of `docs/deployment.md`, "Deployment and wiring";
+`docs/plans/upgradeable-stack.md`, section 7, lists the constructor arguments and
+initializer calls. Among them, for powers and reserved names:
 
-1. Deploy each of `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexController`,
-   `SimplexNamePolicy`, `SubnameRegistrar`, `SimplexResolver`, `SimplexSponsor` and
-   `UniversalResolver` as an implementation behind an OpenZeppelin
-   `TransparentUpgradeableProxy` whose `initialOwner` is the admin Safe; each proxy creates
-   its own `ProxyAdmin`, owned by the admin Safe. Deploy `SimplexPriceOracle`,
-   `DummyGatewayProvider` and `MetadataRenderer` as immutable contracts.
-   `docs/plans/upgradeable-stack.md`, section 7, lists the constructor arguments and
-   initializer calls.
-2. `ens.setSubnodeOwner(0x0, labelhash("simplex"), baseRegistrar)`, from the deploy key, which
-   holds the registry root until the handover. `Root` comes with the handover (A2).
-3. `baseRegistrar.addController(controllerProxy)`; `baseRegistrar.addController(namePolicy)`;
-   `controller.setNamePolicy(namePolicy)`; `baseRegistrar.setMetadataRenderer(renderer)`;
-   `baseRegistrar.setMaxLabelLength(63)`; `baseRegistrar.setSubnameHook(subnameRegistrar)`.
-4. `subnameRegistrar.setResolver(simplexResolver)`.
-5. `controller.setDefaultResolver(simplexResolver)`; `controller.setSponsor(sponsor)`;
-   `controller.setBeneficiary(guardianSafe)`.
-   `namePolicy.setGeneralTerms(link)` and `namePolicy.setCommunityTerms(link)`, the links of `terms.<tld>.json`;
-   `namePolicy.addCommunityNames([...])` in batches of 100;
-   `baseRegistrar.setNamePolicy(namePolicy)`.
-6. `namePolicy.addReservedNames([...])` for the 797 names of `reserved-names.simplex.csv`, in
-   batches of 200. Measured cost is 25.8k gas per name: 5.2M per batch, about 21M in total,
-   single-digit dollars at the base fee we expect. Run it at a low base fee;
-   `deploy-mainnet.mjs` supports that through `MAX_BASE_FEE_GWEI`.
-7. Leave `publicSalesOpen == false`.
+- The eight proxies are created with `initialOwner` = admin Safe, so each `ProxyAdmin`
+  belongs to the admin Safe from its creation.
+- `namePolicy.addReservedNames([...])` is sent right after
+  `controller.setNamePolicy(namePolicy)`, before the subname registrar, the resolver and
+  the sponsor are deployed. 798 names are reserved, the 797 of `reserved-names.simplex.csv`
+  and `simplex-chat`, per category in batches of at most 200. Measured cost is 25.8k gas
+  per name: 5.2M per batch, about 21M in total, single-digit dollars at the base fee we
+  expect. Run it at a low base fee; `deploy-mainnet.mjs` supports that through
+  `MAX_BASE_FEE_GWEI`.
+- `controller.setBeneficiary(guardianSafe)` is the last call of the wiring.
+- `publicSalesOpen` stays `false`.
+- The deploy key holds the registry root until the handover; `Root` comes with the
+  handover (A2).
 
-A transaction may use at most 16,777,216 gas (EIP-7825), and the gas estimate for the loop
-in step 6 passes that above about 210 names, so the batches stay at 200. The name list is
-final well before GOV1: the deployer commits it as `reserved-names.simplex.csv`, and
+A transaction may use at most 16,777,216 gas (EIP-7825), and the gas estimate of
+`addReservedNames` passes that above about 210 names, so the batches stay at 200. The name
+list is final well before GOV1: the deployer commits it as `reserved-names.simplex.csv`, and
 `deploy-mainnet.mjs` refuses to deploy `.simplex` without it.
 
 No reverse registrar is deployed. That is possible because `PublicResolver` and
@@ -353,7 +346,7 @@ nobody having to accept them, so an address nobody can sign for is unrecoverable
 Order matters. `setBeneficiary` is owner-callable only while the beneficiary is unset. After
 that only the beneficiary can move it, so the guardian is chosen here or not at all. Steps 1
 to 12 run in run 1 of `deploy-mainnet.mjs`, after its read-back passes, except step 1, which
-is part of the wiring (A1 step 5). The governance addresses are read from
+is the last call of the wiring (A1). The governance addresses are read from
 `governance.mainnet.json` only.
 
 | # | Caller | Call |
@@ -370,14 +363,13 @@ is part of the wiring (A1 step 5). The governance addresses are read from
 | 10 | deploy key | `controller.transferOwnership(adminSafe)` |
 | 11 | deploy key | `priceOracle.transferOwnership(adminSafe)` |
 | 12 | deploy key | v1 retired: `removeController` of the v1 controller and the v1 name policy on the v1 registrar; `transferOwnership(0x0)` on the v1 controller and the v1 oracle |
-| 13 | admin Safe | `controller.acceptOwnership()` and `priceOracle.acceptOwnership()`, one batch, required by `Ownable2Step`; at GOV3, in either order with A3 |
+| 13 | admin Safe | `controller.acceptOwnership()` and `priceOracle.acceptOwnership()`, one batch, required by `Ownable2Step`, from the Transaction Builder file run 1 writes; at GOV3 |
 
 ```mermaid
 sequenceDiagram
   participant D as deploy key
   participant R as Root
   participant A as admin Safe
-  participant G as guardian Safe
   participant O as operator
   D->>D: run 1, wiring: setBeneficiary(guardian Safe)
   D->>D: run 1, read-back
@@ -387,10 +379,12 @@ sequenceDiagram
   D->>R: registry root
   D->>A: controller and oracle proposed (two-step)
   D->>D: v1 retired
-  G->>G: GOV3: setRegistrarAllowance
-  A->>A: GOV3: acceptOwnership x2
+  A->>A: GOV3: acceptOwnership x2, the batch of run 1
   O->>O: run 2: read-back, no key
 ```
+
+The registrar allowance is not part of the handover: runs 1 and 2 neither set nor read it,
+and it is set in a step of its own (A3).
 
 The `ProxyAdmin`s need no step: the admin Safe owns them from their creation. Steps 2 to 5
 and 7 to 9 take effect immediately, nobody has to accept, and the transaction gives no sign
@@ -410,12 +404,28 @@ destroyed.
 Until step 13 the deploy key can still redirect the controller and the oracle elsewhere, so it
 is destroyed only once all thirteen calls have landed and those checks pass. That is GOV5.
 
-### A3. Guardian's first use (GOV3)
+### A3. Registrar step: the guardian's first use (GOV3)
 
-Caller: **guardian Safe**.
+The owner provides the registrar hot wallet after run 1; only then is its `registrarWallet`
+entry added to `governance.mainnet.json`.
 
-1. `sponsor.setRegistrarAllowance(registrarHotWallet, N)`, with `N` in **attoUSD**, sized
-   to expected sales plus headroom.
+| # | Caller | Call |
+|---|---|---|
+| 1 | operator | the `registrarWallet` entry, kind `EOA`, with its `address` and `N`, committed in `governance.mainnet.json` |
+| 2 | operator | `RUN=registrar` of `deploy-mainnet.mjs`, without a key: the entry checked (no code at the address); the Transaction Builder file of the guardian Safe written |
+| 3 | guardian Safe | `sponsor.setRegistrarAllowance(registrarHotWallet, N)`, from that file, with `N` in **attoUSD**, sized to expected sales plus headroom |
+| 4 | operator | `RUN=registrar-read-back`: `sponsor.registrarAllowance(registrarHotWallet)` is `N` |
+
+```mermaid
+sequenceDiagram
+  participant W as owner
+  participant O as operator
+  participant G as guardian Safe
+  W->>O: registrar hot wallet and N
+  O->>O: entry committed; RUN=registrar
+  G->>G: setRegistrarAllowance(registrarHotWallet, N)
+  O->>O: RUN=registrar-read-back
+```
 
 Not before the post-deploy read-back has reported every reserved name: a funded registrar
 can register any label that is not reserved, whatever the sales switch says.

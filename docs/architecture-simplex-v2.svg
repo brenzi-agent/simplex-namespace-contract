@@ -10,8 +10,8 @@
 <polygon points="1000,290 987.9447618387985,290.8192880303729 991.4559962546825,281.4559962546825" fill="#374151"/>
 <polyline points="205,470 205,520" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="205,520 200,509 210,509" fill="#374151"/>
-<polyline points="470,470 560,760" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="560,760 551.9642879523468,750.9762905694387 561.5149293204591,748.012298420714" fill="#374151"/>
+<polyline points="40,380 20,380 20,1225 450,1225" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="450,1225 439,1230 439,1220" fill="#374151"/>
 <polyline points="500,420 1010,760" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1010,760 998.0739457811576,758.0585493132116 1003.6209477434099,749.7380463698332" fill="#374151"/>
 <polyline points="1120,430 1120,760" fill="none" stroke="#374151" stroke-width="1.6"/>
@@ -28,8 +28,10 @@
 <polygon points="960,860 949,865 949,855" fill="#374151"/>
 <polyline points="640,760 640,742 1700,742 1700,760" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1700,760 1695,749 1705,749" fill="#374151"/>
-<polyline points="560,990 560,1110" fill="none" stroke="#374151" stroke-width="1.6"/>
-<polygon points="560,1110 555,1099 565,1099" fill="#374151"/>
+<polyline points="640,990 640,1110" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="640,1110 635,1099 645,1099" fill="#374151"/>
+<polyline points="500,1110 500,990" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="500,990 505,1001 495,1001" fill="#374151"/>
 <polyline points="790,990 1010,1110" fill="none" stroke="#374151" stroke-width="1.6"/>
 <polygon points="1010,1110 997.9488880445389,1109.1221044270856 1002.7374093513446,1100.3431486979416" fill="#374151"/>
 <polyline points="1330,860 1470,860" fill="none" stroke="#374151" stroke-width="1.6"/>
@@ -218,8 +220,9 @@
 <text x="880" y="249.5" font-size="12" text-anchor="middle" fill="#374151">SMP: name lookup</text>
 <rect x="139.51999999999998" y="484.5" width="130.96" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="205" y="499.5" font-size="12" text-anchor="middle" fill="#374151">registerWithCredit</text>
-<rect x="476.34" y="561" width="50.32000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="501.5" y="576" font-size="12" text-anchor="middle" fill="#374151">commit</text>
+<rect x="122.50999999999996" y="1207" width="225.04000000000002" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="235.02999999999997" y="1222" font-size="12" text-anchor="middle" fill="#374151">commitUnderGeneralTermsWithSig,</text>
+<text x="235.02999999999997" y="1237" font-size="12" text-anchor="middle" fill="#374151">commitUnderCommunityTermsWithSig</text>
 <rect x="682.8" y="564.5" width="144.4" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="755" y="579.5" font-size="12" text-anchor="middle" fill="#374151">setTextWithSig,</text>
 <text x="755" y="594.5" font-size="12" text-anchor="middle" fill="#374151">clearRecordsWithSig,</text>
@@ -243,9 +246,11 @@
 <text x="890" y="879.5" font-size="12" text-anchor="middle" fill="#374151">clearRecords</text>
 <rect x="1375.8799999999999" y="731.5" width="70.48" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="1411.12" y="746.5" font-size="12" text-anchor="middle" fill="#374151">setRecord</text>
-<rect x="487.8" y="1032" width="144.4" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
-<text x="560" y="1047" font-size="12" text-anchor="middle" fill="#374151">consumeRegistration,</text>
-<text x="560" y="1062" font-size="12" text-anchor="middle" fill="#374151">isReserved</text>
+<rect x="567.8" y="1032" width="144.4" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="640" y="1047" font-size="12" text-anchor="middle" fill="#374151">consumeRegistration,</text>
+<text x="640" y="1062" font-size="12" text-anchor="middle" fill="#374151">isReserved</text>
+<rect x="474.84" y="1039.5" width="50.32000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="500" y="1054.5" font-size="12" text-anchor="middle" fill="#374151">commit</text>
 <rect x="831.16" y="1032" width="137.68" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
 <text x="900" y="1047" font-size="12" text-anchor="middle" fill="#374151">registerWithLabel,</text>
 <text x="900" y="1062" font-size="12" text-anchor="middle" fill="#374151">renew, transferFrom</text>

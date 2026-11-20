@@ -55,6 +55,8 @@ export function requireEnv(name, hint = '') {
 
 export const sortedAddresses = (list) => list.map((address) => getAddress(address)).sort()
 
+export const childEnv = (variables = {}) => ({ PATH: process.env.PATH, HOME: process.env.HOME, ...variables })
+
 export const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
 export const accepted = (fields) => ({ refused: false, ...fields })
 
@@ -224,7 +226,7 @@ export function assertBuildFresh() {
       cwd: ENS_CONTRACTS_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       encoding: 'utf8',
-      env: { PATH: process.env.PATH, HOME: process.env.HOME },
+      env: childEnv(),
     })
   } catch (e) {
     console.error('`npx hardhat compile` failed — refusing to deploy.\n')
@@ -235,7 +237,7 @@ export function assertBuildFresh() {
   console.log('  build is current')
 }
 
-const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+export const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: childEnv() }).trim()
 
 export const ensContractsHead = () => git(ENS_CONTRACTS_DIR, 'rev-parse', 'HEAD')
 
