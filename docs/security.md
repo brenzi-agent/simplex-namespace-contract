@@ -181,8 +181,9 @@ SNRC resolves on-chain (text records), so no off-chain gateway is relied upon.
 The dummy provider does not stop the UR from re-emitting `OffchainLookup` when a
 name's resolver reverts with one, so a client that follows CCIP-Read fetches
 whatever URL a name holder's resolver names: the holder learns who looked the name
-up, and can serve that reader different records. The `.simplex` dApp therefore
-refuses every CCIP-Read request: its client's `ccipRead.request` always rejects,
+up, and can serve that reader different records. Every CCIP-Read request is therefore
+refused by the `.simplex` dApp: the promise of its client's `ccipRead.request` is always
+rejected,
 which also covers ensjs's multicall decoder, a path that ignores `ccipRead: false`
 (pre-launch review rounds 2 and 3, R2-2 and R3-1). **Accepted** as long as clients
 do not follow CCIP-Read; revisit if off-chain resolution is ever added.
@@ -281,7 +282,7 @@ above as "the cold owner."
   the reverse bits were set, but both are `address(0)` on mainnet, so such a call
   reverted after the 60 s commit was already spent. The recommended mitigation
   (early-revert) is implemented, and then some: reverse resolution is removed from
-  the deployment altogether. `makeCommitment` rejects any non-zero `reverseRecord`
+  the deployment altogether. Any non-zero `reverseRecord` is rejected by `makeCommitment`
   with `ReverseRecordNotSupported`, so the commit is never spent; the two registrars
   are no longer deployed; and `PublicResolver` no longer inherits `ReverseClaimer`,
   which was the last thing forcing one to exist. A related defect found on the way:
@@ -344,7 +345,7 @@ each frozen on its own when its `ProxyAdmin` is renounced
 | `ProxyAdmin.transferOwnership(address)` | the owner of that `ProxyAdmin` | Single-step: it takes effect without the recipient's acceptance, so it is sent only after `scripts/governance-check.mjs` passes for the recipient. |
 | `SimplexNamePolicy.addCommunityNames(string[])` | owner **or** beneficiary | Restrictive: a listed name can then be registered or received only by someone who accepts the current community terms, except through `registerReserved` and other registrar controllers (admin), under an off-chain agreement. Skips any name that is registered or in its grace period, since its holder never accepted them. Sent privately, like reservations: a pending listing reveals the name, which a squatter can then register under the general terms. |
 | `removeCommunityNames`, `setGeneralTerms(string)`, `setCommunityTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration or claim must be made again; the other kind's acceptances stay valid, and existing holders are not asked to accept. |
-| `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive every freeze. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
+| `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive every freeze. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. Zero is refused by the controller's setter, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
 | `SimplexNamePolicy` upgrade (`ProxyAdmin.upgradeAndCall`) | the owner of its `ProxyAdmin`, until it is renounced | Keeps the lists, acceptances and nonces. That the new implementation is built for the same controller and registrar is checked off-chain, by `scripts/prepare-upgrade.mjs`. The policy is a registrar controller, so until its freeze an upgrade can mint any available name; the admin can already add a controller. |
 | `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, and their `WithSig` variants | the registrant or recipient, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
@@ -422,8 +423,8 @@ while `alice.simplex` belongs to the buyer.
 Registry authority over a subnode belongs to the parent's owner by construction,
 and the registrar's soulbinding works only because the registrar happens to own
 the nodes it created; a 2LD owner can pull even a *tracked* subname back out the
-same way. Since recipient consent the registry refuses to make anyone but the
-caller the owner of such a node, so a shadow subnode can no longer name a third
+same way. Since recipient consent, an owner of such a node other than the caller is
+refused by the registry, so a shadow subnode can no longer name a third
 party — but its holder can still keep one for themselves, and that cannot be
 prevented on-chain.
 
@@ -566,7 +567,7 @@ Accepted:
   signature can be submitted. The offer itself stands until a transfer, a burn or
   a withdrawal, including through the grace period, so a renewal by anyone
   revives it. Plain `approve` still accepts a lapsed name, and a renewal makes
-  that offer claimable too. `approveWithSig` refuses a lapsed name, so a holder
+  that offer claimable too. A lapsed name is refused by `approveWithSig`, so a holder
   without ETH withdraws an offer during the grace period only after a renewal.
 - **Records can still name someone else.** An `addr` record, and the registry's
   resolver pointer, can point at any address, and a text record can contain
@@ -639,13 +640,13 @@ lockstep rule below.
 
 The deploy runner is as much a part of the security boundary as the contracts,
 because a mis-run is unrecoverable in the same way a bad constructor argument is.
-What it now refuses to do:
+What it is now prevented from doing:
 
 - **Run against the wrong chain.** `chainId` is asserted to be 1 before any
   spend, so an `MAINNET_RPC_URL` pointing at a testnet stops the run instead of
   deploying a full stack to the wrong place and journalling it as a success.
 - **Accept a mistyped address.** Every address input goes through viem's
-  `getAddress`, which re-checksums rather than rejects a wrong EIP-55 checksum, so
+  `getAddress`, by which a wrong EIP-55 checksum is re-checksummed rather than rejected, so
   a transposed character is not caught there. The governance addresses are read
   from `governance.mainnet.json` only, and `scripts/governance-check.mjs` checks
   each Safe against its entry before the first transaction of run 1: the SafeProxy
@@ -757,8 +758,8 @@ A third pass over those fixes found two more, both fixed here:
   registrant's gas on a hostile resolver.
 - **The deploy runner treated inclusion as success.** A transaction that reverted
   at inclusion still produced a receipt, and the step was journalled as done and
-  skipped on every later resume. `recordSuccess` now refuses a non-success
-  receipt and stops the run.
+  skipped on every later resume. A non-success receipt is now refused by
+  `recordSuccess`, and the run stops.
 
 Accepted, and new to this ledger:
 

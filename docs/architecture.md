@@ -116,7 +116,7 @@ User → SimplexNamePolicy.commitUnderGeneralTerms(hash, termsHash)
        └─ refund excess ETH                            ← unchanged
 
    (the reverse-record branch is gone — names-v2 removed reverse resolution, and
-    makeCommitment now rejects any non-zero reverseRecord up front)
+    any non-zero reverseRecord is now rejected by makeCommitment up front)
 ```
 
 New vs ENS's `ETHRegistrarController.register`: the commitment sent through the name
@@ -177,7 +177,7 @@ There is no NameWrapper. Instead:
 
 On `.simplex`, eight contracts are upgradeable: `ENSRegistry`, `BaseRegistrar`
 (v3), the resolver, `SubnameRegistrar`, `SimplexController`, `SimplexNamePolicy`,
-`SimplexSponsor` and `UniversalResolver`. Each sits behind an OpenZeppelin 5.1.0
+`SimplexSponsor` and `UniversalResolver`. Each is deployed behind an OpenZeppelin 5.1.0
 `TransparentUpgradeableProxy` with a `ProxyAdmin` of its own, owned by the admin
 Safe from its creation. Through `ProxyAdmin.upgradeAndCall` the code is
 replaced, and the address and the state are kept. A contract is frozen on its own, at a
@@ -201,8 +201,8 @@ configurable by call rather than fixed at construction. It holds a **base price
 per year** in US cents plus a list of **exceptions** `(labelLength,
 priceCentsPerYear)`: an exception applies to labels of exactly that length, and
 every other length pays the base price. The setter replaces the base and every
-exception together, and rejects a length outside 1 to 64, a zero exception price
-and a duplicate length.
+exception together; a length outside 1 to 64, a zero exception price and a duplicate
+length are rejected.
 
 | Length | Annual price | Source |
 |--------|-------------|--------|
@@ -244,8 +244,8 @@ and handed over separately:
 
 | Function                         | Bounds                                      |
 |----------------------------------|---------------------------------------------|
-| `setPrices(uint256,LabelPrice[])` | atomic; rejects a length outside 1 to 64, a zero exception price, a duplicate length |
-| `setUsdOracle(AggregatorInterface,uint8)` | rejects a zero address, a scale outside 1 to 36 decimals, a feed answering zero or less |
+| `setPrices(uint256,LabelPrice[])` | atomic; rejected: a length outside 1 to 64, a zero exception price, a duplicate length |
+| `setUsdOracle(AggregatorInterface,uint8)` | rejected: a zero address, a scale outside 1 to 36 decimals, a feed answering zero or less |
 
 Both are strictly weaker than `setPriceOracle`, which can install an arbitrary
 oracle, so they add no authority the admin key did not already hold.
