@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
-  BaseError, HttpRequestError, TimeoutError, createPublicClient, createWalletClient, http, parseAbi, parseEther, parseGwei, toHex,
+  BaseError, HttpRequestError, TimeoutError, createPublicClient, createWalletClient, decodeFunctionData, http, parseAbi,
+  parseEther, parseGwei, toHex,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
@@ -9,10 +10,12 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createDryRunRunner, createWaitForBaseRunner, fundOnFork, loadJournal, spawnHardhatFork, DEFAULTS } from './gas-tools.mjs'
 import { assembleVerification } from './build-verification.mjs'
-import { loadInputs, readBackTwo, runOne } from './deploy-mainnet.mjs'
+import {
+  acceptanceBatch, loadInputs, readBackTwo, registrarAllowanceBatch, registrarAllowanceReadBack, runOne,
+} from './deploy-mainnet.mjs'
 import { checkedProxyAdmin, prepareUpgrade } from './prepare-upgrade.mjs'
 import {
-  ENS_CONTRACTS_DIR, IMMUTABLE, PROXY_ADMIN_ABI, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf,
+  ENS_CONTRACTS_DIR, PROXY_ADMIN_ABI, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf,
   proxySlots, requireEnv, storageLayout,
 } from './stack.mjs'
 
@@ -34,7 +37,10 @@ const SECTION_8_AND_V1_RETIREMENT = [
   'write:transferOwnership#6',
 ]
 const STRANGER = '0x0000000000000000000000000000000000001234'
-const SPONSOR_ABI = parseAbi(['function setRegistrarAllowance(address registrar, uint256 allowanceUSD)'])
+const SAFE_CALLS_ABI = parseAbi([
+  'function acceptOwnership()',
+  'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
+])
 const SAFE_ABI = parseAbi(['function changeThreshold(uint256 threshold)'])
 const FORK_TAIL = 6000
 
@@ -75,10 +81,7 @@ const stopAfter = (runner, step) => afterSteps(runner, step, () => {
 async function main() {
   const rpcUrl = requireEnv('MAINNET_RPC_URL')
   assertBuildFresh()
-  const committed = loadInputs()
-  const { placeholder, ...registrarWallet } = committed.governance.registrarWallet
-  console.log(`The rehearsal uses the registrar wallet ${registrarWallet.address} (${placeholder ?? 'as committed'}).`)
-  const inputs = { ...committed, governance: { ...committed.governance, registrarWallet } }
+  const inputs = loadInputs()
   const { governance, v1 } = inputs
   const admin = governance.adminSafe.address
   const account = privateKeyToAccount(generatePrivateKey())
@@ -117,6 +120,13 @@ async function main() {
       })
       const receipt = await client.waitForTransactionReceipt({ hash })
       if (receipt.status !== 'success') throw new Error(`${functionName} from ${from} reverted`)
+    }
+    const execute = async (batch) => {
+      for (const { to, value, data } of batch.transactions) {
+        if (value !== '0') throw new Error(`${batch.meta.name}: a transaction to ${to} carries value ${value}`)
+        const { functionName, args } = decodeFunctionData({ abi: SAFE_CALLS_ABI, data })
+        await sendAs(batch.meta.createdFromSafeAddress, to, SAFE_CALLS_ABI, functionName, args)
+      }
     }
     const v1State = async () => {
       const read = (address, functionName, args = []) => client.readContract({ address, abi: V1_ABI, functionName, args })
@@ -275,14 +285,25 @@ async function main() {
     expect('the journal holds section 8 and the v1 retirement in their order',
       JSON.stringify(handOverSteps) === JSON.stringify(SECTION_8_AND_V1_RETIREMENT), handOverSteps.join(', '))
 
-    console.log(`\n=== The guardian Safe sets the allowance, the admin Safe accepts ===`)
-    await sendAs(governance.guardianSafe.address, addresses.SimplexSponsor, SPONSOR_ABI, 'setRegistrarAllowance',
-      [registrarWallet.address, registrarWallet.allowance])
-    await sendAs(admin, addresses.ETHRegistrarController, artifact(UPGRADEABLE.SimplexController.artifact).abi, 'acceptOwnership')
-    await sendAs(admin, addresses.SimplexPriceOracle, artifact(IMMUTABLE.SimplexPriceOracle.artifact).abi, 'acceptOwnership')
+    console.log(`\n=== The admin Safe executes the batch of run 1 ===`)
+    await execute(acceptanceBatch(admin, addresses))
 
     const runTwo = await readBackTwo(client, addresses, inputs, account.address)
-    expect('run 2 read-back passes', runTwo.length === 0, runTwo.join(', '))
+    expect('run 2 read-back passes without a registrar wallet', runTwo.length === 0, runTwo.join(', '))
+
+    const registrarWallet = { kind: 'EOA', address: privateKeyToAccount(generatePrivateKey()).address, allowance: 10n ** 20n }
+    console.log(`\n=== The registrar step with the registrar wallet ${registrarWallet.address} ===`)
+    const withRegistrar = { ...governance, registrarWallet }
+    const unset = await registrarAllowanceReadBack(client, withRegistrar, addresses)
+    expect('the registrar read-back fails before the guardian Safe sets the allowance', unset.length === 1, unset.join(', '))
+    const allowance = await registrarAllowanceBatch(client, withRegistrar, addresses)
+    expect('the registrar step writes a batch of the guardian Safe to the sponsor proxy',
+      !allowance.refused && allowance.batch.meta.createdFromSafeAddress === governance.guardianSafe.address &&
+        allowance.batch.transactions.every(({ to }) => to === addresses.SimplexSponsor),
+      outcome(allowance, () => JSON.stringify(allowance.batch.transactions)))
+    if (!allowance.refused) await execute(allowance.batch)
+    const set = await registrarAllowanceReadBack(client, withRegistrar, addresses)
+    expect('the registrar read-back passes after the guardian Safe executes the batch', set.length === 0, set.join(', '))
 
     const upgradeKey = privateKeyToAccount(generatePrivateKey())
     await fund(upgradeKey.address)

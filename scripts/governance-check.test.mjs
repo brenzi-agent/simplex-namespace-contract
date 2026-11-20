@@ -1,7 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { keccak256, pad, toHex, zeroAddress } from 'viem'
 import { checkGovernance, entryFailures, loadGovernance } from './governance-check.mjs'
+import { REPO_ROOT } from './stack.mjs'
 
 const SAFE_PROXY_CODE = '0x608060405260005463a619486e60003560e01c14156024578060601b606c5260206060f35b3660008037600080366000845af43d6000803e806040573d6000fd5b3d6000f3fea2646970667358221220e61834ebd2d8cd909d362bf67c47ef58fd665df38e6dd036ce65611101d072e964736f6c63430007060033'
 const SINGLETON = '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
@@ -73,9 +77,35 @@ test('a registrar wallet with code is refused', async () => {
   assert.deepEqual(await entryFailures(clientOf({ code: '0xef0100' }), wallet), ['has code 0xef0100…'])
 })
 
-test('a placeholder registrar wallet is refused', async () => {
-  assert.deepEqual(await entryFailures(clientOf({ code: undefined }), { ...wallet, placeholder: 'not chosen yet' }),
-    ['is a placeholder: not chosen yet'])
+const committed = JSON.parse(readFileSync(join(REPO_ROOT, 'governance.mainnet.json'), 'utf8'))
+const loadWith = (entries) => {
+  const dir = mkdtempSync(join(tmpdir(), 'governance-'))
+  try {
+    const path = join(dir, 'governance.mainnet.json')
+    writeFileSync(path, JSON.stringify(entries))
+    return loadGovernance(path)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+test('the committed governance file loads without a registrarWallet entry', () => {
+  assert.equal(loadGovernance().registrarWallet, undefined)
+})
+
+test('a registrarWallet entry, where present, loads as an EOA with its allowance in attoUSD', () => {
+  assert.deepEqual(loadWith({ ...committed, registrarWallet: { kind: 'EOA', address: SECOND, allowance: '5' } }).registrarWallet,
+    { kind: 'EOA', address: SECOND, allowance: 5n })
+})
+
+test('a registrarWallet entry of another kind is refused', () => {
+  assert.throws(() => loadWith({ ...committed, registrarWallet: committed.guardianSafe }),
+    { message: /: registrarWallet, where present, must be an entry of kind EOA$/ })
+})
+
+test('a governance file without the guardian Safe is refused', () => {
+  const { guardianSafe, ...withoutGuardian } = committed
+  assert.throws(() => loadWith(withoutGuardian), { message: /: guardianSafe must be an entry of kind Safe$/ })
 })
 
 test('the governance check fails when an entry before the last one fails', async () => {

@@ -35,7 +35,8 @@ const TIMELOCK_ROLES = {
   cancellers: keccak256(toHex('CANCELLER_ROLE')),
 }
 const ROLE_GRANTED = parseAbiItem('event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)')
-const REQUIRED = { adminSafe: 'Safe', guardianSafe: 'Safe', registrarWallet: 'EOA' }
+const REQUIRED = { adminSafe: 'Safe', guardianSafe: 'Safe' }
+const OPTIONAL = { registrarWallet: 'EOA' }
 
 function checksummed(where, value) {
   let address
@@ -151,14 +152,11 @@ const KINDS = {
     failures: (client, entry, code, deployKey) => (code ? timelockFailures(client, entry, code, deployKey) : ['has no code']),
   },
   EOA: {
-    parse: (where, { address, allowance, placeholder }) => {
+    parse: (where, { address, allowance }) => {
       if (!/^\d+$/.test(allowance)) throw new Error(`${where}.allowance: expected attoUSD as a decimal string`)
-      return { address: checksummed(`${where}.address`, address), allowance: BigInt(allowance), placeholder }
+      return { address: checksummed(`${where}.address`, address), allowance: BigInt(allowance) }
     },
-    failures: async (client, { placeholder }, code) => [
-      ...(placeholder ? [`is a placeholder: ${placeholder}`] : []),
-      ...(code ? [`has code ${code.slice(0, 18)}…`] : []),
-    ],
+    failures: async (client, entry, code) => (code ? [`has code ${code.slice(0, 18)}…`] : []),
   },
 }
 
@@ -169,6 +167,8 @@ export function loadGovernance(path = GOVERNANCE_PATH) {
   }))
   for (const [name, kind] of Object.entries(REQUIRED))
     if (governance[name]?.kind !== kind) throw new Error(`${path}: ${name} must be an entry of kind ${kind}`)
+  for (const [name, kind] of Object.entries(OPTIONAL))
+    if (governance[name] && governance[name].kind !== kind) throw new Error(`${path}: ${name}, where present, must be an entry of kind ${kind}`)
   return governance
 }
 

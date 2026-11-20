@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { logsFailures } from './deploy-mainnet.mjs'
+import { encodeFunctionData, parseAbi } from 'viem'
+import { acceptanceBatch, logsFailures, registrarAllowanceBatch, registrarAllowanceReadBack } from './deploy-mainnet.mjs'
+import { batchChecksum } from './stack.mjs'
 
 const HEAD = 30_000_000n
 const SERVED = 1_000n
@@ -48,4 +50,69 @@ test('the deployBlock of a timelock entry is probed', async () => {
     `MAINNET_RPC_URL serves no eth_getLogs at block 1, from which run 1 reads the RoleGranted logs of timelock: ${REFUSAL}`,
   ])
   assert.deepEqual(probed.at(-1), { address: TIMELOCK, fromBlock: 1n, toBlock: 1n })
+})
+
+const ADMIN_SAFE = '0xf38920389740E46A7f4160DaF1672f3df2754Df4'
+const GUARDIAN_SAFE = '0xE6623AA6b8d335367828C2A8b06A714678d22e2c'
+const WALLET = '0x0000000000000000000000000000000000005678'
+const deployment = {
+  ETHRegistrarController: '0x0000000000000000000000000000000000000001',
+  SimplexPriceOracle: '0x0000000000000000000000000000000000000002',
+  SimplexSponsor: '0x0000000000000000000000000000000000000003',
+}
+const SAFE_CALLS = parseAbi([
+  'function acceptOwnership()',
+  'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
+  'function registrarAllowance(address registrar) view returns (uint256)',
+])
+const governance = { adminSafe: { kind: 'Safe', address: ADMIN_SAFE }, guardianSafe: { kind: 'Safe', address: GUARDIAN_SAFE } }
+const withWallet = { ...governance, registrarWallet: { kind: 'EOA', address: WALLET, allowance: 7n } }
+const sponsorChain = ({ code, allowance = 7n } = {}) => ({
+  getCode: async () => code,
+  readContract: async ({ address, functionName, args }) => {
+    assert.deepEqual([address, functionName, args], [deployment.SimplexSponsor, 'registrarAllowance', [WALLET]])
+    return allowance
+  },
+})
+const checksumValid = ({ meta: { checksum, ...meta }, ...batch }) => checksum === batchChecksum({ ...batch, meta })
+
+test("run 1's batch has the admin Safe accept the controller and the oracle", () => {
+  const batch = acceptanceBatch(ADMIN_SAFE, deployment)
+  const data = encodeFunctionData({ abi: SAFE_CALLS, functionName: 'acceptOwnership' })
+  assert.equal(batch.meta.createdFromSafeAddress, ADMIN_SAFE)
+  assert.deepEqual(batch.transactions, [
+    { to: deployment.ETHRegistrarController, value: '0', data },
+    { to: deployment.SimplexPriceOracle, value: '0', data },
+  ])
+  assert.ok(checksumValid(batch))
+})
+
+test('the registrar step without a registrarWallet entry is refused', async () => {
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain(), governance, deployment),
+    { refused: true, failures: ['governance.mainnet.json has no registrarWallet entry'] })
+  assert.deepEqual(await registrarAllowanceReadBack(sponsorChain(), governance, deployment),
+    ['governance.mainnet.json has no registrarWallet entry'])
+})
+
+test('the registrar step refuses a registrar wallet with code', async () => {
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ code: '0xef0100' }), withWallet, deployment),
+    { refused: true, failures: [`registrarWallet ${WALLET} has code 0xef0100…`] })
+})
+
+test("the registrar step writes the guardian Safe's setRegistrarAllowance to the sponsor proxy", async () => {
+  const prepared = await registrarAllowanceBatch(sponsorChain(), withWallet, deployment)
+  assert.equal(prepared.refused, false)
+  assert.equal(prepared.batch.meta.createdFromSafeAddress, GUARDIAN_SAFE)
+  assert.deepEqual(prepared.batch.transactions, [{
+    to: deployment.SimplexSponsor,
+    value: '0',
+    data: encodeFunctionData({ abi: SAFE_CALLS, functionName: 'setRegistrarAllowance', args: [WALLET, 7n] }),
+  }])
+  assert.ok(checksumValid(prepared.batch))
+})
+
+test('the registrar read-back passes on the allowance of the entry and fails on another', async () => {
+  assert.deepEqual(await registrarAllowanceReadBack(sponsorChain(), withWallet, deployment), [])
+  assert.deepEqual(await registrarAllowanceReadBack(sponsorChain({ allowance: 0n }), withWallet, deployment),
+    [`sponsor registrarAllowance of the registrar wallet ${WALLET}`])
 })

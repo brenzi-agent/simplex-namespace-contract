@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   BaseError, ContractFunctionRevertedError, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256,
-  pad, parseGwei, toBytes, toFunctionSelector, zeroAddress,
+  pad, parseGwei, toFunctionSelector, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -14,7 +14,7 @@ import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, PROXY_ADMIN_ABI, REPO_ROOT, TLD, UPGRADEABLE,
   VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
   immutableNames, immutablesIn, interfaceOf, mainnetClient, parentHead, placeImmutables, proxyAdminOf, proxySlots,
-  refusal, requireEnv, storageLayout, storedValue,
+  refusal, requireEnv, safeBatch, storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -275,28 +275,6 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   })
 }
 
-function checksumInput(json) {
-  if (Array.isArray(json)) return `[${json.map(checksumInput).join(',')}]`
-  if (typeof json === 'object' && json !== null) {
-    const keys = Object.keys(json).sort()
-    return `{${JSON.stringify(keys)}${keys.map((key) => `${checksumInput(json[key])},`).join('')}}`
-  }
-  return JSON.stringify(json === undefined ? null : json)
-}
-
-export const batchChecksum = (batch) => keccak256(toBytes(checksumInput({ ...batch, meta: { ...batch.meta, name: null } })))
-
-export function safeBatch({ safe, to, data, name, description, createdAt = Date.now() }) {
-  const batch = {
-    version: '1.0',
-    chainId: '1',
-    createdAt,
-    meta: { name, description, createdFromSafeAddress: safe, createdFromOwnerAddress: '' },
-    transactions: [{ to, value: '0', data }],
-  }
-  return { ...batch, meta: { ...batch.meta, checksum: batchChecksum(batch) } }
-}
-
 export function intendedNames(text) {
   const names = ['']
   let depth = 0
@@ -404,8 +382,7 @@ async function main() {
   const batchPath = join(REPO_ROOT, `safe-transaction.mainnet.${TLD}.${process.env.ACTION}.${name}.json`)
   writeFileSync(batchPath, JSON.stringify(safeBatch({
     safe: owner,
-    to: proxyAdmin,
-    data,
+    transactions: [{ to: proxyAdmin, data }],
     name: `${process.env.ACTION} ${name}`,
     description: `${functionName}(${args.join(', ')}) on the ProxyAdmin ${proxyAdmin} of the ${name} proxy ${proxy}`,
   }), null, 2))

@@ -2,14 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ContractFunctionRevertedError, encodeFunctionData, keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
 import {
-  artifactFailures, batchChecksum, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, intendedNames,
-  interfaceFailures, layoutFailures, ownImmutables, safeBatch, slotFailures, transferCall, upgradeCallFailures,
-  upgradeData,
+  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, intendedNames,
+  interfaceFailures, layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
 import { assembleVerification } from './build-verification.mjs'
 import {
-  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, VERIFICATION_PATH, immutablesIn, interfaceOf,
-  placeImmutables, proxyAdminOf,
+  ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, UPGRADEABLE, VERIFICATION_PATH, batchChecksum, immutablesIn,
+  interfaceOf, placeImmutables, proxyAdminOf, safeBatch,
 } from './stack.mjs'
 
 const REGISTRY = '0x000000000000000000000000000000000000c0DE'
@@ -470,7 +469,10 @@ test("the batch checksum equals the Safe Transaction Builder's for the builder's
 })
 
 test('a Safe batch sends its one transaction to the ProxyAdmin, with the checksum of the batch without it', () => {
-  const batch = safeBatch({ safe: ADMIN_SAFE, to: PROXY_ADMIN, data: '0x715018a6', name: 'freeze SimplexNamePolicy', description: 'renounceOwnership()', createdAt: 1 })
+  const batch = safeBatch({
+    safe: ADMIN_SAFE, transactions: [{ to: PROXY_ADMIN, data: '0x715018a6' }], name: 'freeze SimplexNamePolicy',
+    description: 'renounceOwnership()', createdAt: 1,
+  })
   const { checksum, ...meta } = batch.meta
   assert.deepEqual(batch.transactions, [{ to: PROXY_ADMIN, value: '0', data: '0x715018a6' }])
   assert.deepEqual([batch.chainId, meta.createdFromSafeAddress], ['1', ADMIN_SAFE])
