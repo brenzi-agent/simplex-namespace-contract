@@ -85,7 +85,11 @@ export function slotFailures(bytecode) {
     .map(([which]) => `its bytecode contains the ERC-1967 ${which} slot`)
 }
 
-const INTERFACE = { functions: ['function', toFunctionSignature], events: ['event', toEventSignature] }
+const INTERFACE = {
+  functions: ['function', toFunctionSignature],
+  events: ['event', toEventSignature],
+  errors: ['error', toFunctionSignature],
+}
 
 export function interfaceChanges(current, abi) {
   const next = interfaceOf(abi)
@@ -113,7 +117,7 @@ export function artifactFailures({ abi, deployedBytecode, immutableReferences },
         ? `it lacks the ${kind} ${signature} of the current implementation`
         : `its ${kind} ${signature} is ${next}, the current implementation's is ${shape}`)),
     ...intended.filter((name) => !nameable.has(name))
-      .map((name) => `INTENDED names ${name}, neither an immutable nor a function or event of the current implementation`),
+      .map((name) => `INTENDED names ${name}, neither an immutable nor a function, event or error of the current implementation`),
   ]
 }
 
@@ -259,7 +263,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const admin = await checkedProxyAdmin(client, addresses, verification, name)
   if (admin.refused) return admin
   const { current } = admin
-  const unrecorded = ['storageLayout', 'immutables', 'functions', 'events'].filter((field) => !current[field])
+  const unrecorded = ['storageLayout', 'immutables', 'functions', 'events', 'errors'].filter((field) => !current[field])
   if (unrecorded.length) return refusal([`the entry of ${admin.implementation} records no ${unrecorded.join(' and no ')}`])
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)

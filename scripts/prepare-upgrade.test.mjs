@@ -52,6 +52,7 @@ const CONTROLLER_ABI = parseAbi([
   'function sponsor() view returns (address)',
   'function setSponsor(address)',
   'event SponsorChanged(address sponsor)',
+  'error NotSponsor(address caller)',
 ])
 const compiledWith = (abi) => ({ abi, deployedBytecode: '0x6000', immutableReferences: {} })
 const currentController = { storageLayout: deployed, immutables: {}, ...interfaceOf(CONTROLLER_ABI) }
@@ -61,7 +62,7 @@ test('an identical rebuild is accepted', () => {
   assert.deepEqual(artifactFailures(compiledWith(CONTROLLER_ABI), new Map(), deployed, currentController, []), [])
 })
 
-for (const [kind, signature] of [['function', 'setSponsor(address)'], ['event', 'SponsorChanged(address)']]) {
+for (const [kind, signature] of [['function', 'setSponsor(address)'], ['event', 'SponsorChanged(address)'], ['error', 'NotSponsor(address)']]) {
   test(`a candidate without the ${kind} ${signature} of the current implementation is refused`, () => {
     assert.deepEqual(artifactFailures(compiledWith(without(signature)), new Map(), deployed, currentController, []), [
       `it lacks the ${kind} ${signature} of the current implementation`,
@@ -113,7 +114,7 @@ test('a fragment of a signature named in INTENDED is refused', () => {
   assert.deepEqual(artifactFailures(unpriced, new Map(), deployed, currentPriced, intendedNames('rentPrice(string')), [
     'it lacks the function rentPrice(string,uint256) of the current implementation',
     'it lacks the event NameRenewed(string,bytes32,uint256,uint256) of the current implementation',
-    'INTENDED names rentPrice(string, neither an immutable nor a function or event of the current implementation',
+    'INTENDED names rentPrice(string, neither an immutable nor a function, event or error of the current implementation',
   ])
 })
 
@@ -252,7 +253,7 @@ test('a different trustedETHController named as an intended change is accepted, 
 })
 
 const withoutController = { ...resolver, immutableReferences: { 11: resolver.immutableReferences[11], 12: resolver.immutableReferences[12], 14: resolver.immutableReferences[14] } }
-const currentResolver = { storageLayout: [], immutables: current, functions: {}, events: {} }
+const currentResolver = { storageLayout: [], immutables: current, functions: {}, events: {}, errors: {} }
 
 test('a resolver candidate without trustedETHController is refused', () => {
   assert.deepEqual(artifactFailures(withoutController, immutableNames, [], currentResolver, []), [
@@ -266,7 +267,7 @@ test('a resolver candidate without trustedETHController, named as an intended ch
 
 test('an intended change of an immutable that neither implementation has is refused', () => {
   assert.deepEqual(artifactFailures(resolver, immutableNames, [], currentResolver, ['controller']), [
-    'INTENDED names controller, neither an immutable nor a function or event of the current implementation',
+    'INTENDED names controller, neither an immutable nor a function, event or error of the current implementation',
   ])
 })
 
