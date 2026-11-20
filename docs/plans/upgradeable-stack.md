@@ -40,13 +40,18 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
 - D7. `controller.freeze()` and its `frozen` flag are removed. A seal of the sponsor or of the public sales switch, where wanted, is added by the controller's last upgrade before its `ProxyAdmin` is renounced.
 - D8. Constructors of `ENSRegistry` and `BaseRegistrarImplementation`: unchanged, plus `_disableInitializers()`, except that the registrar passes empty strings to `ERC721`, as upstream does, and its name and symbol are returned by `name()` and `symbol()`. A proxy is initialized by `initialize`.
 - D9. Deploy key of v2: the v1 deploy key `0x38D19404644fe24EE7d638229a732CbE8275E333`. The ens-contracts commit of run 1 is tagged `simplex-mainnet-v2` before run 1.
-- D10. Governance addresses and the names service's registrar wallet are committed in `governance.mainnet.json`, the only source of these addresses for `deploy-mainnet.mjs`. `scripts/governance-check.mjs` checks each governance address against its entry (section 7) before the first transaction of run 1, and before any later single-step transfer to it.
+- D10. Governance addresses are committed in `governance.mainnet.json`, the only source of these addresses for `deploy-mainnet.mjs`; the names service's registrar wallet is added to it for the registrar step (D21). `scripts/governance-check.mjs` checks a governance address against its entry (section 7); each check validates the address and its configuration at the moment of checking. The checks run:
+  - in run 1, before its first transaction: every entry except the registrar wallet
+  - in run 1, before `setBeneficiary`: the guardian Safe
+  - in run 1, before each single-step transfer to the admin Safe: the admin Safe
+  - in the registrar step, before its batch is written: the registrar wallet
+  - in `prepare-upgrade.mjs`, before a transfer of a `ProxyAdmin` is prepared: the timelock that receives it
 - D11. The Safes as deployed: admin Safe 2 of 4, guardian Safe `0xE6623AA6b8d335367828C2A8b06A714678d22e2c` 1 of 4, the same four owners. The guardian Safe moves to 2 of 4 before public sales open (GOV7). The eight `ProxyAdmin`s stay with the admin Safe, without delay, past GOV7; the 7-day timelock of GOV8 follows GOV7, at a date not set.
 - D12. v2 state comes from the committed files, as in the v1 run:
   - `reserved-names.simplex.csv`, unchanged: `evgeny`, `brenzi` and `evgenypoberezkin` are left unreserved
   - `community-names.simplex.csv`
   - `terms.simplex.json`, with the links of the conditions version of D13
-- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version is tagged `general-terms-vN` and `community-terms-vN` before run 1. Run 1 has no override of the terms check: a failed check stops it.
+- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version, simplex-chat/simplex-chat#8272, is tagged `general-terms-vN` and `community-terms-vN` before run 1. Run 1 has no override of the terms check: a failed check stops it. Recommended, pending the owner's answer to the question of #8272: its merge commit is tagged `general-terms-v1` and `community-terms-v1`, and both links of `terms.simplex.json` name `docs/NAMES-CONDITIONS.md` at that commit.
 - D14. The two names registered on v1 are registered again on v2 by their holders through the names service, as the first check of the v2 line.
 - D15. `.simplex` stays unlocked at deployment. `root.lock(labelhash("simplex"))` is a step of the launch-to-freeze plan, which keeps its freeze naming for the end state.
 - D16. Single-step transfers, by the deploy key in run 1:
@@ -67,6 +72,10 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `transferOwnership(0x0)` on the v1 oracle, which clears its pending owner
 - D19. simplex-network/ens-contracts#49 lands after v2, as upgrades of the v2 controller, name policy and sponsor. Its storage-slot statements are recomputed for the layout without UUPS. brenzi/simplex-namespace-contract#18 is rewritten for v2.
 - D20. A sponsor replaced by `setSponsor` instead of an upgrade, for instance after its freeze, is replaced in this order: the guardian funds the new sponsor; the names service accepts both sponsors; the owner calls `setSponsor`; the names service drops the old sponsor.
+- D21. The owner provides the registrar wallet after run 1; only then is its entry added to `governance.mainnet.json`. Runs 1 and 2 neither set nor read a registrar allowance. The registrar step, once the entry is committed:
+  - `RUN=registrar`: the entry checked; the guardian Safe's batch of `sponsor.setRegistrarAllowance(wallet, allowance)` written
+  - the guardian Safe executes the batch
+  - `RUN=registrar-read-back`: `sponsor.registrarAllowance(wallet)` read back
 
 ## 3. Contracts
 
@@ -78,7 +87,7 @@ The `.simplex` contracts after run 2, and the off-chain components that call the
 
 - Webstore, simplex.domains: the browser app served by StoreService; orders are paid through BTCPay, Stripe or codes, and the browser signs `RegisterName` with a wallet it generates.
 - SimpleX app: purchases through the App Store and Google Play, and the `RegisterName` signed with the name's wallet key, go to StoreService over SMP; lookups go to the resolver service.
-- StoreService, `simplex-store-service`: holds the registrar key; sends `commit` to the controller, `registerWithCredit` to the sponsor, and the owners' signed record edits to the resolver.
+- StoreService, `simplex-store-service`: holds the registrar key; sends the owner's signed acceptance of the terms for a commitment to the name policy (`commitUnderGeneralTermsWithSig` or `commitUnderCommunityTermsWithSig`), and the commitment is stored on the controller by the policy's call of `commit`, unless an unexpired one is stored there; sends `registerWithCredit` to the sponsor, and the owners' signed record edits to the resolver.
 - Resolver service, the names role: reads `resolver(node)` from the registry and the text records from the resolver.
 - dApp, `simplex-app`: the user's own wallet calls the controller, the name policy, the registrar, the subname registrar and the resolver, and resolves through `UniversalResolver`.
 
@@ -160,7 +169,7 @@ User interactions:
 - transfer: offer, acceptance of terms, claim
 - create, delete or purge a subname
 
-Where each contract's address is held, at `8d0511f9`:
+Where each contract's address is held, at `6eb2dd1d`:
 
 ```mermaid
 flowchart LR
@@ -219,10 +228,10 @@ flowchart LR
 | `BaseRegistrarImplementation` | owner of the `simplex` node in the registry, re-pointable through `Root` until the lock; controller `base`, set by `initialize` only (`SimplexController.sol:212`); immutable in the name policy (`SimplexNamePolicy.sol:12`) and the subname registrar (`SubnameRegistrar.sol:37`); the dApp, the metadata service, the names service, wallets | each name's token, holder, expiry and label; offers and approvals; per-signer nonces | no: every name is minted again to its holder; open offers and signed intents are lost; the controller, the name policy and the subname registrar are redeployed; wallets see a new token contract | upgradeable |
 | `SimplexResolver` | each node's `resolver` in the registry, changed only by the node's owner; controller `defaultResolver` (setter, `SimplexController.sol:261`); subname registrar `resolver`, set once (`SubnameRegistrar.sol:119-123`) | every record of every name and subname; delegates; per-signer nonces | no: new registrations can use a new default resolver, but resolution and record changes of every existing name stay on the old instance until its holder re-points the name and writes its records again; new subnames keep the old instance, since the subname registrar's pointer is set once | upgradeable |
 | `SubnameRegistrar` | owner of every subname node in the registry; the resolver's `nameWrapper`, immutable (`PublicResolver.sol:32`), through which subname record changes are authorised (`PublicResolver.sol:112-127`); registrar `subnameHook` (setter, `BaseRegistrarImplementation.sol:262`) | each subname's parent, generation and index; the expiry mirror of each name; per-signer nonces | no: existing subnames stay owned by the old instance, and their record changes are authorised only through it; a new instance starts without generations and expiries | upgradeable |
-| `SimplexController` | registrar `controllers`, several at once; the resolver's `trustedETHController`, immutable (`PublicResolver.sol:33`); the name policy's and the sponsor's `controller`, immutable (`SimplexNamePolicy.sol:11`, `SimplexSponsor.sol:27`); the dApp and the names service | commitments in flight; beneficiary, sales switch and pointers; the revenue balance | no: a new instance is not the resolver's `trustedETHController`, so it cannot clear a lapsed name's records when the name is registered again (`SimplexController.sol:393-397`, `ResolverBase.sol:20`); the name policy, with its lists, and the sponsor are redeployed for it; commitments in flight are lost | upgradeable |
-| `SimplexNamePolicy` | controller `namePolicy` and registrar `namePolicy` (setters, `SimplexController.sol:269`, `BaseRegistrarImplementation.sol:267`); registrar `controllers`, for `registerReserved` | 797 reserved and 457 community names at deployment, and later additions; terms; acceptances of commitments and offers in flight; per-signer nonces | no: every list is copied to the new instance before the two pointers change, or reserved names are registrable in the gap; the pointers change in two transactions; an acceptance made on the old instance for a registration or claim in flight is lost and made again | upgradeable |
+| `SimplexController` | registrar `controllers`, several at once; the resolver's `trustedETHController`, immutable (`PublicResolver.sol:33`); the name policy's and the sponsor's `controller`, immutable (`SimplexNamePolicy.sol:11`, `SimplexSponsor.sol:27`); the dApp and the names service | commitments in flight; beneficiary, sales switch and pointers; the revenue balance | no: a new instance is not the resolver's `trustedETHController`, so it cannot clear a lapsed name's records when the name is registered again (`SimplexController.sol:392-397`, `ResolverBase.sol:20`); the name policy, with its lists, and the sponsor are redeployed for it; commitments in flight are lost | upgradeable |
+| `SimplexNamePolicy` | controller `namePolicy` and registrar `namePolicy` (setters, `SimplexController.sol:269`, `BaseRegistrarImplementation.sol:267`); registrar `controllers`, for `registerReserved` | 798 reserved and 457 community names at deployment, and later additions; terms; acceptances of commitments and offers in flight; per-signer nonces | no: every list is copied to the new instance before the two pointers change, or reserved names are registrable in the gap; the pointers change in two transactions; an acceptance made on the old instance for a registration or claim in flight is lost and made again | upgradeable |
 | `SimplexSponsor` | controller `sponsor` (setter, `SimplexController.sol:254`); the names service | the registrar wallet's allowance; per-signer nonces | yes, in the order of D20: the guardian funds the new instance, the names service accepts both, `setSponsor`, the names service drops the old; a `RegisterName` intent signed for the old instance's domain (`SimplexSponsor.sol:102-110`) is signed again; the swap needs this coordination with the names service | upgradeable, so that its address and nonces stay |
-| `SimplexPriceOracle` | controller `prices` (setter, `SimplexController.sol:307`) | the price list and the feed pointer, both passed to the constructor | yes: a new instance with the same list and feed, then `setPriceOracle`, one transaction | immutable |
+| `SimplexPriceOracle` | controller `prices` (setter, `SimplexController.sol:306`) | the price list and the feed pointer, both passed to the constructor | yes: a new instance with the same list and feed, then `setPriceOracle`, one transaction | immutable |
 | `MetadataRenderer` | registrar `metadataRenderer` (setter, `BaseRegistrarImplementation.sol:250`) | the suffix, passed to the constructor | yes: `setMetadataRenderer`, one transaction; only `tokenURI` reads it | immutable |
 | `UniversalResolver` | the dApp's deployments file, read by `simplex-app/.github/workflows/deploy-pages.yml:65` | none | yes: the names service resolves through the registry (`docs/plans/names-v2-contracts.md`, section 8); the dApp moves to a new instance with its next build, and any other integrator with its own configuration | upgradeable, so that its address stays for the dApp and integrators |
 | `DummyGatewayProvider` | `UniversalResolver`, immutable (`AbstractUniversalResolver.sol:29`), read on each `resolve` (`AbstractUniversalResolver.sol:95`) | none | yes: by an upgrade of `UniversalResolver` that names a new instance | immutable |
@@ -505,10 +514,10 @@ Unchanged:
 | 5 | deploy key, run 1 | read-back |
 | 6 | deploy key, run 1 | single-step transfers (D16); controller and oracle proposed (D17) |
 | 7 | deploy key, run 1 | v1 retirement (D18) |
-| 8 | guardian Safe | registrar allowance on the v2 sponsor |
-| 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch |
-| 10 | operator, run 2 | handover read-back, without transactions |
-| 11 | names service | switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal and `verification.mainnet.simplex.json` |
+| 8 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch |
+| 9 | operator, run 2 | handover read-back, without transactions |
+| 10 | names service | switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal and `verification.mainnet.simplex.json` |
+| 11 | operator, guardian Safe, registrar step | once the owner provides the registrar wallet: its entry committed and checked; the guardian Safe sets its allowance; the allowance read back (D21) |
 | 12 | holders, names service | the two v1 names registered again (D14) |
 | 13 | operator | other consumers switched, Etherscan verification |
 | 14 | operator | deploy key destroyed |
@@ -526,23 +535,25 @@ sequenceDiagram
   O->>O: terms.simplex.json, rename v1 files
   D->>D: run 1: checks, deploy, wire, read-back
   D->>D: run 1: single-step transfers, proposals, v1 retirement
-  G->>G: v2 sponsor setRegistrarAllowance
   A->>A: acceptOwnership x2
   O->>O: run 2: read-back
   N->>N: switch to v2, commit files
+  O->>O: registrar step: entry committed and checked
+  G->>G: v2 sponsor setRegistrarAllowance
+  O->>O: registrar step: allowance read back
   H->>N: register the two names again
   O->>O: other consumers, verify, destroy deploy key
 ```
 
 ### Runs, resume and restore
 
-Each run of `deploy-mainnet.mjs` is one invocation with a `RUN` of 1 or 2. Its inputs are the ens-contracts commit tagged `simplex-mainnet-v2`, the committed files of D10, D12 and D13, and, on the operator's checkout, the renamed v1 files `deployments.mainnet.simplex-v1.json`, `deployments.mainnet.simplex-v1.journal.jsonl` and `verification.mainnet.simplex-v1.json`, the v2 journal and the attempts log. A resumed run re-sends no journalled step and evaluates only its own read-back.
+Each run of `deploy-mainnet.mjs` is one invocation with a `RUN` of 1, 2, `registrar` or `registrar-read-back`. The inputs of runs 1 and 2 are the ens-contracts commit tagged `simplex-mainnet-v2`, the committed files of D10, D12 and D13, and, on the operator's checkout, the renamed v1 files `deployments.mainnet.simplex-v1.json`, `deployments.mainnet.simplex-v1.journal.jsonl` and `verification.mainnet.simplex-v1.json`, the v2 journal and the attempts log. A resumed run re-sends no journalled step and evaluates only its own read-back.
 
 After step 7, registration and renewal on v1 revert: both v1 registrar controllers are removed by D18.
 
-Steps 8 and 9 are independent and are taken in either order; both precede step 10.
+Step 12 follows step 11: a sponsored registration reverts while the registrar wallet's allowance is zero.
 
-Until step 11, v1 is restored by the deploy key: `addController` for the v1 controller and the v1 name policy on the v1 registrar, and `transferOwnership(admin Safe)` on the v1 controller and the v1 oracle.
+Until step 10, v1 is restored by the deploy key: `addController` for the v1 controller and the v1 name policy on the v1 registrar, and `transferOwnership(admin Safe)` on the v1 controller and the v1 oracle.
 
 ## 7. Deployment
 
@@ -566,7 +577,7 @@ Until step 11, v1 is restored by the deploy key: `addController` for the v1 cont
 | TimelockController | `hasRole` of the proposer, executor and canceller roles | `true` for the entry's Safes; `false` for every other account named by the `RoleGranted` logs of these roles since the entry's deploy block, and for `0x0` |
 | TimelockController | `hasRole` of its admin role | `false` for every account named by its `RoleGranted` logs since the entry's deploy block, every account of the entry and the deploy key, except the timelock itself |
 
-The registrar wallet's entry holds its address and its allowance N, in attoUSD; `scripts/governance-check.mjs` checks that its `getCode` is empty.
+The registrar wallet's entry, added for the registrar step (D21), holds its address and its allowance N, in attoUSD; `scripts/governance-check.mjs` checks that its `getCode` is empty.
 
 ### Contracts of run 1
 
@@ -576,7 +587,7 @@ Run 1, deploy key. Each proxy is a `TransparentUpgradeableProxy` with `initialOw
 |---|---|---|
 | 1 | `ENSRegistry()` | `initialize(deploy key)` |
 | 2 | `BaseRegistrarImplementation(registry proxy, namehash("simplex"))` | `initialize(registry proxy, namehash("simplex"), deploy key)` |
-| 3 | `SimplexPriceOracle(feed, decimals, base, exceptions)`, as `deploy-mainnet.mjs:317-318` | – |
+| 3 | `SimplexPriceOracle(feed, decimals, base, exceptions)`, with the decimals, base price and exceptions of `scripts/simplex-price-curve.mjs` | – |
 | 4 | `SimplexController()` | `initialize(registrar proxy, oracle, 60, 86400, registry proxy, config, deploy key)` |
 | 5 | `SimplexNamePolicy(controller proxy, registrar proxy)` | empty |
 | 6 | `SubnameRegistrar(registry proxy, registrar proxy)` | empty |
@@ -588,15 +599,16 @@ Run 1, deploy key. Each proxy is a `TransparentUpgradeableProxy` with `initialOw
 
 ### Wiring
 
-Wiring: the calls of the v1 run, `deploy-mainnet.mjs:304-441`, against the v2 addresses, including `controller.setBeneficiary(guardian Safe)`.
+Wiring: the calls of the v1 run against the v2 addresses, including `controller.setBeneficiary(guardian Safe)`, in the order of steps 1 to 16 of `docs/deployment.md`, "Deployment and wiring".
 
 ### Read-back of run 1
 
 The read-back of run 1 checks, before section 8:
 
-- the checks of the v1 run at `deploy-mainnet.mjs:537-570` and `573-660`, against the v2 addresses
-- the ownership checks of the v1 run at `deploy-mainnet.mjs:666-685`, with the deploy key as the holder of every role and `0x0` as the pending owner of the controller and the oracle, while `registrar.owner()` is the deploy key; once it is the admin Safe, section 8 has started after an earlier passing read-back, and these checks are skipped; any other owner fails; run 2 checks the table of section 8 in their place
+- the checks of the v1 run against the v2 addresses: the wiring, every reserved and community name, the price list and the feed (`docs/deployment.md`, "Read-back of run 1")
+- the ownership checks of the v1 run, with the deploy key as the holder of every role and `0x0` as the pending owner of the controller and the oracle, while `registrar.owner()` is the deploy key; once it is the admin Safe, section 8 has started after an earlier passing read-back, and these checks are skipped; any other owner fails; run 2 checks the table of section 8 in their place
 - the runtime code of each of the eight implementations: the compiled artifact, with the expected immutables placed at its `immutableReferences`
+- the runtime code of `SimplexPriceOracle`, `DummyGatewayProvider` and `MetadataRenderer`: the compiled artifact
 - `_initialized` of the registry, registrar and controller implementations: 255
 - the ERC-1967 implementation slot of each of the eight proxies: its implementation
 - the ERC-1967 admin slot of each of the eight proxies: the CREATE address of the proxy at nonce 1
@@ -610,11 +622,11 @@ The read-back of run 1 checks, before section 8:
 - the runtime code of each of the eight proxies: the `TransparentUpgradeableProxy` artifact, with its `ProxyAdmin` placed at the immutable `_admin`
 - `universalResolver.registry()`: the registry proxy
 - `ens.resolver(namehash("simplex"))`: the resolver proxy
-- the registrar's `ControllerAdded` events: the controller proxy and the name policy proxy, and no other address
+- the distinct addresses of the registrar's `ControllerAdded` events: the controller proxy and the name policy proxy, and no other address
 
 ### Addresses file
 
-Addresses file `deployments.mainnet.simplex.json`, committed at step 11:
+Addresses file `deployments.mainnet.simplex.json`, committed at step 10:
 
 | Key | Value |
 |---|---|
@@ -633,7 +645,7 @@ Run 1, deploy key, after its read-back passes:
 2. `ens.setOwner(namehash("eth-usd.data.eth"), 0x0)`
 3. `ens.setSubnodeOwner(namehash("eth"), labelhash("data"), admin Safe)`
 4. `ens.setSubnodeOwner(0x0, labelhash("eth"), admin Safe)`
-5. deploy `Root(registry proxy)`
+5. deploy `Root(registry proxy)`; its runtime code is the compiled artifact, or run 1 stops before step 6
 6. `root.setController(admin Safe, true)`
 7. `root.transferOwnership(admin Safe)`
 8. `ens.setOwner(0x0, root)`
@@ -642,7 +654,7 @@ Run 1, deploy key, after its read-back passes:
 
 ### Read-back of run 2
 
-The read-back of run 2 checks, after step 9 of section 6:
+The read-back of run 2 checks, after step 8 of section 6:
 
 | Read | Value |
 |---|---|
@@ -650,7 +662,6 @@ The read-back of run 2 checks, after step 9 of section 6:
 | `controller.owner()` | admin Safe |
 | `controller.pendingOwner()` | `0x0` |
 | `controller.beneficiary()` | guardian Safe |
-| `sponsor.registrarAllowance(registrar wallet)` | N |
 | `registrar.owner()` | admin Safe |
 | `oracle.owner()` | admin Safe |
 | `oracle.pendingOwner()` | `0x0` |
@@ -677,15 +688,37 @@ sequenceDiagram
   D->>D: run 1, after the read-back: registrar, eth, data.eth, eth-usd.data.eth
   D->>D: run 1: Root deployed, controller set, Root and registry root transferred
   D->>A: run 1: controller and oracle proposed
-  G->>G: setRegistrarAllowance on the v2 sponsor
-  A->>A: acceptOwnership on controller and oracle
+  A->>A: acceptOwnership on controller and oracle, the batch of run 1
+```
+
+### Registrar step
+
+After step 10 of section 6, once the owner provides the registrar wallet (D21):
+
+| Call or read | Caller | Value |
+|---|---|---|
+| `governance.mainnet.json` entry `registrarWallet` | operator, committed | kind `EOA`, `address`, allowance N in attoUSD |
+| governance check of the entry | `RUN=registrar` | no code at the address |
+| batch `safe-transaction.mainnet.simplex.registrar.json` | `RUN=registrar` | one transaction: `sponsor.setRegistrarAllowance(registrar wallet, N)` |
+| the batch executed | guardian Safe | – |
+| `sponsor.registrarAllowance(registrar wallet)` | `RUN=registrar-read-back` | N |
+
+```mermaid
+sequenceDiagram
+  participant O as operator
+  participant G as guardian Safe
+  participant S as sponsor proxy
+  O->>O: registrarWallet entry committed
+  O->>O: RUN=registrar: entry checked, batch written
+  G->>S: setRegistrarAllowance(registrar wallet, N)
+  O->>S: RUN=registrar-read-back: registrarAllowance(registrar wallet)
 ```
 
 ## 9. Switch and retirement of v1
 
 ### v1 files
 
-Renamed to `*.simplex-v1.*` at step 2 on the operator's checkout, committed to main at step 11:
+Renamed to `*.simplex-v1.*` at step 2 on the operator's checkout, committed to main at step 10:
 
 - `deployments.mainnet.simplex.json`
 - `deployments.mainnet.simplex.journal.jsonl`
@@ -697,7 +730,7 @@ The two v1 NFTs remain with their holders on the retired v1 registrar.
 
 ### Names service
 
-Names service, at step 11:
+Names service, at step 10:
 
 - registry proxy
 - registrar proxy
@@ -717,7 +750,7 @@ Other consumers, at step 13 (names-v2-contracts plan, section 8):
 - `ens-metadata-service`: `ADDRESS_ETH_REGISTRY`
 - simplex-app: `deployments.mainnet.simplex.json`, read by `.github/workflows/deploy-pages.yml:65`
 
-`scripts/cloudflare-build-simplex.sh` reads `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 11.
+`scripts/cloudflare-build-simplex.sh` reads `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 10.
 
 `ens-subgraph` indexes `.testing` (`src/utils.ts:12-17`); a `.simplex` subgraph is outside this plan.
 
@@ -806,6 +839,8 @@ brenzi/simplex-namespace-contract:
   - runs 1 and 2 pass both read-backs
   - a `ProxyAdmin` owner other than the admin Safe stops run 1 before section 8
   - run 1 stopped after each step of section 8 and resumed sends each remaining step once and passes both read-backs
+  - run 1 resumed while a step's transaction is pending waits for it and sends nothing new
+  - run 2 passes without a registrar wallet; the registrar step's read-back fails before the guardian Safe executes its batch and passes after it
   - the restore path of section 6 returns v1 to its state before step 7
 - `scripts/governance-check.test.mjs`, run with `node --test`; a Safe is refused for each of:
   - a different threshold
