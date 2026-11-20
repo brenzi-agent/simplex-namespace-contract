@@ -1,7 +1,8 @@
 import {
   createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, getContractAddress, http, keccak256, namehash,
-  pad, parseAbi, toBytes, toEventSelector, toEventSignature, toFunctionSelector, toFunctionSignature, toHex, zeroAddress,
+  pad, parseAbi, toBytes, toEventSelector, toFunctionSelector, toHex, zeroAddress,
 } from 'viem'
+import { formatAbiParams } from 'viem/utils'
 import { mainnet } from 'viem/chains'
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
@@ -306,12 +307,17 @@ export async function deployBehindProxy(deploy, name, addresses, setup, initialO
 
 export const proxyAdminOf = (proxy) => getContractAddress({ from: proxy, nonce: 1n })
 
+const functionShape = ({ name, inputs, outputs, stateMutability }) =>
+  `${name}(${formatAbiParams(inputs)}) ${stateMutability} returns (${formatAbiParams(outputs)})`
+const eventShape = ({ name, inputs, anonymous }) =>
+  `${name}(${inputs.map((input) => `${formatAbiParams([input])}${input.indexed ? ' indexed' : ''}`).join(',')})${anonymous ? ' anonymous' : ''}`
+
 export function interfaceOf(abi) {
-  const signatures = (type, selector, signature) =>
-    Object.fromEntries(abi.filter((item) => item.type === type).map((item) => [selector(item), signature(item)]))
+  const shapes = (type, selector, shape) =>
+    Object.fromEntries(abi.filter((item) => item.type === type).map((item) => [selector(item), shape(item)]))
   return {
-    functions: signatures('function', toFunctionSelector, toFunctionSignature),
-    events: signatures('event', toEventSelector, toEventSignature),
+    functions: shapes('function', toFunctionSelector, functionShape),
+    events: shapes('event', toEventSelector, eventShape),
   }
 }
 
