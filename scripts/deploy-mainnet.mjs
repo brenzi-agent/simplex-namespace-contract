@@ -255,6 +255,7 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   const addresses = {}
   const upgradeable = {}
   const proxied = async (name) => {
+    await requireGovernance(client, { adminSafe: governance.adminSafe }, deployer, `the ${name} proxy, its ProxyAdmin owned by the admin Safe,`)
     const contract = await deployBehindProxy(deploy, name, addresses, setup, governance.adminSafe.address)
     addresses[UPGRADEABLE[name].key] = contract.address
     upgradeable[name] = contract
