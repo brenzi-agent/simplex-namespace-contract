@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   BaseError, ContractFunctionRevertedError, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256,
-  pad, parseGwei, toFunctionSelector, zeroAddress,
+  pad, parseGwei, toBytes, toFunctionSelector, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -275,6 +275,28 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   })
 }
 
+function checksumInput(json) {
+  if (Array.isArray(json)) return `[${json.map(checksumInput).join(',')}]`
+  if (typeof json === 'object' && json !== null) {
+    const keys = Object.keys(json).sort()
+    return `{${JSON.stringify(keys)}${keys.map((key) => `${checksumInput(json[key])},`).join('')}}`
+  }
+  return JSON.stringify(json === undefined ? null : json)
+}
+
+export const batchChecksum = (batch) => keccak256(toBytes(checksumInput({ ...batch, meta: { ...batch.meta, name: null } })))
+
+export function safeBatch({ safe, to, data, name, description, createdAt = Date.now() }) {
+  const batch = {
+    version: '1.0',
+    chainId: '1',
+    createdAt,
+    meta: { name, description, createdFromSafeAddress: safe, createdFromOwnerAddress: '' },
+    transactions: [{ to, value: '0', data }],
+  }
+  return { ...batch, meta: { ...batch.meta, checksum: batchChecksum(batch) } }
+}
+
 export function intendedNames(text) {
   const names = ['']
   let depth = 0
@@ -371,10 +393,20 @@ async function main() {
     process.exit(1)
   }
   const { target: { name, proxy, implementation, proxyAdmin, owner }, functionName, args } = call
+  const data = encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })
   console.log(`\nThe implementation slot of the ${name} proxy ${proxy} holds ${implementation}.`)
   console.log(`The ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy:`)
   console.log(`  ${functionName}(${args.join(', ')})`)
-  console.log(`  calldata ${encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })}`)
+  console.log(`  calldata ${data}`)
+  const batchPath = join(REPO_ROOT, `safe-transaction.mainnet.${TLD}.${process.env.ACTION}.${name}.json`)
+  writeFileSync(batchPath, JSON.stringify(safeBatch({
+    safe: owner,
+    to: proxyAdmin,
+    data,
+    name: `${process.env.ACTION} ${name}`,
+    description: `${functionName}(${args.join(', ')}) on the ProxyAdmin ${proxyAdmin} of the ${name} proxy ${proxy}`,
+  }), null, 2))
+  console.log(`Wrote ${batchPath}: load it into the Transaction Builder of the Safe ${owner}; its one transaction goes to the ProxyAdmin ${proxyAdmin}.`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
