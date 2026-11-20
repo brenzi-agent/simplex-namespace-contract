@@ -634,7 +634,8 @@ their calldata and writes them as a Transaction Builder batch,
 The script is built for cost, not speed: a run may take days while mainnet stays
 expensive. For each transaction:
 
-1. **Priority fee is always 0.**
+1. **Priority fee is always 1 wei**, the least a Geth node accepts: Geth 1.17.10 refuses a
+   tip of 0 with "transaction gas price below minimum: gas tip cap 0, minimum needed 1".
 2. **Cap**: `maxFeePerGas = MAX_BASE_FEE_GWEI` (e.g. `0.078`, picked from a
    base-fee distribution as a low percentile of recent blocks).
 3. **Estimate**: `eth_estimateGas` plus 10 %, the transaction's gas limit; a reverting

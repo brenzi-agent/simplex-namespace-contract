@@ -2,7 +2,7 @@
  * Live-network deploy helpers — "wait for cheap base fee" strategy.
  *
  * Strategy:
- *   - Submit every tx with `maxPriorityFeePerGas = 0` and
+ *   - Submit every tx with `maxPriorityFeePerGas = 1 wei` and
  *     `maxFeePerGas = MAX_BASE_FEE_GWEI`.
  *   - Before each submission, poll `eth_getBlockByNumber('latest')` every
  *     ~12s until `baseFeePerGas <= maxFeePerGas`. Then send.
@@ -49,6 +49,7 @@ import { childEnv } from './stack.mjs'
 const POLL_BASE_INTERVAL_MS = 12_000     // ~one mainnet block
 const POLL_RECEIPT_INTERVAL_MS = 10_000  // poll inclusion every 10s
 const FORK_BOOT_TIMEOUT_MS = 90_000      // hardhat node has slow first boot
+const PRIORITY_FEE_WEI = 1n
 const DEFAULT_BUMP_PCT = 20n
 const DEFAULT_BUMP_AFTER_HOURS = 24
 /// Depth a receipt must reach before the next dependent step is built on it.
@@ -581,7 +582,7 @@ export function createWaitForBaseRunner({
         gasEstimate ??= await estimate()
         const signed = await walletClient.signTransaction({
           to, data, value, nonce, gas: gasEstimate,
-          maxFeePerGas: cap, maxPriorityFeePerGas: 0n,
+          maxFeePerGas: cap, maxPriorityFeePerGas: PRIORITY_FEE_WEI,
         })
         hash = keccak256(signed)
         hashes.push(hash)
@@ -660,7 +661,7 @@ export async function analyzeAndConfirm({
   const baseNow = block.baseFeePerGas
 
   console.log(`  Strategy:`)
-  console.log(`    priority fee:         0 always`)
+  console.log(`    priority fee:         ${PRIORITY_FEE_WEI} wei always`)
   console.log(`    maxFeePerGas:         ${fmtGwei(maxBaseFeeWei)} gwei  (your MAX_BASE_FEE_GWEI)`)
   console.log(`    submit policy:        wait for baseFee ≤ cap, then send (no escalation by default)`)
   console.log(`    bump rule:            after ${bumpAfterMs / 3600000}h of stall, cap × ${Number(100n + bumpPct) / 100} and resubmit at same nonce`)

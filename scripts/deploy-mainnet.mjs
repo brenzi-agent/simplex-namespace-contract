@@ -15,7 +15,7 @@
  *   3. Stops the fork. Runs run 1 against mainnet: the governance check, the
  *      deployment and wiring, the read-back, the single-step transfers and
  *      proposals, and the retirement of v1. Every tx is sent with
- *      `maxFeePerGas = MAX_BASE_FEE_GWEI` and zero priority, and waits for
+ *      `maxFeePerGas = MAX_BASE_FEE_GWEI` and a priority fee of 1 wei, and waits for
  *      `baseFeePerGas ≤ cap` before submission.
  *   4. If a submitted tx stalls (base climbed back above cap, mempool
  *      eviction, etc.) for `BUMP_AFTER_HOURS`, the cap bumps by
