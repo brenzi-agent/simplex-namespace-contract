@@ -11,6 +11,16 @@ Amended by [`recipient-consent.md`](./recipient-consent.md): the sponsored path
 `approveWithSig` plus the recipient's `claimWithSig`. The rest of this plan is the
 record of names-v2 as built.
 
+Amended by [`upgradeable-stack.md`](./upgradeable-stack.md) for the `.simplex` v2
+redeploy: `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexResolver`,
+`SubnameRegistrar`, `SimplexController`, `SimplexNamePolicy`, `SimplexSponsor` and
+`UniversalResolver` sit behind transparent proxies, each with a `ProxyAdmin` that the admin Safe owns, and each contract is frozen
+on its own when its `ProxyAdmin` is renounced. `freeze()`, `frozen` and the UUPS code
+are removed. For the `.simplex` v2 redeploy, the following are superseded by that
+plan: every statement below about `freeze()` and UUPS, the immutability of the
+registrar, the resolver and the subname registrar, the custody statements of §5 and
+§7, the storage layout of §6, and the dates of §7.
+
 ## 1. Table of contents
 
 1. Table of contents
