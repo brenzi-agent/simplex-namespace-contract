@@ -116,6 +116,11 @@ const SPONSOR_ABI = parseAbi([
   'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
   'function registrarAllowance(address registrar) view returns (uint256)',
 ])
+const LINKS_ABI = parseAbi([
+  'function sponsor() view returns (address)',
+  'function controller() view returns (address)',
+  'function beneficiary() view returns (address)',
+])
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
@@ -743,6 +748,20 @@ export async function registrarAllowanceBatch(client, { registrarWallet: wallet,
   if (!wallet) return refusal(['governance.mainnet.json has no registrarWallet entry'])
   const failures = await entryFailures(client, wallet)
   if (failures.length) return refusal(failures.map((failure) => `registrarWallet ${wallet.address} ${failure}`))
+  const { SimplexSponsor: sponsor, ETHRegistrarController: controller } = addresses
+  const { admin } = await proxySlots(client, sponsor)
+  const unlinked = admin === proxyAdminOf(sponsor)
+    ? []
+    : [`the sponsor ${sponsor} is not a v2 proxy: its admin slot holds ${admin}, not ${proxyAdminOf(sponsor)}`]
+  for (const [address, functionName, expected] of [
+    [controller, 'sponsor', sponsor],
+    [sponsor, 'controller', controller],
+    [controller, 'beneficiary', guardianSafe.address],
+  ]) {
+    const got = await client.readContract({ address, abi: LINKS_ABI, functionName })
+    if (got.toLowerCase() !== expected.toLowerCase()) unlinked.push(`${functionName}() of ${address} is ${got}, not ${expected}`)
+  }
+  if (unlinked.length) return refusal(unlinked)
   const args = [wallet.address, wallet.allowance]
   return accepted({
     wallet,
