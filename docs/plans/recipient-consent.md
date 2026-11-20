@@ -64,8 +64,9 @@ and the sponsor 5,763.
 
 ## 4. Registration
 
-`SimplexSponsor` verifies `RegisterName(string label,address owner,address
-resolver,bytes[] data,uint256 nonce,uint256 deadline)` in the domain
+`SimplexSponsor` verifies `RegisterName(string label,address owner,uint256
+duration,address resolver,bytes[] data,uint256 disputeDays,uint256 nonce,uint256
+deadline)` (`disputeDays` from [`dispute-period.md`](./dispute-period.md)) in the domain
 `SimplexSponsor` v1, unless the owner is the caller. So the registrar refuses a
 client's registration whose owner is the registrar's own address: the client
 would choose the name and records the registrar holds.
@@ -151,7 +152,7 @@ down in favour of a split.
 
 - **`SimplexSponsor`** (non-upgradeable): `registrarAllowance`,
   `setRegistrarAllowance` (the controller's `beneficiary` only),
-  `registerWithCredit(Registration, nonce, deadline, sig)`, `renewWithCredit`, the
+  `registerWithCredit(Registration, disputeDays, nonce, deadline, sig)`, `renewWithCredit`, the
   `RegisterName` check, `nonces` and the allowance events. It holds no key of its
   own, and prices a name through the controller's `rentPriceUSD`, which replaces
   the controller's private `_rentPriceUSD`. Nonces and allowances belong to each
@@ -248,7 +249,7 @@ down in favour of a split.
 
 - **simplex-chat #7530:** core signs `RegisterName` with the name's wallet key and
   the key's current `nonces` value from the sponsor, and ShopService calls
-  `SimplexSponsor.registerWithCredit(reg, nonce, deadline, sig)`; ShopService
+  `SimplexSponsor.registerWithCredit(reg, disputeDays, nonce, deadline, sig)`; ShopService
   refuses a registration whose owner is its own address (§4).
 - **Web store plan (`sh/names-design`):** the browser signs with the wallet it
   generates; the link from the app contains the app's signature and deadline; the

@@ -60,7 +60,8 @@ The admin Safe and the guardian Safe are two authorisation tiers, ranked by how 
 compromise can do. The admin tier can replace the code of each upgradeable contract until its
 freeze, and new code can do anything the contracts allow, so its reach has no bound. The
 guardian tier is bounded in kind: halt sales, set registrar allowances, redirect revenue,
-reserve names (which also stops their renewal), and nothing else. It is not bounded in amount:
+reserve names (which also stops their renewal), unregister a name in its dispute period, and
+nothing else. It is not bounded in amount:
 it can give itself any allowance and mint unreserved names with it, an accepted risk
 (`docs/security.md`, V1). The two Safes have the same signers. Until GOV7 the tiers differ in
 threshold and in the calls each may make; from GOV7 to GOV8 only in the calls; from GOV8 the
@@ -76,8 +77,8 @@ and the registrar hot wallet before its allowance is prepared.
 | Key | GOV2 until GOV9 | After GOV9 |
 |---|---|---|
 | Deploy key | nothing | nothing |
-| Admin Safe | `ProxyAdmin.upgradeAndCall`, `ProxyAdmin.transferOwnership` and `ProxyAdmin.renounceOwnership` for each of the registry, the registrar, the resolver, the subname registrar, the controller, the name policy, the sponsor and `UniversalResolver`; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setGeneralTerms`; `namePolicy.setCommunityTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock` | the same list without the `ProxyAdmin` calls, and without any call that the controller's last upgrade seals (A7) |
-| Guardian Safe | `namePolicy.addReservedNames`; `namePolicy.setReservationReason`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; receives `withdraw()` | the same list, without `setPublicSalesOpen` if the controller's last upgrade seals it (A7) |
+| Admin Safe | `ProxyAdmin.upgradeAndCall`, `ProxyAdmin.transferOwnership` and `ProxyAdmin.renounceOwnership` for each of the registry, the registrar, the resolver, the subname registrar, the controller, the name policy, the sponsor and `UniversalResolver`; `setSponsor`; `namePolicy.removeReservedNames`; `namePolicy.registerReserved`; `setMinCharLength`; `setDefaultResolver`; `setPriceOracle`; `priceOracle.setPrices`; `priceOracle.setUsdOracle`; `recoverFunds`; `addController`; `removeController`; `setMetadataRenderer`; `setMaxLabelLength`; `setSubnameHook`; `setNamePolicy` (registrar and controller); `namePolicy.removeCommunityNames`; `namePolicy.setGeneralTerms`; `namePolicy.setCommunityTerms`; `baseRegistrar.setResolver`; `Root.setResolver`; `Root.setController`; `Root.lock`; `controller.unregister` | the same list without the `ProxyAdmin` calls, and without any call that the controller's last upgrade seals (A7) |
+| Guardian Safe | `namePolicy.addReservedNames`; `namePolicy.setReservationReason`; `namePolicy.addCommunityNames`; `setPublicSalesOpen`; `sponsor.setRegistrarAllowance`; `setBeneficiary`; `controller.unregister`; receives `withdraw()` | the same list, without `setPublicSalesOpen` if the controller's last upgrade seals it (A7) |
 | Registrar hot wallet | `sponsor.registerWithCredit` (with the owner's `RegisterName` signature); `sponsor.renewWithCredit`; and relaying signed user requests: `approveWithSig`, `claimWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig`, `commitUnderGeneralTermsWithSig`, `commitUnderCommunityTermsWithSig`, `acceptGeneralTermsForClaimWithSig`, `acceptCommunityTermsForClaimWithSig` | same |
 | Anyone | `commit`; `commitUnderGeneralTerms`; `commitUnderCommunityTerms`; `acceptGeneralTermsForClaim`; `acceptCommunityTermsForClaim`; payable `register` and `renew`; `withdraw`; all signed-request paths; record writes on names they own; `reclaim`; subname create and delete; `purge` | same |
 
@@ -123,6 +124,10 @@ Safe can replace the code that enforces them.
 | | controller `ProxyAdmin` |
 | | `root.lock(labelhash("simplex"))` |
 
+The admin Safe and the guardian Safe can still unregister a sponsored name before its
+`disputeUntil`, which also clears its records on the default resolver
+([`dispute-period.md`](./dispute-period.md)).
+
 Once they hold: `_register` requires `available(id)`, false until 90 days past expiry.
 `reclaim` needs the token holder. `approveWithSig` needs the owner's signature, and only the
 recipient, or a controller, can complete a transfer. The controller is `trustedETHController`
@@ -152,16 +157,16 @@ Reserving a held name stops its renewal, and after its grace period `registerRes
 it, which is how disputes are settled (A6). Pricing renewals out of reach collects names as
 they lapse; `setPrices` adds nothing to `setPriceOracle`, since an arbitrary oracle can already
 do anything a curve change can. Before GOV8 each of these takes effect when signed. What
-limits the damage is slow and public. Every name keeps its remaining term plus 90 days of
-grace, so a name is collected months after the change, in public, and the change can be
-reversed before that. After GOV8 a change is visible seven days before it takes effect, and
-renewal of an unreserved name is permissionless, so anyone can renew anyone's name at the old
-price in that time.
+limits the damage is slow and public. Every name past its dispute period keeps its remaining
+term plus 90 days of grace, so a name is collected months after the change, in public, and the
+change can be reversed before that. After GOV8 a change is visible seven days before it takes
+effect, and renewal of an unreserved name is permissionless, so anyone can renew anyone's name
+at the old price in that time.
 
 ## 6. Why it is built this way
 
 **Two keys, split by direction.** The guardian stops things: reserve a name, pause sales, cut
-a registrar's allowance to zero. It also funds registrars and opens sales (A3, A4), the two
+a registrar's allowance to zero, end a registration in its dispute period. It also funds registrars and opens sales (A3, A4), the two
 permissive powers on the fast key. The admin changes things: release reserved names, hand names
 to brands.
 
@@ -246,7 +251,9 @@ remaining expiry, its `simplex.contact` and `simplex.channel` records, and any s
 the new deployment re-mints the snapshot directly, with no user action and no signature.
 Subnames are the exception: only a name's holder can create them, and a name the admin holds
 reaches its holder only when the holder claims it, so re-creating them needs a purpose-built
-migration controller or the holders' signatures.
+migration controller or the holders' signatures. `registerReserved` writes no dispute period,
+so a redeploy ends every name's dispute period; a payment disputed after it is handled by a
+reservation ([`dispute-period.md`](./dispute-period.md), D19).
 
 **The order that makes it safe.**
 
@@ -536,6 +543,7 @@ brackets. The guardian Safe needs one signature until GOV7 and two from GOV7.
 | List community names | guardian Safe | `namePolicy.addCommunityNames([names])`, sent privately; names that are registered or in grace are skipped (`CommunityNameSkipped`) |
 | Publish new general terms or community terms | admin Safe *(timelock, 7 days)* | Commit the file to `simplex-chat/simplex-chat`, tag it `general-terms-vN` or `community-terms-vN`, wait until git.simplex.chat mirrors it, run `scripts/terms-check.mjs` on the link, then `namePolicy.setGeneralTerms(link)` or `namePolicy.setCommunityTerms(link)`. An acceptance of that kind not yet used at registration or claim must then be made again; existing holders are not asked to accept. |
 | Hold a disputed name | guardian Safe | `namePolicy.addReservedNames([name], reason)`, sent privately (see below): the name can no longer be renewed. Settle with `removeReservedNames([name])` (admin, executed before the grace period ends; the holder keeps it) or, once the grace period has ended, `registerReserved` to whoever the ruling names |
+| End a registration whose payment is disputed, reversed or refunded in full, or which was made without a valid order | guardian Safe | before its `disputeUntil`: `controller.unregister(label, baseRegistrar.disputeUntil(labelhash))`, then `subnameRegistrar.purge(node, labelhashes)` with the labelhashes of `getChildren(node, …)`, repeated for each subname with children; the store accepts a card dispute or refunds a payment it gives back; cancel any other prepared `unregister` of the name (`docs/deployment.md`) |
 | Keep a lapsing brand name protected | guardian Safe | for a name handed out by `registerReserved` and not renewed: `namePolicy.addReservedNames([name], reason)` before its grace period ends, sent privately |
 | Refill a registrar's allowance | guardian Safe | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
 | Cut off a compromised registrar | guardian Safe | `sponsor.setRegistrarAllowance(registrar, 0)` |

@@ -170,7 +170,7 @@ multisig (trusted); it's a policy knob, not an attacker surface.
 `ERC721Enumerable` (`totalSupply` / `tokenOfOwnerByIndex` / `balanceOf`) and
 `tokenURI` reflect raw token ownership, which is only updated on
 transfer/mint/burn — **not** on expiry (a name is burned only on re-registration
-after its grace period). So they can disagree with the grace-period `ownerOf`.
+after its grace period or its unregistration). So they can disagree with the grace-period `ownerOf`.
 **Accepted (read-side contract):** all readers (the dApp, resolvers, integrators)
 MUST filter by `nameExpires(id) > block.timestamp`. Documented as an invariant
 on `BaseRegistrarImplementation`.
@@ -201,7 +201,10 @@ incentivised). **Accepted (read-side):** this matches plain ENS (an expired
 name's subnames also linger until cleared); the dApp should `purge` on 2LD
 acquisition. The leak is records-only — ownership/authorisation never transfers
 to the new owner without an explicit `createSubname`. The dApp does not purge on
-acquisition yet; accepted as is in the pre-launch review (2026-10-21, M5).
+acquisition yet; accepted as is in the pre-launch review (2026-10-21, M5). The
+same holds from an `unregister`, which sets the subname registrar's `expiryOf`
+to 0: the subnames lose their owner at once and their records resolve until
+`purge`, which the store service calls after each unregistration.
 
 ## Assurances (verified properties)
 
@@ -339,6 +342,7 @@ each frozen on its own when its `ProxyAdmin` is renounced
 | `setPublicSalesOpen(bool)` | owner **or** beneficiary | Restrictive direction on the fast key: an exploit in the payable path accrues harm per block. Survives every freeze, unless a seal is added by the controller's last upgrade (upgradeable-stack plan, D7). |
 | `SimplexNamePolicy.addReservedNames(string[],Reason)` | owner **or** beneficiary | Also fast, and for a sharper reason: a scheduled reservation would tell a squatter which name is valuable and how long it stays unprotected. Reserving a held name also stops its renewal, so after expiry and grace only `registerReserved` can assign it. |
 | `removeReservedNames`, `registerReserved` (name policy), `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. `registerReserved` also releases the reservation, so the holder can renew. |
+| `SimplexController.unregister(label, until)` | owner **or** beneficiary | Only before the name's `disputeUntil`, which a sponsored registration sets 14 to 120 days out, from the `disputeDays` of `registerWithCredit`: the owner signs them, unless the registrar registers to itself and chooses them. `until` must equal `disputeUntil`, so a queued or repeated call cannot end a later registration of the label whose dispute ends at another second; once a name is unregistered, the guardian and the admin cancel any other prepared `unregister` of it. The payable path and `registerReserved` set none. Clears the records on the default resolver and on a past default the node points at, then sets the expiry, the registry node's owner and resolver to 0 and ends the `SubnameRegistrar`'s subnames; subnodes the holder created directly in the registry keep their owner, resolver and records, also after the next registration, until the next holder replaces them, as after a lapse. The name is available to anyone at once. Callable also after the controller's `ProxyAdmin` is renounced: disputes continue after it. The registrar refuses a renewal until `disputeUntil`, so no renewal is erased. |
 | `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Survives every freeze, unless a seal is added by the controller's last upgrade. |
 | `ProxyAdmin.upgradeAndCall(proxy, implementation, data)` | the owner of that proxy's `ProxyAdmin`: the admin Safe from its creation | One `ProxyAdmin` per proxy, for the registry, the registrar, the resolver, the subname registrar, the controller, the name policy, the sponsor and `UniversalResolver`. Replaces that contract's code; its address and state stay. An upgrade of the sponsor reaches what `setSponsor` reaches, the controller's sponsored entry points, and keeps the sponsor's address, allowances and nonces. An upgrade of `UniversalResolver` changes the answers it gives the dApp and integrators that resolve through it; the names service reads the registry and the resolver directly. |
 | `ProxyAdmin.renounceOwnership()` | the owner of that `ProxyAdmin` | The freeze of one contract, at any time and in any order. `upgradeAndCall` then reverts, and an upgrade of the proxy is accepted from its `ProxyAdmin` only, an address fixed at the proxy's creation. The contract's own owner calls stay callable. |
@@ -365,6 +369,11 @@ the plan should not be read as saying they do:
   policy;
 - the owner or the guardian can stop the renewal of a held name by reserving it,
   and once its grace period ends only `registerReserved` can assign it;
+- the owner or the guardian can unregister a sponsored name before its
+  `disputeUntil`, at most 120 days after its registration. A key that does so
+  can also register the name to itself at once, with a commitment made before;
+  before the dispute period, the guardian could mint only names that were
+  already available;
 - the owner or the guardian can list community names, and the owner can set new
   terms, remove names from the list, repoint the controller's pointer to
   `SimplexNamePolicy`, and repoint or unset the registrar's. Unsetting the
@@ -383,7 +392,7 @@ from the last of its conditions (upgradeable-stack plan, section 4):
 
 | Guarantee | Condition |
 |---|---|
-| **no key can take, transfer or re-point a name before it expires** | registry `ProxyAdmin` renounced |
+| **no key can take, transfer or re-point a name after its dispute period and before it expires** | registry `ProxyAdmin` renounced |
 | | registrar `ProxyAdmin` renounced |
 | | subname registrar `ProxyAdmin` renounced |
 | | `root.lock(labelhash("simplex"))` |
@@ -394,7 +403,10 @@ from the last of its conditions (upgradeable-stack plan, section 4):
 | | controller `ProxyAdmin` renounced |
 | | `root.lock(labelhash("simplex"))` |
 
-The paths of V3 below stay open after all of them. Names that are unregistered
+The paths of V3 below stay open after all of them. A name registered through
+the payable path or `registerReserved` has no dispute period; a sponsored name
+can be unregistered by the two governance keys until its `disputeUntil`, which
+also clears its records on the default resolver. Names that are unregistered
 remain issuable by the two governance keys forever.
 
 ### Bounds that are the registrar's job, not the contract's
@@ -483,7 +495,12 @@ Accepted:
   It is an admin call, and public.
 - **Controllers are trusted.** A controller may register any available name
   directly to any address and transfer a name it holds, was offered or operates
-  for to anyone, and `addController` survives every freeze as the repair path.
+  for to anyone, and `addController` survives every freeze as the repair path. A
+  controller may also unregister a name in its dispute period through the
+  registrar's `unregister(id, until)`, which leaves the default resolver's
+  records in place; only the controller's `unregister` clears them. The 14 to
+  120 days are bounded in `SimplexController` only: another controller can give
+  a name any dispute period, and its renewal is refused for that long.
 - **Consent covers the name, not its contents.** Between the recipient's consent
   and the claim landing, the holder can still change the name's records, point
   its registry resolver at a contract of the holder's own, and create subnames
@@ -532,7 +549,10 @@ Accepted:
   previous holder who pointed the node at no resolver, or at another past
   default, before the name lapsed leaves records in a default resolver that
   resolve again once the new registration points back at it; a bare registration
-  (`resolver == 0`) keeps a non-default resolver pointer. Subnames have similar
+  (`resolver == 0`) keeps a non-default resolver pointer. An unregistration
+  clears the current default resolver whatever the node points at, and a past
+  default the node points at; a past default that the holder stopped pointing
+  at keeps its records, as for a lapse. Subnames have similar
   gaps: a subname under a deleted subname, or one taken out of the
   `SubnameRegistrar`, keeps its records, and the previous holder keeps owning and
   writing any shadow subnode, so clients enumerate a previously held label's
@@ -635,6 +655,10 @@ lockstep rule below.
   `ClaimName`, which names the offer it claims. A sponsored registration needs
   `RegisterName`, verified by `SimplexSponsor`. `.testing` keeps
   `transferWithSig` and has neither.
+- The dispute period changes `RegisterName` again: it gains `uint256
+  disputeDays` before `nonce`, and `registerWithCredit` takes `disputeDays`
+  after the registration. The names page that signs and the store service that
+  submits ship with the sponsor that verifies it.
 
 ### Deployment opsec
 
@@ -709,7 +733,9 @@ in the registrar, whose code is fixed once its `ProxyAdmin` is renounced. When t
 `ProxyAdmin`s of the registry, the registrar and the subname registrar are
 renounced and `simplex` is locked in `Root`, no owner power on any contract —
 including an arbitrary controller upgrade — can seize, transfer or re-point
-a name someone holds; until then the owners of those `ProxyAdmin`s can replace
+a name someone holds, except a name in its dispute period: any registrar
+controller can `unregister` it before its `disputeUntil`, and then register it
+anew. Until then the owners of those `ProxyAdmin`s can replace
 the code that enforces this. `reclaim` requires `_isApprovedOrOwner` and points the node
 at the holder only; `approveWithSig` requires the holder's signature and a
 grace-aware `ownerOf`, and only the recipient, or a controller, can complete the transfer.
@@ -767,7 +793,8 @@ Accepted, and new to this ledger:
   Only the beneficiary may rotate itself, and the upgrade escape is closed once
   the controller is frozen, so
   a compromised guardian permanently holds `withdraw` and `setRegistrarAllowance`.
-  No name can be taken from its holder before it expires, but the guardian can
+  No name can be taken from its holder after its dispute period ends and before
+  it expires, but the guardian can unregister a name in its dispute period and
   reserve held names, which stops their renewal, and reserve them again whenever
   the admin releases them. The admin's recovery is to release and renew each
   such name in one atomic timelock batch, every term, or to add a
@@ -796,7 +823,9 @@ Accepted, and new to this ledger:
   refuse above a gas threshold, and validate payload sizes before submitting.
   This is a security property carried by the service, not the contracts.
 - **V3 — after GOV9, retained keys keep indirect paths to held names.** These
-  stay open after every freeze and the lock (upgradeable-stack plan, section 4):
+  stay open after every freeze and the lock (upgradeable-stack plan, section 4);
+  within a name's dispute period, `unregister` is a direct one, on the guardian
+  without delay:
 
   | Path | Call | Caller |
   |---|---|---|
@@ -832,7 +861,8 @@ reservation that waits longer in public — an underpriced transaction in the
 mempool, or a guardian Safe proposal waiting in the Safe Transaction Service queue
 for its second signature — tells a squatter which name to take, and the squatter's
 `register` lands first. The reservation then succeeds on a name that is already
-held, and nothing takes the name back before it expires: the reservation stops
+held, and nothing takes the name back before it expires, except an `unregister`
+within the dispute period of a registration by the store: the reservation stops
 only its renewal. A pre-aged speculative commitment can also
 win the ordering, but gains nothing over registering the guessed label outright.
 `test/simplex/TestReservationRace.test.ts` pins only the case where the

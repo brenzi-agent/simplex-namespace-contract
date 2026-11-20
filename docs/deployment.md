@@ -1218,6 +1218,21 @@ oracle.
   registration gate. Once called, the dApp's gate UI clears automatically (it
   reads `nftGateEnabled` on-chain).
 - `setMinCharLength(uint8)` — monotonic decrease only (6 → 5 → 4 → 3).
+- `unregister(string label, uint256 until)` — owner **or beneficiary**, also
+  after the controller's `ProxyAdmin` is renounced; only before the name's `disputeUntil` on the registrar, and
+  only with `until` equal to it: read `baseRegistrar.disputeUntil(labelhash)`
+  when preparing the call, so a queued or repeated call cannot end a later
+  registration of the label whose dispute ends at another second. Once the
+  name is unregistered, cancel any other prepared `unregister` of it: a Safe
+  transaction with the same nonce, or the timelock operation. Used when a payment of
+  a sponsored registration is disputed or refunded: it clears the name's
+  records on the default resolver and on a past default the name points at,
+  ends the registration and the `SubnameRegistrar`'s subnames, and
+  makes the name available at once. Then `subnameRegistrar.purge(node,
+  labelhashes)`, with the labelhashes of `getChildren(node, …)` and repeated for
+  each subname with children, deletes the subnames (permissionless). The store then accepts a card
+  dispute, which cannot be refunded, or refunds a payment it gives back.
+  After a disputed renewal, reserve the name with `addReservedNames` instead.
 - `SimplexNamePolicy.addReservedNames(string[],Reason)` — owner **or
   beneficiary**, so a name under threat can be reserved immediately rather than
   at the timelock's pace. Bulk, one reason for the batch; about 26k gas per
@@ -1256,6 +1271,10 @@ oracle.
   lets it lapse, anyone can register it after its grace period unless it is
   reserved again.
 - `setDefaultResolver(address)` — the resolver `registerReserved` points names at.
+  Every resolver ever set as default must accept `clearRecords` from the
+  controller (its `trustedETHController`): the controller clears a past default
+  that a name points at, at registration and at `unregister`, so a holder could
+  otherwise block both by pointing the name at it.
 - `setPublicSalesOpen(bool)` — owner **or beneficiary**; gates the payable
   `register()` only. The credited path, `registerReserved` and both renew paths
   are exempt, so pausing never blocks the app-store flow or a renewal. Two-way, and
@@ -1313,8 +1332,11 @@ sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 100000000000000000000000) 
 The hot wallet also needs its own ETH for gas — the allowance authorises, it does
 not pay. Kill switch, same Safe, no delay:
 `sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 0)`. The registrar calls
-`sponsor.registerWithCredit(registration, nonce, deadline, sig)`, where `sig` is
-the owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`) over the
+`sponsor.registerWithCredit(registration, disputeDays, nonce, deadline, sig)`,
+where `disputeDays` is 120 for a card payment or an in-app purchase, 14 for BTC,
+XMR and prepaid codes, and for a balance the largest days among the payments
+that funded it (the controller accepts 14 to 120), and `sig` is the owner's EIP-712 `RegisterName`
+signature (domain `SimplexSponsor`) over the registration, `disputeDays` and the
 owner's current `sponsor.nonces(owner)`, unless the registrar registers to itself.
 The registrar refuses a client's registration whose owner is the registrar's own
 address: no signature is checked then, so the client would choose the name and

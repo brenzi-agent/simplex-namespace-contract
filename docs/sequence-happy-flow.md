@@ -34,7 +34,7 @@ sequenceDiagram
     C->>N: balanceOf(user) >= 1 ? (NFT gate)
     C->>O: price("alice", expires, duration)
     O-->>C: { base, premium }
-    C->>B: registerWithLabel("alice", owner=user, duration)
+    C->>B: registerWithLabel("alice", owner=user, duration, disputePeriod=0)
     note over B: stores labelOf[tokenId] = "alice",<br/>_mint updates ERC721Enumerable indices
     B->>R: setSubnodeOwner(tldNode, labelhash -> user)
     B-->>C: expiry
@@ -311,7 +311,7 @@ sequenceDiagram
 
     note over B: name expired + grace period passed
     C->>CT: register("alice", Carol, ...)
-    CT->>B: registerWithLabel("alice", Carol, duration)
+    CT->>B: registerWithLabel("alice", Carol, duration, disputePeriod=0)
     note over B: _register sees the old token -> _burn(old),<br/>then mints fresh to Carol
     B->>SR: onReregister(namehash("alice.testing"))
     note over SR: generation[2LD]++ — every old subname now has<br/>generationAt != generation, so ownerOf -> 0 (dead)
@@ -361,8 +361,11 @@ sequenceDiagram
 ```
 
 End-of-life is **expiry**, not a burn. SNRC has no voluntary burn or relinquish — `renew`
-extends a name, and a holder ends one simply by letting it lapse. Two orphan-storage risks
-follow, both accepted in [`security.md`](./security.md):
+extends a name, and a holder ends one simply by letting it lapse. The admin or the guardian
+can also end a sponsored registration before its `disputeUntil`, which sets its expiry to 0
+([`plans/dispute-period.md`](./plans/dispute-period.md)); the token then stays until the next
+registration, as after a lapse. Two orphan-storage risks follow, both accepted in
+[`security.md`](./security.md):
 
 - **L7 — expired-but-unburned.** The ERC-721 token is burned only by the *next* registration,
   never by expiry itself, so a lapsed name's token, its 2LD record, and all its subnames keep
