@@ -977,21 +977,28 @@ async function runTwoOnMainnet(rpcUrl, inputs) {
   }
 }
 
-async function registrarStepOnMainnet(rpcUrl, readBackOnly) {
+async function registrarStepInputs(rpcUrl) {
   assertCommitted(REGISTRAR_STEP_INPUTS)
-  const governance = loadGovernance()
-  const addresses = JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8'))
-  const client = await mainnetClient(rpcUrl)
-  if (readBackOnly) {
-    const failures = await registrarAllowanceReadBack(client, governance, addresses)
-    if (failures.length) {
-      console.error(`\n  ${failures.length} registrar read-back check(s) FAILED: ${failures.join(', ')}`)
-      process.exitCode = 1
-    } else {
-      console.log(`  the registrar allowance reads back`)
-    }
-    return
+  return {
+    governance: loadGovernance(),
+    addresses: JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')),
+    client: await mainnetClient(rpcUrl),
   }
+}
+
+async function registrarReadBackOnMainnet(rpcUrl) {
+  const { governance, addresses, client } = await registrarStepInputs(rpcUrl)
+  const failures = await registrarAllowanceReadBack(client, governance, addresses)
+  if (failures.length) {
+    console.error(`\n  ${failures.length} registrar read-back check(s) FAILED: ${failures.join(', ')}`)
+    process.exitCode = 1
+  } else {
+    console.log(`  the registrar allowance reads back`)
+  }
+}
+
+async function registrarBatchOnMainnet(rpcUrl) {
+  const { governance, addresses, client } = await registrarStepInputs(rpcUrl)
   const prepared = await registrarAllowanceBatch(client, governance, addresses, loadJournal(JOURNAL_PATH))
   if (prepared.refused) {
     for (const failure of prepared.failures) console.error(`  ✗ ${failure}`)
@@ -1010,8 +1017,8 @@ async function registrarStepOnMainnet(rpcUrl, readBackOnly) {
 const RUNS = {
   1: (rpcUrl) => runOneOnMainnet(rpcUrl, loadInputs()),
   2: (rpcUrl) => runTwoOnMainnet(rpcUrl, loadInputs()),
-  registrar: (rpcUrl) => registrarStepOnMainnet(rpcUrl, false),
-  'registrar-read-back': (rpcUrl) => registrarStepOnMainnet(rpcUrl, true),
+  registrar: registrarBatchOnMainnet,
+  'registrar-read-back': registrarReadBackOnMainnet,
 }
 
 async function main() {
