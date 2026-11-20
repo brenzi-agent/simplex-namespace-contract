@@ -87,7 +87,8 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 import {
-  ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, PROXY_ADMIN_ARTIFACT, REPO_ROOT, SOURCE_TAG, TLD,
+  TRANSPARENT_PROXY,
   UPGRADEABLE, V1_ABI, VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource,
   deployBehindProxy, deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, refusal, requireEnv, runtimeCode,
   safeBatch, sortedAddresses, storedValue,
@@ -623,6 +624,7 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
       async () => (await proxySlots(client, proxy)).admin)
     await check(`${name} ProxyAdmin owner is the admin Safe`, governance.adminSafe.address,
       () => client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' }))
+    await matchesCode(`${name} ProxyAdmin code`, proxyAdmin, () => runtimeCode(artifact(PROXY_ADMIN_ARTIFACT), {}))
   }
   for (const name of Object.keys(IMMUTABLE).filter((name) => Object.hasOwn(addresses, name))) {
     await matchesCode(`${name} code`, addresses[name], () => runtimeCode(artifact(IMMUTABLE[name].artifact), {}))
@@ -719,6 +721,7 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
   await check('Root ens', registry, () => read(addresses.Root, [], ADDR, 'ens'))
   await owner('Root owner', admin, () => read(addresses.Root, [], ADDR, 'owner'))
   await check('Root controllers(admin Safe)', 'true', () => read(addresses.Root, ADDR, BOOL, 'controllers', [admin]))
+  await check('Root controllers(deploy key)', 'false', () => read(addresses.Root, ADDR, BOOL, 'controllers', [deployer]))
   await check(`Root locked(labelhash("${TLD}"))`, 'false', () => read(addresses.Root, BYTES32, BOOL, 'locked', [labelhash(TLD)]))
   await check('v1 registrar controllers(v1 controller)', 'false', () => client.readContract({
     address: v1.BaseRegistrarImplementation, abi: V1_ABI, functionName: 'controllers', args: [v1.ETHRegistrarController],
