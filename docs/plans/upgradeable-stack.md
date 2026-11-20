@@ -727,13 +727,17 @@ sequenceDiagram
 
 ### Registrar step
 
-After step 11 of section 6, after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet (D21):
+After step 11 of section 6, after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet (D21); `RUN=registrar` writes the batch only when each of its reads below has the value shown:
 
 | Call or read | Caller | Value |
 |---|---|---|
 | `governance.mainnet.json` entry `registrarWallet` | operator, committed | kind `EOA`, `address`, allowance N in attoUSD |
 | governance check of the entry | `RUN=registrar` | no code at the address |
+| sponsor proxy's admin slot | `RUN=registrar` | the CREATE address of the proxy at nonce 1 |
 | sponsor proxy's implementation slot | `RUN=registrar` | not the implementation of `deploy:SimplexSponsor` in the committed journal, the one run 1 deployed |
+| `controller.sponsor()` | `RUN=registrar` | the sponsor proxy |
+| `sponsor.controller()` | `RUN=registrar` | the controller proxy |
+| `controller.beneficiary()` | `RUN=registrar` | the guardian Safe |
 | batch `safe-transaction.mainnet.simplex.registrar.json` | `RUN=registrar` | one transaction: `sponsor.setRegistrarAllowance(registrar wallet, N)` |
 | the batch executed | guardian Safe | – |
 | `sponsor.registrarAllowance(registrar wallet)` | `RUN=registrar-read-back` | N |
@@ -915,8 +919,8 @@ brenzi/simplex-namespace-contract:
   - refused: a reordered member of a stored struct
   - refused: a reordered member of a stored enum
   - accepted: a member appended to a stored enum, its storage size unchanged
-  - refused: a freeze or upgrade-authority transfer for an unknown `CONTRACT`, or for a proxy whose admin slot is not its CREATE address at nonce 1, or whose `ProxyAdmin` is renounced
-  - refused: an upgrade-authority transfer to an entry that is not a `TimelockController`, or to a timelock that fails its check
+  - refused: a call for an unknown `CONTRACT`, or for a proxy whose admin slot is not its CREATE address at nonce 1, or whose `ProxyAdmin` is renounced or owned by another account than the admin Safe
+  - refused: `ACTION=freeze` and `ACTION=transfer` for a `ProxyAdmin` the admin Safe owns
   - accepted: upgrade `data` encoded for a function of the candidate; refused: a function the candidate lacks
   - refused: a `_proxyAdmin` immutable that differs from the proxy's `ProxyAdmin`, also when named as an intended change
   - refused: an upgrade whose simulation from the `ProxyAdmin`'s owner reverts

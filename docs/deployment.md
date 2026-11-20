@@ -783,8 +783,8 @@ operator's machine. The attempts logs (`/deployments.mainnet.*.attempts.log`) an
 batch files (`/safe-transaction.*.json`) are listed in `.gitignore`; a file of these names
 that is already tracked stays tracked. `.testing`'s addresses file and journal, `deployments.mainnet.testing.json` and
 `deployments.mainnet.testing.journal.jsonl`, are committed the same way. The committed
-addresses file is read by the staging dApp build, `build-verification.mjs` and
-`prepare-upgrade.mjs`; the committed `verification.mainnet.simplex.json`, by
+addresses file is read by run 2, the registrar step, the staging dApp build,
+`build-verification.mjs` and `prepare-upgrade.mjs`; the committed `verification.mainnet.simplex.json`, by
 `verify-etherscan.mjs` and `prepare-upgrade.mjs`.
 
 Each on-chain deployment also **tags the git commit** it deploys (see
@@ -914,8 +914,8 @@ Until step 11, the deploy key restores v1 with four calls, at the addresses of
 3. `transferOwnership(admin Safe)` on the v1 controller
 4. `transferOwnership(admin Safe)` on the v1 oracle
 
-They are sent by hand; the rehearsal checks that they return v1 to its state before the
-retirement.
+They are sent by hand. That they return v1 to its state before step 8, the v1 retirement,
+is checked in the rehearsal.
 
 ```mermaid
 sequenceDiagram
@@ -962,7 +962,7 @@ flowchart TD
   G2[a controller candidate with _initialized 1 refused] --> H
   H[upgrade data: a missing function and an unguarded candidate refused] --> I
   I[the ProxyAdmin of each contract found by its name; a proxy address as CONTRACT refused; the resolver through an addresses file with swapped keys refused] --> J
-  J[the restore returns v1 to its state before the retirement]
+  J[the restore returns v1 to its state before step 8, the v1 retirement]
 ```
 
 The fork reads mainnet state at the block it started from. On a public RPC that serves only
