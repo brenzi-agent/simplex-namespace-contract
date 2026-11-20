@@ -51,7 +51,7 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `reserved-names.simplex.csv`, unchanged: `evgeny`, `brenzi` and `evgenypoberezkin` are left unreserved
   - `community-names.simplex.csv`
   - `terms.simplex.json`, with the links of the conditions version of D13
-- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version, simplex-chat/simplex-chat#8272, is tagged `general-terms-vN` and `community-terms-vN` before run 1. Run 1 has no override of the terms check: a failed check stops it. Recommended, pending the owner's answer to the question of #8272: its merge commit is tagged `general-terms-v1` and `community-terms-v1`, and both links of `terms.simplex.json` name `docs/NAMES-CONDITIONS.md` at that commit.
+- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version, simplex-chat/simplex-chat#8272, is tagged `general-terms-vN` and `community-terms-vN` before run 1. Run 1 is stopped by a failed terms check in every case. Recommended, pending the owner's answer to the question of #8272: its merge commit is tagged `general-terms-v1` and `community-terms-v1`, and both links of `terms.simplex.json` name `docs/NAMES-CONDITIONS.md` at that commit.
 - D14. The two names registered on v1 are registered again on v2 for their holders through the names service, as the first check of the v2 line: after the registrar step (D21), while purchase entry is still closed (D22); purchase entry opens only afterwards (the owner, 20 Nov).
 - D15. `.simplex` stays unlocked at deployment. `root.lock(labelhash("simplex"))` is a step of the launch-to-freeze plan, which keeps its freeze naming for the end state.
 - D16. Single-step transfers, by the deploy key in run 1:
@@ -77,8 +77,10 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - the guardian Safe executes the batch
   - `RUN=registrar-read-back`: `sponsor.registrarAllowance(wallet)` read back
 - D22. Store orders across the switch. The store service keeps, per order, a commitment on the controller of its ini and the owner's `RegisterName` and terms-acceptance signatures, whose EIP-712 domains name the sponsor and the name policy (simplex-chat `apps/simplex-store-service`, `Names/Store.hs`, `Names/Registration.hs`, `Names/Reveal.hs`); after the switch such an order's commitment is absent on the v2 controller, its signatures name v1's addresses, and v1 reverts from step 8 of section 6. Therefore:
-  - before run 1, an operator check (the owner, 20 Nov): purchase entry stays closed in the webstore and the SimpleX app, and the operator confirms that no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1; with purchase entry closed, that state is reached by waiting, since such an order registers or fails (`Names/Worker.hs`). The check is made with the store service as it is
-  - for the check, the store's metrics endpoint is read; it listens on 127.0.0.1 at `listener.metrics_port` (optional; set first where the deployed ini lacks it): `curl -s http://127.0.0.1:<metrics_port>/metrics | grep simplex_store_names_orders` prints 0 for the four phases (gauge `simplex_store_names_orders{phase="…"}`, counted from each order's stored phase, `Metrics.hs`, `Names/Store.hs`). A committed order past its `revealBefore` is counted as committed until the worker saves it as failed, so the operator waits for that
+  - before run 1, an operator check (the owner, 20 Nov): purchase entry stays closed in the webstore and the SimpleX app, and the operator confirms that no name invoice is open and that no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1; with purchase entry closed, that state is reached by waiting, since such an order registers or fails (`Names/Worker.hs`). The check is made with the store service as it is
+  - for the check, the store's metrics endpoint is read; it listens on 127.0.0.1 at `listener.metrics_port`, optional: where the deployed ini lacks it, it is set and the store service is restarted, since the ini is read only at start (`Main.hs`). `curl -s http://127.0.0.1:<metrics_port>/metrics | grep -E 'simplex_store_names_(invoices_open|orders)'` prints, read in this order, 0 for `simplex_store_names_invoices_open`, then 0 for the four phases (gauge `simplex_store_names_orders{phase="…"}`, counted from each order's stored phase, `Metrics.hs`, `Names/Store.hs`)
+  - an unpaid order whose invoice is paid while open is queued in the same settlement, and a payment of an invoice no longer open queues nothing (`Orders.hs`, `nameSettled`); an order whose invoice expired is closed and keeps the phase unpaid until its deletion 30 days later, or for good with a recorded payment (`Poller.hs`), so the `unpaid` count need not be 0
+  - a committed order past its `revealBefore` is counted as committed until the worker saves it as failed, so the operator waits for that
   - a failed paid order is closed with `//close`, with a refund recorded for support; a failed code order's code is released after 30 days
   - after the registrar step (D21) and the re-registration of the two v1 names (D14): purchase entry opens; an order is not committed or signed again
 
@@ -533,8 +535,8 @@ Unchanged:
 | # | Actor | Step |
 |---|---|---|
 | 1 | maintainers | the conditions version of D13 merged, tagged and mirrored to git.simplex.chat |
-| 2 | operator | `terms.simplex.json` set to its links and committed to the task branch; v1 files renamed on the operator's checkout (section 9) |
-| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, and no store order in the phase queued, committing, committed or registering (D22) |
+| 2 | operator | `terms.simplex.json` set to its links, both links checked with `scripts/terms-check.mjs` without a key, and the file committed to main; v1 files renamed on the operator's checkout (section 9) |
+| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, no open name invoice, and no store order in the phase queued, committing, committed or registering (D22) |
 | 4 | deploy key, run 1 | governance checks (section 7) |
 | 5 | deploy key, run 1 | implementations and proxies deployed and wired; beneficiary set |
 | 6 | deploy key, run 1 | read-back |
@@ -558,7 +560,7 @@ sequenceDiagram
   participant A as admin Safe
   participant N as names service
   M->>M: tag and mirror the conditions version
-  O->>O: terms.simplex.json, rename v1 files
+  O->>O: terms.simplex.json: links checked, committed; rename v1 files
   O->>O: check: purchase entry closed, no store order in flight
   D->>D: run 1: checks, deploy, wire, read-back
   D->>D: run 1: single-step transfers, proposals, v1 retirement
@@ -725,13 +727,17 @@ sequenceDiagram
 
 ### Registrar step
 
-After step 11 of section 6, after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet (D21):
+After step 11 of section 6, after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet (D21); `RUN=registrar` writes the batch only when each of its reads below has the value shown:
 
 | Call or read | Caller | Value |
 |---|---|---|
 | `governance.mainnet.json` entry `registrarWallet` | operator, committed | kind `EOA`, `address`, allowance N in attoUSD |
 | governance check of the entry | `RUN=registrar` | no code at the address |
+| sponsor proxy's admin slot | `RUN=registrar` | the CREATE address of the proxy at nonce 1 |
 | sponsor proxy's implementation slot | `RUN=registrar` | not the implementation of `deploy:SimplexSponsor` in the committed journal, the one run 1 deployed |
+| `controller.sponsor()` | `RUN=registrar` | the sponsor proxy |
+| `sponsor.controller()` | `RUN=registrar` | the controller proxy |
+| `controller.beneficiary()` | `RUN=registrar` | the guardian Safe |
 | batch `safe-transaction.mainnet.simplex.registrar.json` | `RUN=registrar` | one transaction: `sponsor.setRegistrarAllowance(registrar wallet, N)` |
 | the batch executed | guardian Safe | – |
 | `sponsor.registrarAllowance(registrar wallet)` | `RUN=registrar-read-back` | N |
@@ -913,8 +919,8 @@ brenzi/simplex-namespace-contract:
   - refused: a reordered member of a stored struct
   - refused: a reordered member of a stored enum
   - accepted: a member appended to a stored enum, its storage size unchanged
-  - refused: a freeze or upgrade-authority transfer for an unknown `CONTRACT`, or for a proxy whose admin slot is not its CREATE address at nonce 1, or whose `ProxyAdmin` is renounced
-  - refused: an upgrade-authority transfer to an entry that is not a `TimelockController`, or to a timelock that fails its check
+  - refused: a call for an unknown `CONTRACT`, or for a proxy whose admin slot is not its CREATE address at nonce 1, or whose `ProxyAdmin` is renounced or owned by another account than the admin Safe
+  - refused: `ACTION=freeze` and `ACTION=transfer` for a `ProxyAdmin` the admin Safe owns
   - accepted: upgrade `data` encoded for a function of the candidate; refused: a function the candidate lacks
   - refused: a `_proxyAdmin` immutable that differs from the proxy's `ProxyAdmin`, also when named as an intended change
   - refused: an upgrade whose simulation from the `ProxyAdmin`'s owner reverts
@@ -948,7 +954,7 @@ brenzi/simplex-namespace-contract:
 - `scripts/deploy-mainnet.mjs`:
   - runs 1 and 2
   - governance addresses from `governance.mainnet.json` in place of `OWNER_ADDRESS` and `GUARDIAN_ADDRESS`
-  - `TERMS_UNCHECKED` removed: run 1 has no override of the terms check
+  - `TERMS_UNCHECKED` removed: run 1 is stopped by a failed terms check in every case
   - the read-backs of `frozen()` (lines 571-572) and of the implementation keys (lines 661-664) removed
   - the comment at line 395 without the mention of `freeze`
 - `scripts/deploy-local.mjs`, with its comment at line 159

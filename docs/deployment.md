@@ -50,12 +50,13 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
 | Compile                       | `cd ens-contracts && npx hardhat compile`            |
 | Local one-shot (`.testing`)   | `./scripts/run-local.sh`                             |
 | Local one-shot (`.simplex`)   | `SIMPLEX_TLD=simplex ./scripts/run-local.sh`         |
-| Governance check              | `MAINNET_RPC_URL=… node scripts/governance-check.mjs [entry …]` |
-| Rehearsal on a mainnet fork   | `MAINNET_RPC_URL=… node scripts/rehearse-mainnet.mjs` |
-| Run 1 (deploy key)            | `RUN=1 MAINNET_RPC_URL=… MAX_BASE_FEE_GWEI=… node scripts/deploy-mainnet.mjs`, with `DEPLOYER_KEY` exported after `read -rs DEPLOYER_KEY` ([Run 1](#run-1)) |
-| Run 2 (keyless read-back)     | `RUN=2 MAINNET_RPC_URL=… node scripts/deploy-mainnet.mjs` |
-| Registrar step (keyless)      | `RUN=registrar MAINNET_RPC_URL=… node scripts/deploy-mainnet.mjs`, then `RUN=registrar-read-back` |
-| Upgrade, freeze, transfer     | `ACTION=upgrade\|freeze\|transfer CONTRACT=… MAINNET_RPC_URL=… node scripts/prepare-upgrade.mjs` |
+| RPC URL, once per shell       | `read -rs MAINNET_RPC_URL`, then `export MAINNET_RPC_URL` ([Mainnet](#mainnet-the-simplex-v2-redeploy)) |
+| Governance check              | `node scripts/governance-check.mjs [entry …]` |
+| Rehearsal on a mainnet fork   | `node scripts/rehearse-mainnet.mjs` |
+| Run 1 (deploy key)            | `RUN=1 MAX_BASE_FEE_GWEI=… node scripts/deploy-mainnet.mjs`, with `DEPLOYER_KEY` exported after `read -rs DEPLOYER_KEY` ([Run 1](#run-1)) |
+| Run 2 (keyless read-back)     | `RUN=2 node scripts/deploy-mainnet.mjs` |
+| Registrar step (keyless)      | `RUN=registrar node scripts/deploy-mainnet.mjs`, then `RUN=registrar-read-back` |
+| Upgrade, freeze, transfer     | `ACTION=upgrade\|freeze\|transfer CONTRACT=… node scripts/prepare-upgrade.mjs` |
 | Verify on Etherscan           | `ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs` |
 | Addresses output (local)      | stdout + `deployments.local.json`                    |
 | Addresses output (mainnet)    | `deployments.mainnet.simplex.json` + `.journal.jsonl` + `.attempts.log` + `verification.mainnet.simplex.json` |
@@ -127,13 +128,29 @@ omits `Root`.
 `scripts/deploy-mainnet.mjs` deploys `.simplex` only: the TLD is fixed in
 `scripts/stack.mjs`. One invocation is one run, selected by `RUN`.
 
+The JSON-RPC URL may hold a personal token, so it is written on no command line: it is
+read without echo and exported once per shell, and every mainnet command of this document
+takes it from the environment:
+
+```sh
+read -rs MAINNET_RPC_URL
+export MAINNET_RPC_URL
+```
+
+A failure of `deploy-mainnet.mjs`, `prepare-upgrade.mjs`, `governance-check.mjs`,
+`build-verification.mjs` or `rehearse-mainnet.mjs` is printed as one line per error of its
+chain of causes, with the error's name, code and short message, or its message where it
+has none (`causes` of `scripts/stack.mjs`), in place of the whole error object. Hardhat's
+own output may still name the URL: it is printed when the fork of a dry run fails to start
+(`scripts/gas-tools.mjs`), and its tail when the rehearsal fails.
+
 ### Sequence
 
 | # | Actor | Step | Tool |
 |---|---|---|---|
 | 1 | maintainers | the conditions version of the plan's D13 (simplex-chat/simplex-chat#8272) merged, tagged and mirrored to git.simplex.chat | git |
-| 2 | operator | `terms.simplex.json` set to its links and committed; v1 files renamed on the operator's checkout | git, `mv` |
-| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, and no store order in the phase queued, committing, committed or registering, so that every paid order has registered on v1 (The store check) | store metrics |
+| 2 | operator | `terms.simplex.json` set to its links, both links checked without a key, and the file committed; v1 files renamed on the operator's checkout | git, `scripts/terms-check.mjs`, `mv` |
+| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, no open name invoice, and no store order in the phase queued, committing, committed or registering, so that every paid order has registered on v1 (The store check) | store metrics |
 | 4 | deploy key | governance check | run 1 |
 | 5 | deploy key | implementations and proxies deployed and wired; governance check of the guardian Safe; beneficiary set | run 1 |
 | 6 | deploy key | read-back | run 1 |
@@ -166,7 +183,7 @@ sequenceDiagram
   participant A as admin Safe
   participant N as names service
   M->>M: tag and mirror the conditions version
-  O->>O: terms.simplex.json, rename v1 files
+  O->>O: terms.simplex.json: links checked, committed; rename v1 files
   O->>O: check: purchase entry closed, no store order in flight
   D->>D: run 1: governance check, deploy, wire
   D->>D: run 1: guardian Safe check, beneficiary, read-back
@@ -189,18 +206,27 @@ sequenceDiagram
 Step 3 is an operator check, made with the store service as it is (the owner, 20 Nov):
 
 1. Purchase entry stays closed in the webstore and the SimpleX app.
-2. The store's metrics endpoint shows 0 orders in each of the phases queued, committing,
-   committed and registering:
+2. The store's metrics endpoint shows, read in this order, 0 open name invoices, then 0
+   orders in each of the phases queued, committing, committed and registering:
 
    ```sh
-   curl -s http://127.0.0.1:<metrics_port>/metrics | grep simplex_store_names_orders
+   curl -s http://127.0.0.1:<metrics_port>/metrics | grep -E 'simplex_store_names_(invoices_open|orders)'
    ```
 
    The endpoint listens on 127.0.0.1 at `listener.metrics_port` of the store's ini, an
-   optional key: where the deployed ini lacks it, it is set first. In the gauge
-   `simplex_store_names_orders{phase="…"}`, orders are counted by their stored phase. A
-   committed order past its `revealBefore` is counted as committed until the store's worker
-   saves it as failed, so the operator waits for that.
+   optional key. Where the deployed ini lacks it, it is set, and the store service is
+   restarted: the ini is read only at the service's start (`Main.hs`, `Config.hs`).
+
+   An unpaid order whose invoice is paid while open is queued in the same settlement
+   (`Orders.hs`, `nameSettled`); a payment of an invoice that is no longer open is late and
+   queues nothing. So `simplex_store_names_invoices_open` reaches 0 first. The `unpaid`
+   count of `simplex_store_names_orders` need not be 0: an order whose invoice expired is
+   closed and keeps the phase unpaid until its deletion 30 days later, and for good when a
+   payment is recorded for it (`Poller.hs`, `Names/Store.hs`).
+
+   In the gauge `simplex_store_names_orders{phase="…"}`, orders are counted by their stored
+   phase. A committed order past its `revealBefore` is counted as committed until the
+   store's worker saves it as failed, so the operator waits for that.
 
 A failed paid order is closed with the store's `//close` command, with a refund recorded
 for support; a failed code order's code is released after 30 days. Purchase entry opens
@@ -281,7 +307,7 @@ A `TimelockController` entry, added at GOV8, has `address`, `codeHash`, `deployB
 | `TimelockController` | each listed proposer, executor and canceller holds its role |
 | `TimelockController` | among the accounts read (those of the entry, those its `RoleGranted` logs of the four roles name, the deploy key and `0x0`), the proposer, executor and canceller roles are held only by the accounts the entry lists for each, and the admin role only by the timelock itself |
 
-Run it alone with `MAINNET_RPC_URL=… node scripts/governance-check.mjs`, optionally followed
+Run it alone with `node scripts/governance-check.mjs`, optionally followed
 by entry names (CI runs `adminSafe guardianSafe`); it requires chain id 1 and exits with 1 on
 any failure. It reads the deploy key from `verification.mainnet.simplex.json` when that file
 exists.
@@ -351,6 +377,16 @@ tagged `general-terms-v1` and `community-terms-v1`, and both links name
 With both links naming one file, a community name is registered or received under the
 same acceptance as any other name until the admin sets separate community terms.
 
+At step 2, before the file is committed, both links are checked without a key, as run 1
+checks them:
+
+```sh
+node scripts/terms-check.mjs general "<generalTerms link>"
+node scripts/terms-check.mjs community "<communityTerms link>"
+```
+
+Each prints `✓ <role> terms: <link>`, or `✗ <reason>` and exits with 1.
+
 **`reserved-names.simplex.csv`**, required: a `name,reason,category` header, then one
 label per row, with `category` one of `Internal`, `Trademark` or `Community` (only the
 category goes on chain) and RFC 4180 quoting where a reason holds a comma. The run stops
@@ -378,7 +414,7 @@ and that stops the run.
 
 **The deploy key**: the v1 deploy key `0x38D19404644fe24EE7d638229a732CbE8275E333` (the
 plan's D9),
-the owner of the v1 contracts that run 1 retires. Run 1 takes the key as given; with
+the owner of the v1 contracts that run 1 retires. The key is used by run 1 as given; with
 another key, the v1 retirement reverts in the dry run on the fork, before any transaction
 on mainnet. The key needs ETH for the remaining ceiling the preflight prints.
 
@@ -392,7 +428,6 @@ entry of `verification.mainnet.simplex.json` is a commit of `main`.
 read -rs DEPLOYER_KEY
 export DEPLOYER_KEY
 RUN=1 \
-MAINNET_RPC_URL=https://… \
 MAX_BASE_FEE_GWEI=0.078 \
 node scripts/deploy-mainnet.mjs
 unset DEPLOYER_KEY
@@ -413,7 +448,7 @@ names for it:
 | Variable | Default | Meaning |
 |---|---|---|
 | `RUN` | — | `1` |
-| `MAINNET_RPC_URL` | — | JSON-RPC URL, used by the fork and the real run; it must serve `eth_getLogs` from old blocks (below) |
+| `MAINNET_RPC_URL` | — | JSON-RPC URL, used by the fork and the real run, exported after `read -rs MAINNET_RPC_URL`; it must serve `eth_getLogs` from old blocks (below) |
 | `DEPLOYER_KEY` | — | the deploy key |
 | `MAX_BASE_FEE_GWEI` | — | per-gas cap; a transaction is sent only when the base fee is at most this |
 | `ABSOLUTE_MAX_BASE_FEE_GWEI` | 4 × `MAX_BASE_FEE_GWEI` | ceiling at which the stall bumps stop |
@@ -454,8 +489,8 @@ prompt.
 **`MAINNET_RPC_URL` and old logs.** The run-1 read-back reads the registrar's
 `ControllerAdded` logs from the block of the registrar proxy's deployment, and the
 governance check of a `TimelockController` entry reads its `RoleGranted` logs from its
-`deployBlock`. Before the fork, run 1 asks the endpoint for `eth_getLogs` at each of these
-blocks and stops, with one line per block the endpoint refuses:
+`deployBlock`. Before the fork, `eth_getLogs` is requested from the endpoint at each of
+these blocks, and run 1 is stopped, with one line per block the endpoint refuses:
 
 - the registrar proxy's block, from the journal; on a fresh run, the head minus 50,400
   blocks, about seven days
@@ -559,8 +594,8 @@ five implementations, each immutable must hold its value:
 | `UniversalResolver` | `unsafeCallGas` | `50000`, the `DEFAULT_UNSAFE_CALL_GAS` of `CCIPReader` |
 
 **Handover**, after the read-back passes. Before steps 1, 3, 4, 6 and 7, the single-step
-transfers to the admin Safe, run 1 repeats the governance check of the admin Safe and stops
-on a failure:
+transfers to the admin Safe, the governance check of the admin Safe is repeated, and run 1
+is stopped on a failure:
 
 1. `baseRegistrar.transferOwnership(admin Safe)`
 2. `ens.setOwner(namehash("eth-usd.data.eth"), 0x0)`
@@ -698,7 +733,7 @@ treated as hot.
 ### Run 2
 
 ```sh
-RUN=2 MAINNET_RPC_URL=https://… node scripts/deploy-mainnet.mjs
+RUN=2 node scripts/deploy-mainnet.mjs
 ```
 
 Run 2 is a read-back only, without a key. It reads `deployments.mainnet.simplex.json`,
@@ -748,8 +783,8 @@ operator's machine. The attempts logs (`/deployments.mainnet.*.attempts.log`) an
 batch files (`/safe-transaction.*.json`) are listed in `.gitignore`; a file of these names
 that is already tracked stays tracked. `.testing`'s addresses file and journal, `deployments.mainnet.testing.json` and
 `deployments.mainnet.testing.journal.jsonl`, are committed the same way. The committed
-addresses file is read by the staging dApp build, `build-verification.mjs` and
-`prepare-upgrade.mjs`; the committed `verification.mainnet.simplex.json`, by
+addresses file is read by run 2, the registrar step, the staging dApp build,
+`build-verification.mjs` and `prepare-upgrade.mjs`; the committed `verification.mainnet.simplex.json`, by
 `verify-etherscan.mjs` and `prepare-upgrade.mjs`.
 
 Each on-chain deployment also **tags the git commit** it deploys (see
@@ -772,7 +807,7 @@ names service's registrar wallet and its allowance, the operator adds its entry 
 ```
 
 ```sh
-RUN=registrar MAINNET_RPC_URL=https://… node scripts/deploy-mainnet.mjs
+RUN=registrar node scripts/deploy-mainnet.mjs
 ```
 
 The step uses no key. It requires `scripts/`, `governance.mainnet.json`,
@@ -799,7 +834,7 @@ with the printed call.
 Then:
 
 ```sh
-RUN=registrar-read-back MAINNET_RPC_URL=https://… node scripts/deploy-mainnet.mjs
+RUN=registrar-read-back node scripts/deploy-mainnet.mjs
 ```
 
 reads `sponsor.registrarAllowance(wallet)` and exits with 1 unless it equals the entry's
@@ -854,7 +889,7 @@ skipped.
 `scripts/build-verification.mjs` rebuilds the file when run 1 did not write it:
 
 ```sh
-MAINNET_RPC_URL=https://… DEPLOYER=0x… node scripts/build-verification.mjs
+DEPLOYER=0x… node scripts/build-verification.mjs
 ```
 
 It requires `ens-contracts/` at the pinned commit with the tag `simplex-mainnet-v2`, and
@@ -871,7 +906,7 @@ rebuild is refused:
 
 ### Restore v1
 
-Until step 11, the deploy key restores v1 with four calls, at the addresses of
+Until step 11, v1 is restored with four calls from the deploy key, at the addresses of
 `deployments.mainnet.simplex-v1.json`:
 
 1. `addController(v1 controller)` on the v1 registrar
@@ -879,8 +914,8 @@ Until step 11, the deploy key restores v1 with four calls, at the addresses of
 3. `transferOwnership(admin Safe)` on the v1 controller
 4. `transferOwnership(admin Safe)` on the v1 oracle
 
-They are sent by hand; the rehearsal checks that they return v1 to its state before the
-retirement.
+They are sent by hand. That they return v1 to its state before step 8, the v1 retirement,
+is checked in the rehearsal.
 
 ```mermaid
 sequenceDiagram
@@ -899,15 +934,15 @@ The deploy key is destroyed at step 16, after the switch.
 ### Rehearsal on a mainnet fork
 
 ```sh
-MAINNET_RPC_URL=https://… node scripts/rehearse-mainnet.mjs
+node scripts/rehearse-mainnet.mjs
 ```
 
-The rehearsal needs the inputs of step 2, the renamed v1 files included, and compiles
-`ens-contracts/` at its current commit; it sends its transactions to the fork only. It
-spawns the fork on port 18545, generates a fresh deploy key, gives it the v1 roles the v1
-deploy key holds on mainnet, and impersonates the Safes; it executes the batches of run 1
-and of the registrar step as the Safe each batch names. The registrar step uses a
-registrar wallet the rehearsal generates. In order, it checks:
+For the rehearsal, the inputs of step 2 are needed, the renamed v1 files included, and
+`ens-contracts/` is compiled at its current commit; its transactions are sent to the fork
+only. The fork is spawned on port 18545; a fresh deploy key is generated and given the v1
+roles that the v1 deploy key holds on mainnet; the Safes are impersonated, and the batches
+of run 1 and of the registrar step are executed as the Safe each batch names. The
+registrar step uses a registrar wallet generated for the rehearsal. Its checks, in order:
 
 ```mermaid
 flowchart TD
@@ -927,7 +962,7 @@ flowchart TD
   G2[a controller candidate with _initialized 1 refused] --> H
   H[upgrade data: a missing function and an unguarded candidate refused] --> I
   I[the ProxyAdmin of each contract found by its name; a proxy address as CONTRACT refused; the resolver through an addresses file with swapped keys refused] --> J
-  J[the restore returns v1 to its state before the retirement]
+  J[the restore returns v1 to its state before step 8, the v1 retirement]
 ```
 
 The fork reads mainnet state at the block it started from. On a public RPC that serves only
@@ -952,7 +987,7 @@ prints the call and its calldata, and writes them as a Safe Transaction Builder 
 | Variable | Actions | Meaning |
 |---|---|---|
 | `ACTION` | all | `upgrade`, `freeze` or `transfer` |
-| `MAINNET_RPC_URL` | all | JSON-RPC URL; chain id 1 is required |
+| `MAINNET_RPC_URL` | all | JSON-RPC URL, exported after `read -rs MAINNET_RPC_URL` ([Mainnet](#mainnet-the-simplex-v2-redeploy)); chain id 1 is required |
 | `CONTRACT` | all | `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexController`, `SimplexNamePolicy`, `SubnameRegistrar`, `SimplexResolver`, `SimplexSponsor` or `UniversalResolver` |
 | `DEPLOYER_KEY` | `upgrade` | the key that deploys the candidate |
 | `MAX_BASE_FEE_GWEI` | `upgrade` | per-gas cap of the candidate's deployment |
@@ -1011,8 +1046,7 @@ prints `upgradeAndCall(proxy, candidate, data)`:
 ```sh
 read -rs DEPLOYER_KEY
 export DEPLOYER_KEY
-ACTION=upgrade CONTRACT=SimplexController \
-MAINNET_RPC_URL=https://… MAX_BASE_FEE_GWEI=… \
+ACTION=upgrade CONTRACT=SimplexController MAX_BASE_FEE_GWEI=… \
 node scripts/prepare-upgrade.mjs
 unset DEPLOYER_KEY
 ```
@@ -1099,7 +1133,7 @@ batches are missing. With the GOV8 prerequisites, `renounceOwnership()` for the 
 `ProxyAdmin` is prepared:
 
 ```sh
-ACTION=freeze CONTRACT=SubnameRegistrar MAINNET_RPC_URL=https://… node scripts/prepare-upgrade.mjs
+ACTION=freeze CONTRACT=SubnameRegistrar node scripts/prepare-upgrade.mjs
 ```
 
 **`ACTION=transfer`** is refused on every path today, with the reason that a transfer of
@@ -1148,8 +1182,8 @@ length:
 |---|---|---|
 | 6+ | $50 | base price |
 
-That is `setPrices(5000, [])`: names shorter than six characters cannot be registered, so
-the launch list has no exceptions. The setter reverts for an exception length outside 1
+That is `setPrices(5000, [])`, with an empty list of exceptions, since names shorter than
+six characters cannot be registered. The setter reverts for an exception length outside 1
 to 64, a zero exception price and a duplicate length. A free TLD is `setPrices(0, [])`.
 `setUsdOracle(feed, decimals)` moves the Chainlink feed; the scale is explicit, since the
 interface has no `decimals()` to read. The premium is zero, so a lapsed name costs the
@@ -1375,7 +1409,7 @@ Before step 11, deployments from `production` are admitted in the repository's
 | Variable | Read by | Meaning |
 |---|---|---|
 | `RUN` | `deploy-mainnet.mjs` | `1`, `2`, `registrar` or `registrar-read-back` |
-| `MAINNET_RPC_URL` | `deploy-mainnet.mjs`, `governance-check.mjs`, `prepare-upgrade.mjs`, `rehearse-mainnet.mjs`, `build-verification.mjs` | JSON-RPC URL; chain id 1 is required by each script but the rehearsal, which forks it; run 1 requires `eth_getLogs` from old blocks |
+| `MAINNET_RPC_URL` | `deploy-mainnet.mjs`, `governance-check.mjs`, `prepare-upgrade.mjs`, `rehearse-mainnet.mjs`, `build-verification.mjs` | JSON-RPC URL, exported after `read -rs MAINNET_RPC_URL`, never written on the command line; chain id 1 is required by each script but the rehearsal, which forks it; run 1 requires `eth_getLogs` from old blocks |
 | `DEPLOYER_KEY` | `deploy-mainnet.mjs` (run 1), `prepare-upgrade.mjs` (`upgrade`) | key that signs; exported after `read -rs DEPLOYER_KEY`, never written on the command line |
 | `MAX_BASE_FEE_GWEI` | `deploy-mainnet.mjs` (run 1), `prepare-upgrade.mjs` (`upgrade`) | per-gas cap |
 | `ABSOLUTE_MAX_BASE_FEE_GWEI` | `deploy-mainnet.mjs` (run 1) | ceiling of the stall bumps; default 4 × cap |

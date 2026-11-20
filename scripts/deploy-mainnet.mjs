@@ -111,9 +111,7 @@ const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
 const FRESH_RUN_LOG_DEPTH = 50_400n
 const RUN_ONE_INPUTS = ['scripts', 'governance.mainnet.json', `reserved-names.${TLD}.csv`, `terms.${TLD}.json`, `community-names.${TLD}.csv`]
-const REGISTRAR_STEP_INPUTS = [
-  'scripts', 'governance.mainnet.json', `deployments.mainnet.${TLD}.json`, `deployments.mainnet.${TLD}.journal.jsonl`,
-]
+const REGISTRAR_STEP_INPUTS = ['scripts', 'governance.mainnet.json', `deployments.mainnet.${TLD}.json`]
 const ACCEPT_OWNERSHIP_ABI = parseAbi(['function acceptOwnership()'])
 const SPONSOR_ABI = parseAbi([
   'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
@@ -750,23 +748,15 @@ export const acceptanceBatch = (adminSafe, addresses) => safeBatch({
   description: `acceptOwnership() on the controller proxy ${addresses.ETHRegistrarController} and on SimplexPriceOracle ${addresses.SimplexPriceOracle}`,
 })
 
-export async function registrarAllowanceBatch(client, { registrarWallet: wallet, guardianSafe }, addresses, journal) {
+export async function registrarAllowanceBatch(client, { registrarWallet: wallet, guardianSafe }, addresses) {
   if (!wallet) return refusal(['governance.mainnet.json has no registrarWallet entry'])
   const failures = await entryFailures(client, wallet)
   if (failures.length) return refusal(failures.map((failure) => `registrarWallet ${wallet.address} ${failure}`))
   const { SimplexSponsor: sponsor, ETHRegistrarController: controller } = addresses
-  const { implementation, admin } = await proxySlots(client, sponsor)
-  const runOne = journal.find(({ step }) => step === 'deploy:SimplexSponsor')?.address
-  const unlinked = [
-    ...(admin === proxyAdminOf(sponsor)
-      ? []
-      : [`the sponsor ${sponsor} is not a v2 proxy: its admin slot holds ${admin}, not ${proxyAdminOf(sponsor)}`]),
-    ...(runOne === undefined
-      ? ['the journal records no deploy:SimplexSponsor, the implementation run 1 deployed']
-      : implementation.toLowerCase() === runOne.toLowerCase()
-        ? [`the sponsor ${sponsor} still runs ${implementation}, the implementation run 1 deployed: the allowance waits for the sponsor's upgrade`]
-        : []),
-  ]
+  const { admin } = await proxySlots(client, sponsor)
+  const unlinked = admin === proxyAdminOf(sponsor)
+    ? []
+    : [`the sponsor ${sponsor} is not a v2 proxy: its admin slot holds ${admin}, not ${proxyAdminOf(sponsor)}`]
   for (const [address, functionName, expected] of [
     [controller, 'sponsor', sponsor],
     [sponsor, 'controller', controller],
@@ -1000,7 +990,7 @@ async function registrarReadBackOnMainnet(rpcUrl) {
 
 async function registrarBatchOnMainnet(rpcUrl) {
   const { governance, addresses, client } = await registrarStepInputs(rpcUrl)
-  const prepared = await registrarAllowanceBatch(client, governance, addresses, loadJournal(JOURNAL_PATH))
+  const prepared = await registrarAllowanceBatch(client, governance, addresses)
   if (prepared.refused) {
     for (const failure of prepared.failures) console.error(`  ✗ ${failure}`)
     process.exit(1)

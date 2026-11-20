@@ -287,10 +287,17 @@ async function main() {
 
     const registrarWallet = { kind: 'EOA', address: privateKeyToAccount(generatePrivateKey()).address, allowance: 10n ** 20n }
     const withRegistrar = { ...governance, registrarWallet }
-    console.log(`\n=== The registrar step before the sponsor's upgrade ===`)
-    const early = await registrarAllowanceBatch(client, withRegistrar, addresses, loadJournal(journalPath))
-    expect('the registrar step waits while the sponsor runs the implementation run 1 deployed',
-      early.refused && early.failures.some((failure) => failure.includes('still runs')), outcome(early))
+    console.log(`\n=== The registrar step with the registrar wallet ${registrarWallet.address} ===`)
+    const unset = await registrarAllowanceReadBack(client, withRegistrar, addresses)
+    expect('the registrar read-back fails before the guardian Safe sets the allowance', unset.length === 1, unset.join(', '))
+    const allowance = await registrarAllowanceBatch(client, withRegistrar, addresses)
+    expect('the registrar step writes a batch of the guardian Safe to the sponsor proxy',
+      !allowance.refused && allowance.batch.meta.createdFromSafeAddress === governance.guardianSafe.address &&
+        allowance.batch.transactions.every(({ to }) => to === addresses.SimplexSponsor),
+      outcome(allowance, () => JSON.stringify(allowance.batch.transactions)))
+    if (!allowance.refused) await execute(allowance.batch)
+    const set = await registrarAllowanceReadBack(client, withRegistrar, addresses)
+    expect('the registrar read-back passes after the guardian Safe executes the batch', set.length === 0, set.join(', '))
 
     const upgradeKey = privateKeyToAccount(generatePrivateKey())
     await fund(upgradeKey.address)
@@ -337,18 +344,6 @@ async function main() {
     }
     const afterUpgrades = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes after the upgrades', afterUpgrades.length === 0, afterUpgrades.join(', '))
-
-    console.log(`\n=== The registrar step with the registrar wallet ${registrarWallet.address}, after the sponsor's upgrade ===`)
-    const unset = await registrarAllowanceReadBack(client, withRegistrar, addresses)
-    expect('the registrar read-back fails before the guardian Safe sets the allowance', unset.length === 1, unset.join(', '))
-    const allowance = await registrarAllowanceBatch(client, withRegistrar, addresses, loadJournal(journalPath))
-    expect('the registrar step writes a batch of the guardian Safe to the sponsor proxy',
-      !allowance.refused && allowance.batch.meta.createdFromSafeAddress === governance.guardianSafe.address &&
-        allowance.batch.transactions.every(({ to }) => to === addresses.SimplexSponsor),
-      outcome(allowance, () => JSON.stringify(allowance.batch.transactions)))
-    if (!allowance.refused) await execute(allowance.batch)
-    const set = await registrarAllowanceReadBack(client, withRegistrar, addresses)
-    expect('the registrar read-back passes after the guardian Safe executes the batch', set.length === 0, set.join(', '))
 
     console.log(`\n=== prepare-upgrade and a candidate whose _initialized is not 255 ===`)
     const { slot: initializedSlot } = storageLayout(artifact(UPGRADEABLE.SimplexController.artifact))

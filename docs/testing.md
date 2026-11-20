@@ -8,7 +8,7 @@
 | End-to-end `.simplex`  | parent repo          | `npx playwright test --project=simplex-tld` |
 | Deployment-script tests | parent repo, `scripts/*.test.mjs` | `node --test`, with the files the step "Script tests" of `.github/workflows/deployment-scripts.yml` names |
 | Journal checks         | parent repo          | `node scripts/journal-check.mjs`        |
-| Rehearsal of runs 1 and 2, the registrar step and the upgrade tooling on a mainnet fork | parent repo | `MAINNET_RPC_URL=… node scripts/rehearse-mainnet.mjs` |
+| Rehearsal of runs 1 and 2, the registrar step and the upgrade tooling on a mainnet fork | parent repo | `node scripts/rehearse-mainnet.mjs`, with `MAINNET_RPC_URL` exported after `read -rs MAINNET_RPC_URL` |
 
 The deployment-script tests, the journal checks and the rehearsal are described in
 `docs/deployment.md`, "Rehearsal on a mainnet fork".

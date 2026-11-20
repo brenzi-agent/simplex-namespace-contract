@@ -283,8 +283,9 @@ Every on-chain call, in order, with who signs it.
 ### A1. Deployment (GOV1)
 
 Before run 1, an operator check: purchase entry stays closed in the webstore and the SimpleX
-app, and the store's metrics endpoint shows no order in the phase queued, committing,
-committed or registering, so that every paid order has registered on v1 before v1 is retired
+app, and the store's metrics endpoint shows no open name invoice and no order in the phase
+queued, committing, committed or registering, so that every paid order has registered on v1
+before v1 is retired
 (D22 of `docs/plans/upgradeable-stack.md`; `docs/deployment.md`, "The store check").
 
 Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`. The calls and their order
