@@ -611,7 +611,7 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
   await check('registry resolver of the TLD node', addresses.PublicResolver,
     () => read(registry, BYTES32, ADDR, 'resolver', [TLD_NODE]))
   await check('controllers added on the registrar', sortedAddresses([controller, addresses.SimplexNamePolicy]).join(', '),
-    async () => sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)).join(', '))
+    async () => [...new Set(sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)))].join(', '))
 
   const handedOver = await read(registrar, [], ADDR, 'owner')
     .then((owner) => owner.toLowerCase() === governance.adminSafe.address.toLowerCase(), () => false)
