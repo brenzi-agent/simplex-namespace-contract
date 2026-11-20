@@ -727,6 +727,11 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   const forkPort = parseInt(process.env.FORK_PORT || '18545', 10)
   const account = privateKeyToAccount(deployerKey)
   const { governance } = inputs
+  if (governance.registrarWallet.placeholder) {
+    console.error(`governance.mainnet.json registrarWallet ${governance.registrarWallet.address} is a placeholder: ` +
+      `${governance.registrarWallet.placeholder}. Run 1 refuses it before the fork.`)
+    process.exit(1)
+  }
 
   // Cheap and first: a stale build must not cost a fork spawn, let alone a
   // transaction.
