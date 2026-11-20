@@ -209,6 +209,7 @@ export function assertBuildFresh() {
       cwd: ENS_CONTRACTS_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       encoding: 'utf8',
+      env: { PATH: process.env.PATH, HOME: process.env.HOME },
     })
   } catch (e) {
     console.error('`npx hardhat compile` failed — refusing to deploy.\n')

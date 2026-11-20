@@ -192,7 +192,7 @@ export async function spawnHardhatFork({ mainnetRpcUrl, port = 8546, ensContract
       cwd: ensContractsDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...process.env, MAINNET_RPC_URL: mainnetRpcUrl },
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, MAINNET_RPC_URL: mainnetRpcUrl },
     },
   )
   proc.on('error', (e) => console.error('hardhat node spawn error:', e))
