@@ -164,7 +164,7 @@ own output may still name the URL: it is printed when the fork of a dry run fail
 | 14 | operator | purchase entry opened in the webstore and the SimpleX app | store |
 | 15 | operator | Etherscan verification | `verify-etherscan.mjs` |
 | 16 | operator | deploy key destroyed | — |
-| 17 | operator | the dApp switch, before public sales open: the dApp pull request merged, `production` fast-forwarded and admitted to the `github-pages` environment, the `simplex-app` submodule pointer committed, the dApp checked (The dApp switch) | dApp pull request, GitHub settings, git |
+| 17 | operator | the dApp switch, before public sales open: `production` admitted to the `github-pages` environment, the dApp pull request merged, `production` fast-forwarded, the `simplex-app` submodule pointer committed, the dApp checked (The dApp switch) | dApp pull request, GitHub settings, git |
 
 Step 3 precedes run 1: an order still in flight holds a commitment on the v1 controller
 and signatures whose EIP-712 domains name the v1 sponsor and name policy, and v1 reverts

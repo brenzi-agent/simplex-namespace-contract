@@ -564,7 +564,7 @@ Unchanged:
 | 14 | operator | purchase entry opened in the webstore and the SimpleX app (D22) |
 | 15 | operator | Etherscan verification |
 | 16 | operator | deploy key destroyed |
-| 17 | operator | the dApp switch (section 9), before public sales open (launch-to-freeze plan, A4): the dApp pull request merged, `production` fast-forwarded and admitted to the `github-pages` environment, the `simplex-app` submodule pointer committed to main |
+| 17 | operator | the dApp switch (section 9), before public sales open (launch-to-freeze plan, A4): `production` admitted to the `github-pages` environment, the dApp pull request merged, `production` fast-forwarded, the `simplex-app` submodule pointer committed to main |
 
 ```mermaid
 sequenceDiagram
