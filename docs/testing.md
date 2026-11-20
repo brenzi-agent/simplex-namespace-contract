@@ -16,7 +16,7 @@ across 6 files**:
 
 | File                            | Tests | Covers |
 |---------------------------------|------:|--------|
-| `TestSimplexController.test.ts` | 80 | commit-reveal (happy + too-early/too-late), NFT gate, reserved-name flows, `setMinCharLength` monotonic guard, `disableNftGate` one-way guard, pricing/oracle swap + freeze, `onlyOwner` access control |
+| `TestSimplexController.test.ts` | 80 | commit-reveal (happy + too-early/too-late), NFT gate, reserved-name flows, `setMinCharLength` monotonic guard, `disableNftGate` one-way guard, pricing/oracle swap, `onlyOwner` access control |
 | `TestRegistrarV3.test.ts`       | 18 | `registerWithLabel`/`labelOf`, ERC721Enumerable, `tokenURI`/renderer hook, `maxLabelLength`, auto-reclaim on transfer, `onReregister` |
 | `TestSubnameRegistrar.test.ts`  | 12 | `createSubname`/`deleteSubname`/`purge`, `ownerOf` walk-up, generation GC, `getChildren` index |
 | `TestMetadataRenderer.test.ts`  | 7  | on-chain JSON+SVG output, escaping |

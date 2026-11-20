@@ -307,8 +307,9 @@ above as "the cold owner."
 - **N8 — FIXED.** The two items this left open outside `docs/` are now corrected:
   `CLAUDE.md`'s claim about keeping upstream `register(uint256,…)`, and
   `ens-contracts/docs/upgrades.md`'s stale `__gap[49]`. `upgrades.md` now
-  documents the real layout (`__gap[45]`, the names-v2 block, and the reserved
-  placeholder slots) and the fact that `freeze()` ends upgradeability entirely.
+  documents the real layout (the controller's `__gap[43]`, the names-v2 block, and
+  the reserved placeholder slots) and that a contract is frozen when its
+  `ProxyAdmin` is renounced.
 
 **Verdict:** no new critical/high in the contracts themselves. The dominant risk
 remains operational — the ownership handoff is still open with a hot deployer key
