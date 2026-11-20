@@ -247,6 +247,16 @@ export function assertTaggedSource(tag) {
   return { commit, tags }
 }
 
+export const parentHead = () => git(REPO_ROOT, 'rev-parse', 'HEAD')
+
+export function assertCommitted(paths) {
+  const changes = git(REPO_ROOT, 'status', '--porcelain', '--', ...paths)
+  if (changes) {
+    console.error(`the parent repository has changes outside the commit ${parentHead()} in ${paths.join(', ')}:\n${changes}`)
+    process.exit(1)
+  }
+}
+
 export const artifact = (path) => JSON.parse(readFileSync(join(ARTIFACTS, path), 'utf8'))
 
 export function constructorArgs(abi, args) {

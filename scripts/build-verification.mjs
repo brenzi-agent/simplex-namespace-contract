@@ -30,9 +30,9 @@ import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, SOURCE_TAG, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, ensContractsHead,
-  immutableNames, immutablesIn, initializerData, interfaceOf, mainnetClient, placeImmutables, proxySlots, refusal,
-  requireEnv, storageLayout,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  ensContractsHead, immutableNames, immutablesIn, initializerData, interfaceOf, mainnetClient, parentHead,
+  placeImmutables, proxySlots, refusal, requireEnv, storageLayout,
 } from './stack.mjs'
 
 /**
@@ -42,9 +42,10 @@ import {
  */
 export async function assembleVerification({ client, addresses, deployer, adminSafe }) {
   const ensContractsCommit = ensContractsHead()
+  const parentCommit = parentHead()
   const target = (path, address, args) => {
     const { abi, buildInfoId } = artifact(path)
-    return { address, artifact: path, constructorArgs: constructorArgs(abi, args), buildInfoId, ensContractsCommit }
+    return { address, artifact: path, constructorArgs: constructorArgs(abi, args), buildInfoId, ensContractsCommit, parentCommit }
   }
   const setup = { tld: TLD, deployer, chainlinkEthUsd: addresses.DummyOracle }
   const contracts = {}
@@ -112,6 +113,7 @@ async function lookupDeployerFromJournal(rpcUrl) {
 async function cli() {
   const rpcUrl = requireEnv('MAINNET_RPC_URL')
   assertTaggedSource(SOURCE_TAG)
+  assertCommitted(['scripts', 'governance.mainnet.json'])
   assertBuildFresh()
   const client = await mainnetClient(rpcUrl)
   const built = await verificationFile(client, {

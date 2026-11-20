@@ -12,9 +12,9 @@ import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
 import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, PROXY_ADMIN_ABI, REPO_ROOT, TLD, UPGRADEABLE,
-  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames,
-  immutablesIn, interfaceOf, mainnetClient, placeImmutables, proxyAdminOf, proxySlots, refusal, requireEnv,
-  storageLayout, storedValue,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  immutableNames, immutablesIn, interfaceOf, mainnetClient, parentHead, placeImmutables, proxyAdminOf, proxySlots,
+  refusal, requireEnv, storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -337,6 +337,7 @@ const ACTIONS = {
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
     const source = assertTaggedSource()
+    assertCommitted(['scripts'])
     assertBuildFresh()
     const runner = createWaitForBaseRunner({
       publicClient: client, walletClient, account,
@@ -358,7 +359,9 @@ const ACTIONS = {
     }
     const prepared = await prepareUpgrade(confirmed, client, name, addresses, verification, account.address, request)
     if (prepared.refused) return prepared
-    verification.contracts[`${name}@${prepared.candidate}`] = { ...prepared.entry, ensContractsCommit: source.commit }
+    verification.contracts[`${name}@${prepared.candidate}`] = {
+      ...prepared.entry, ensContractsCommit: source.commit, parentCommit: parentHead(),
+    }
     writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
     console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout, the current immutables and the current interface`)
     for (const { name: immutable, current, next } of prepared.changes) {

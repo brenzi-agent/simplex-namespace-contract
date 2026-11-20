@@ -81,7 +81,7 @@ import {
 } from './simplex-price-curve.mjs'
 import {
   ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
-  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy,
+  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, deployBehindProxy,
   deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses,
   storedValue,
 } from './stack.mjs'
@@ -102,6 +102,7 @@ const COMMUNITY_BATCH = 100
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
 const FRESH_RUN_LOG_DEPTH = 50_400n
+const RUN_ONE_INPUTS = ['scripts', 'governance.mainnet.json', `reserved-names.${TLD}.csv`, `terms.${TLD}.json`, `community-names.${TLD}.csv`]
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
@@ -765,6 +766,7 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   // Cheap and first: a stale build must not cost a fork spawn, let alone a
   // transaction.
   assertTaggedSource(SOURCE_TAG)
+  assertCommitted(RUN_ONE_INPUTS)
   assertBuildFresh()
 
   // A populated addresses file with no journal beside it means a previous

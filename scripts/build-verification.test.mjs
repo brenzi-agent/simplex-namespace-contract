@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { pad } from 'viem'
 import { verificationFile } from './build-verification.mjs'
 import {
-  ADDRESSES_PATH, ERC1967_ADMIN_SLOT, IMMUTABLE, UPGRADEABLE, VERIFICATION_PATH, artifact, ensContractsHead, proxyAdminOf,
+  ADDRESSES_PATH, ERC1967_ADMIN_SLOT, IMMUTABLE, UPGRADEABLE, VERIFICATION_PATH, artifact, ensContractsHead, parentHead,
+  proxyAdminOf,
 } from './stack.mjs'
 
 const ADMIN_SAFE = '0xf38920389740E46A7f4160DaF1672f3df2754Df4'
@@ -68,5 +69,6 @@ test('the file is built when every proxy runs the implementation run 1 deployed'
     ...names.flatMap((name) => [`${name}@${runOneImplementations.get(addresses[UPGRADEABLE[name].key])}`, `${name}Proxy`, `${name}ProxyAdmin`]),
     ...Object.keys(IMMUTABLE),
   ].sort())
-  assert.ok(Object.values(built.meta.contracts).every(({ ensContractsCommit }) => ensContractsCommit === ensContractsHead()))
+  assert.ok(Object.values(built.meta.contracts).every(({ ensContractsCommit, parentCommit }) =>
+    ensContractsCommit === ensContractsHead() && parentCommit === parentHead()))
 })
