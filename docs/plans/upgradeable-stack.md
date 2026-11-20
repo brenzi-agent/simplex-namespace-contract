@@ -51,7 +51,7 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `reserved-names.simplex.csv`, unchanged: `evgeny`, `brenzi` and `evgenypoberezkin` are left unreserved
   - `community-names.simplex.csv`
   - `terms.simplex.json`, with the links of the conditions version of D13
-- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version, simplex-chat/simplex-chat#8272, is tagged `general-terms-vN` and `community-terms-vN` before run 1. Run 1 has no override of the terms check: a failed check stops it. Recommended, pending the owner's answer to the question of #8272: its merge commit is tagged `general-terms-v1` and `community-terms-v1`, and both links of `terms.simplex.json` name `docs/NAMES-CONDITIONS.md` at that commit.
+- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version, simplex-chat/simplex-chat#8272, is tagged `general-terms-vN` and `community-terms-vN` before run 1. Run 1 is stopped by a failed terms check in every case. Recommended, pending the owner's answer to the question of #8272: its merge commit is tagged `general-terms-v1` and `community-terms-v1`, and both links of `terms.simplex.json` name `docs/NAMES-CONDITIONS.md` at that commit.
 - D14. The two names registered on v1 are registered again on v2 for their holders through the names service, as the first check of the v2 line: after the registrar step (D21), while purchase entry is still closed (D22); purchase entry opens only afterwards (the owner, 20 Nov).
 - D15. `.simplex` stays unlocked at deployment. `root.lock(labelhash("simplex"))` is a step of the launch-to-freeze plan, which keeps its freeze naming for the end state.
 - D16. Single-step transfers, by the deploy key in run 1:
@@ -954,7 +954,7 @@ brenzi/simplex-namespace-contract:
 - `scripts/deploy-mainnet.mjs`:
   - runs 1 and 2
   - governance addresses from `governance.mainnet.json` in place of `OWNER_ADDRESS` and `GUARDIAN_ADDRESS`
-  - `TERMS_UNCHECKED` removed: run 1 has no override of the terms check
+  - `TERMS_UNCHECKED` removed: run 1 is stopped by a failed terms check in every case
   - the read-backs of `frozen()` (lines 571-572) and of the implementation keys (lines 661-664) removed
   - the comment at line 395 without the mention of `freeze`
 - `scripts/deploy-local.mjs`, with its comment at line 159

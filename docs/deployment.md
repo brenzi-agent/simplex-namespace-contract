@@ -414,7 +414,7 @@ and that stops the run.
 
 **The deploy key**: the v1 deploy key `0x38D19404644fe24EE7d638229a732CbE8275E333` (the
 plan's D9),
-the owner of the v1 contracts that run 1 retires. Run 1 takes the key as given; with
+the owner of the v1 contracts that run 1 retires. The key is used by run 1 as given; with
 another key, the v1 retirement reverts in the dry run on the fork, before any transaction
 on mainnet. The key needs ETH for the remaining ceiling the preflight prints.
 
@@ -489,8 +489,8 @@ prompt.
 **`MAINNET_RPC_URL` and old logs.** The run-1 read-back reads the registrar's
 `ControllerAdded` logs from the block of the registrar proxy's deployment, and the
 governance check of a `TimelockController` entry reads its `RoleGranted` logs from its
-`deployBlock`. Before the fork, run 1 asks the endpoint for `eth_getLogs` at each of these
-blocks and stops, with one line per block the endpoint refuses:
+`deployBlock`. Before the fork, `eth_getLogs` is requested from the endpoint at each of
+these blocks, and run 1 is stopped, with one line per block the endpoint refuses:
 
 - the registrar proxy's block, from the journal; on a fresh run, the head minus 50,400
   blocks, about seven days
@@ -594,8 +594,8 @@ five implementations, each immutable must hold its value:
 | `UniversalResolver` | `unsafeCallGas` | `50000`, the `DEFAULT_UNSAFE_CALL_GAS` of `CCIPReader` |
 
 **Handover**, after the read-back passes. Before steps 1, 3, 4, 6 and 7, the single-step
-transfers to the admin Safe, run 1 repeats the governance check of the admin Safe and stops
-on a failure:
+transfers to the admin Safe, the governance check of the admin Safe is repeated, and run 1
+is stopped on a failure:
 
 1. `baseRegistrar.transferOwnership(admin Safe)`
 2. `ens.setOwner(namehash("eth-usd.data.eth"), 0x0)`
@@ -906,7 +906,7 @@ rebuild is refused:
 
 ### Restore v1
 
-Until step 11, the deploy key restores v1 with four calls, at the addresses of
+Until step 11, v1 is restored with four calls from the deploy key, at the addresses of
 `deployments.mainnet.simplex-v1.json`:
 
 1. `addController(v1 controller)` on the v1 registrar
@@ -937,12 +937,12 @@ The deploy key is destroyed at step 16, after the switch.
 node scripts/rehearse-mainnet.mjs
 ```
 
-The rehearsal needs the inputs of step 2, the renamed v1 files included, and compiles
-`ens-contracts/` at its current commit; it sends its transactions to the fork only. It
-spawns the fork on port 18545, generates a fresh deploy key, gives it the v1 roles the v1
-deploy key holds on mainnet, and impersonates the Safes; it executes the batches of run 1
-and of the registrar step as the Safe each batch names. The registrar step uses a
-registrar wallet the rehearsal generates. In order, it checks:
+For the rehearsal, the inputs of step 2 are needed, the renamed v1 files included, and
+`ens-contracts/` is compiled at its current commit; its transactions are sent to the fork
+only. The fork is spawned on port 18545; a fresh deploy key is generated and given the v1
+roles that the v1 deploy key holds on mainnet; the Safes are impersonated, and the batches
+of run 1 and of the registrar step are executed as the Safe each batch names. The
+registrar step uses a registrar wallet generated for the rehearsal. Its checks, in order:
 
 ```mermaid
 flowchart TD
@@ -1182,8 +1182,8 @@ length:
 |---|---|---|
 | 6+ | $50 | base price |
 
-That is `setPrices(5000, [])`: names shorter than six characters cannot be registered, so
-the launch list has no exceptions. The setter reverts for an exception length outside 1
+That is `setPrices(5000, [])`, with an empty list of exceptions, since names shorter than
+six characters cannot be registered. The setter reverts for an exception length outside 1
 to 64, a zero exception price and a duplicate length. A free TLD is `setPrices(0, [])`.
 `setUsdOracle(feed, decimals)` moves the Chainlink feed; the scale is explicit, since the
 interface has no `decimals()` to read. The premium is zero, so a lapsed name costs the
