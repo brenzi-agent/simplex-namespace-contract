@@ -1,5 +1,6 @@
 // Exercises the resume logic changed for M5/M6 with stub clients: no chain.
 import { writeFileSync, rmSync, readFileSync, existsSync } from 'fs'
+import { encodeFunctionData } from 'viem'
 import { createWaitForBaseRunner, makeStepKeys, DEFAULTS } from './gas-tools.mjs'
 
 const J = '/tmp/j.jsonl', A = '/tmp/a.jsonl'
@@ -158,6 +159,21 @@ try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message
 console.assert(threw && /earlier\s+run's call/.test(threw), `expected refusal, got ${threw}`)
 console.assert(readFileSync(J, 'utf8') === '', 'a different call was journalled')
 console.log('9 ok: an earlier run\'s different call is not adopted')
+
+clean(); sent = 0; receipts.clear()
+const pendingHash = '0xpending'
+txs.set(pendingHash, {
+  from: ADDR, to: C.address, input: encodeFunctionData({ abi: ABI, functionName: 'setBeneficiary', args: [ADDR] }),
+  value: 0n, nonce: 7, maxFeePerGas: 12n,
+})
+writeFileSync(A, JSON.stringify({ ts: new Date().toISOString(), step: 'write:setBeneficiary', txHash: pendingHash, outcome: 'submitted', bumps: 0 }) + '\n')
+r = stub({ pollReceiptMs: 1 })
+setTimeout(() => receipts.set(pendingHash, mk(pendingHash)), 50)
+await r.write(C, 'setBeneficiary', [ADDR])
+console.assert(sent === 0, `a pending tx was sent again: ${sent} sends`)
+console.assert(readFileSync(J, 'utf8').includes(pendingHash), 'the pending tx was not journalled once mined')
+console.assert(readFileSync(A, 'utf8').includes('adopted-pending'), 'the adoption was not logged')
+console.log('10 ok: a tx still pending from an earlier run is waited for, not sent again')
 
 clean()
 console.log('\nall journal checks passed')

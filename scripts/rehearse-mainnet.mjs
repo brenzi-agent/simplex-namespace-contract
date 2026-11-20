@@ -4,7 +4,7 @@ import {
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { mkdtempSync } from 'fs'
+import { mkdtempSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createDryRunRunner, createWaitForBaseRunner, fundOnFork, loadJournal, spawnHardhatFork, DEFAULTS } from './gas-tools.mjs'
@@ -221,11 +221,12 @@ async function main() {
 
     const journalDir = mkdtempSync(join(tmpdir(), 'rehearsal-'))
     const journalPath = join(journalDir, 'journal.jsonl')
+    const attemptsLogPath = join(journalDir, 'attempts.log')
     const walletClient = createWalletClient({ chain, transport, account })
-    const realRunner = () => createWaitForBaseRunner({
+    const realRunner = (overrides = {}) => createWaitForBaseRunner({
       publicClient: client, walletClient, account,
       maxBaseFeeWei: parseGwei('1000'), bumpAfterMs: DEFAULTS.BUMP_AFTER_MS, bumpPct: DEFAULTS.BUMP_PCT,
-      journalPath, attemptsLogPath: join(journalDir, 'attempts.log'), confirmations: 1, pollReceiptMs: 250,
+      journalPath, attemptsLogPath, confirmations: 1, pollReceiptMs: 250, ...overrides,
     })
     const nonceBefore = await deployKeyNonce()
     const sentOnce = async (steps) => {
@@ -242,8 +243,33 @@ async function main() {
       expect(`run 1 stops after step ${k} of section 8`, ending instanceof Stopped, ending?.message)
       await sentOnce(wiringSteps + k)
     }
-    console.log(`\n=== Run 1, resumed to its end ===`)
-    const addresses = await runOne(realRunner(), client, inputs, account.address)
+    const pendingStep = SECTION_8_AND_V1_RETIREMENT[SECTION_8_STEPS]
+    console.log(`\n=== Run 1 without automining, stopped with ${pendingStep} pending ===`)
+    await client.request({ method: 'evm_setAutomine', params: [false] })
+    const stalled = await runOne(realRunner({ bumpAfterMs: 2000, absoluteMaxBaseFeeWei: parseGwei('1000') }), client, inputs,
+      account.address).then(() => undefined, (e) => e.message)
+    const pendingNonce = await client.getTransactionCount({ address: account.address, blockTag: 'pending' })
+    expect(`run 1 stops at the fee ceiling with ${pendingStep} pending`,
+      /bumping past the absolute ceiling/.test(stalled ?? '') && pendingNonce === (await deployKeyNonce()) + 1, stalled)
+
+    console.log(`\n=== Run 1, resumed while ${pendingStep} is pending, to its end ===`)
+    const attemptsOf = () => readFileSync(attemptsLogPath, 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+      .filter(({ step }) => step === pendingStep).map(({ outcome }) => outcome)
+    let finished = false
+    const resumed = runOne(realRunner(), client, inputs, account.address)
+      .then((addresses) => ({ addresses }), (error) => ({ error }))
+      .finally(() => { finished = true })
+    const decided = () => attemptsOf().includes('adopted-pending') || attemptsOf().filter((o) => o === 'submitted').length > 1
+    for (const deadline = Date.now() + 120_000; !finished && !decided() && Date.now() < deadline;) {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    await client.request({ method: 'evm_setAutomine', params: [true] })
+    await client.request({ method: 'evm_mine', params: [] })
+    const { addresses, error } = await resumed
+    if (error) throw error
+    const outcomes = attemptsOf()
+    expect(`the resumed run waits for the pending ${pendingStep} and does not send it again`,
+      outcomes.includes('adopted-pending') && outcomes.filter((o) => o === 'submitted').length === 1, outcomes.join(', '))
     await sentOnce(wiringSteps + SECTION_8_AND_V1_RETIREMENT.length)
     const handOverSteps = loadJournal(journalPath).slice(wiringSteps).map(({ step }) => step)
     expect('the journal holds section 8 and the v1 retirement in their order',
