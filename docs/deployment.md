@@ -1207,11 +1207,11 @@ are deployed.
 After each deployment:
 
 1. `cd ens-contracts && npx hardhat compile` — no warnings.
-2. `npx vitest run` from `ens-contracts/` — the **119** SNRC unit + fuzz tests
-   (across `test/simplex/`) pass alongside the upstream ENS suite.
+2. `npx vitest run` from `ens-contracts/` — the SNRC unit and fuzz tests of
+   `test/simplex/` pass alongside the upstream ENS suite.
 3. Bring up the stack and run the parent-repo Playwright e2e suite:
-   `./scripts/run-local.sh` then `npx playwright test --project=simplex` — all
-   **27** tests pass (some conditionally skip based on live chain state).
+   `./scripts/run-local.sh` then `npx playwright test --project=simplex` — every
+   test passes (some conditionally skip based on live chain state).
 4. Manual smoke: search a 6-char name → "Available"; register it; set
    `simplex.contact` and `simplex.channel`; visit the profile and confirm both
    records render as clickable links.
