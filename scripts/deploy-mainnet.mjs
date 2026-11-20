@@ -1,37 +1,44 @@
 #!/usr/bin/env node
 /**
- * Deploy SNRC contracts to Ethereum mainnet — wait-for-cheap-base strategy.
+ * Deploy the `.simplex` v2 contracts to Ethereum mainnet — wait-for-cheap-base
+ * strategy. The registry, the registrar, the resolver, the subname registrar,
+ * the controller, the name policy, the sponsor and the universal resolver sit
+ * behind TransparentUpgradeableProxy instances whose ProxyAdmins the admin Safe
+ * owns from creation. See
+ * docs/plans/upgradeable-stack.md, sections 6 to 9.
  *
- * Each TLD (.testing, .simplex) is an independent deployment — run this
- * script once per TLD. Strategy / contracts otherwise mirror Sepolia.
- *
- * Workflow:
- *   1. Spawns a local Hardhat fork of mainnet and runs the full deploy
- *      sequence against it as a dry-run to capture per-step gasUsed.
+ * Run 1, with the deploy key:
+ *   1. Spawns a local Hardhat fork of mainnet and runs all of run 1 against it
+ *      as a dry run to capture per-step gasUsed.
  *   2. Computes ceiling cost = total gas × MAX_BASE_FEE_GWEI, prints a
  *      summary, prompts Y/N.
- *   3. Stops the fork. Runs the real deploy against mainnet, sending every
- *      tx with `maxFeePerGas = MAX_BASE_FEE_GWEI` and zero priority. Each
- *      tx waits for `baseFeePerGas ≤ cap` before submission.
+ *   3. Stops the fork. Runs run 1 against mainnet: the governance check, the
+ *      deployment and wiring, the read-back, the single-step transfers and
+ *      proposals, and the retirement of v1. Every tx is sent with
+ *      `maxFeePerGas = MAX_BASE_FEE_GWEI` and zero priority, and waits for
+ *      `baseFeePerGas ≤ cap` before submission.
  *   4. If a submitted tx stalls (base climbed back above cap, mempool
  *      eviction, etc.) for `BUMP_AFTER_HOURS`, the cap bumps by
  *      `BUMP_PCT%` and resubmits at the same nonce.
  *   5. Every successful tx appends to a JSONL journal; re-running the
- *      script picks up where it left off.
- *   6. The first complete run stops before the single-step handovers and
- *      prints the admin's acceptOwnership calls. Running it again after the
- *      admin has accepted hands over the registrar and the registry root.
+ *      script picks up where it left off and reads its state back again.
+ *
+ * Run 2, without a key, after the admin Safe has accepted the controller and the
+ * oracle: the read-back of the handover.
+ *
+ * The registrar step, without a key, once governance.mainnet.json holds a
+ * registrarWallet entry: RUN=registrar checks that entry and writes the guardian
+ * Safe's batch for SimplexSponsor.setRegistrarAllowance; RUN=registrar-read-back
+ * reads the allowance back.
  *
  * Required env vars:
- *   DEPLOYER_KEY       hex private key (0x...) of the ephemeral deployer
- *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real)
- *   MAX_BASE_FEE_GWEI  cap on per-gas price (e.g. "0.078")
- *   OWNER_ADDRESS      admin key; must differ from the deployer
+ *   RUN                1 | 2 | registrar | registrar-read-back
+ *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real), serving
+ *                      eth_getLogs from old blocks
+ *   DEPLOYER_KEY       run 1: hex private key (0x...) of the deploy key
+ *   MAX_BASE_FEE_GWEI  run 1: cap on per-gas price (e.g. "0.078")
  *
- * Optional env vars:
- *   SIMPLEX_TLD        'testing' (default) | 'simplex'
- *   ETHUSD_FEED        Chainlink AggregatorV3 (default: mainnet feed)
- *   SMPXNFT_ADDR       SMPXNFT contract  (default: 0x3AF6D9Ee…7291)
+ * Optional env vars, run 1:
  *   BUMP_AFTER_HOURS   stall threshold before cap bump (default: 24)
  *   BUMP_PCT           cap multiplier on stall (default: 20)
  *   ABSOLUTE_MAX_BASE_FEE_GWEI  ceiling the bumps stop at (default: 4× MAX_BASE_FEE_GWEI)
@@ -39,101 +46,59 @@
  *                      to avoid Reth/Geth's stock 8545/8546 ports)
  *   CONFIRM=yes        skip the interactive confirmation prompt
  *
- * Reads reserved-names.${tld}.csv (name,reason,category), required for .simplex.
- * Reads terms.${tld}.json ({ "generalTerms": link, "communityTerms": link }), required,
- * each link checked by terms-check.mjs before any transaction,
- * and community-names.${tld}.csv (name,community), optional.
+ * Reads governance.mainnet.json, deployments.mainnet.simplex-v1.json,
+ * reserved-names.simplex.csv (name,reason,category), terms.simplex.json
+ * ({ "generalTerms": link, "communityTerms": link }), each link checked by
+ * terms-check.mjs before any transaction, and community-names.simplex.csv
+ * (name,community), optional. Run 1 compiles the ens-contracts commit tagged
+ * simplex-mainnet-v2.
  *
- * Files written next to the addresses file:
- *   deployments.mainnet.${tld}.json            ← final addresses (on success)
- *   deployments.mainnet.${tld}.journal.jsonl   ← per-tx journal (resume source)
- *   deployments.mainnet.${tld}.attempts.log    ← every attempt + reason
+ * Files written by run 1, next to the addresses file:
+ *   deployments.mainnet.simplex.json            ← final addresses
+ *   deployments.mainnet.simplex.journal.jsonl   ← per-tx journal (resume source)
+ *   deployments.mainnet.simplex.attempts.log    ← every attempt + reason
+ *   verification.mainnet.simplex.json           ← Etherscan targets
+ *   safe-transaction.mainnet.simplex.run-1.json ← the admin Safe's batch
+ * by the registrar step:
+ *   safe-transaction.mainnet.simplex.registrar.json ← the guardian Safe's batch
  *
- * Commit the addresses file AND the journal to the repo.
+ * Commit the addresses file, the journal and the verification file to the repo.
  * See docs/deployment.md → Mainnet.
  */
-import { createPublicClient, createWalletClient, encodeFunctionData, getAddress, http, keccak256, labelhash, namehash, parseGwei, parseEther, toBytes, zeroHash, zeroAddress } from 'viem'
+import {
+  createPublicClient, createWalletClient, encodeFunctionData, getAddress, http, keccak256, labelhash, namehash,
+  parseAbi, parseAbiItem, parseGwei, toBytes, toHex, zeroHash, zeroAddress,
+} from 'viem'
 import { mainnet } from 'viem/chains'
 import { normalize } from 'viem/ens'
 import { privateKeyToAccount } from 'viem/accounts'
-import { execFileSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { join } from 'path'
+import { pathToFileURL } from 'url'
 import {
   analyzeAndConfirm, createDryRunRunner, createWaitForBaseRunner,
   fundOnFork, loadJournal, spawnHardhatFork, DEFAULTS,
 } from './gas-tools.mjs'
 import { assembleVerification } from './build-verification.mjs'
+import { checkGovernance, entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   SIMPLEX_PRICE_BASE,
   SIMPLEX_PRICE_RUNGS,
-  SIMPLEX_PRICE_ORACLE_ARTIFACT,
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
+import {
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, PROXY_ADMIN_ARTIFACT, REPO_ROOT, SOURCE_TAG, TLD,
+  TRANSPARENT_PROXY,
+  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, causes,
+  deployBehindProxy, deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, refusal, requireEnv, runtimeCode,
+  safeBatch, sortedAddresses, storedValue,
+} from './stack.mjs'
 import { checkTermsLink } from './terms-check.mjs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = join(__dirname, '..')
-const ARTIFACTS = join(REPO_ROOT, 'ens-contracts', 'artifacts', 'contracts')
-const ENS_CONTRACTS_DIR = join(REPO_ROOT, 'ens-contracts')
-
-const rpcUrl = process.env.MAINNET_RPC_URL
-const deployerKey = process.env.DEPLOYER_KEY
-// No default. An unset or typo'd SIMPLEX_TLD silently re-targets the whole run —
-// gate logic, price array, journal, addresses file and verification metadata all
-// follow it, and a `.testing`-defaulted run would resume against the committed
-// `.testing` journal and then overwrite it with a mismatched schema.
-const KNOWN_TLDS = ['testing', 'simplex']
-const tld = process.env.SIMPLEX_TLD
-if (!tld || !KNOWN_TLDS.includes(tld)) {
-  console.error(
-    `SIMPLEX_TLD must be set explicitly to one of: ${KNOWN_TLDS.join(', ')} (got ${JSON.stringify(tld)})`,
-  )
-  process.exit(1)
-}
-const nftGateEnabled = tld === 'testing'
-const maxBaseFeeGwei = process.env.MAX_BASE_FEE_GWEI
-
-// EIP-55 checksums every address the run will bake in permanently. `getAddress`
-// rejects a wrong-length or mistyped address and a bad checksum, which is the
-// only automatic protection against a transposed character in an env var that
-// ends up owning the namespace.
-function requireAddress(label, value) {
-  try {
-    return getAddress(value)
-  } catch {
-    console.error(`${label} is not a valid checksummed address: ${JSON.stringify(value)}`)
-    process.exit(1)
-  }
-}
-const chainlinkEthUsd = requireAddress('ETHUSD_FEED', process.env.ETHUSD_FEED || '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419')
-const smpxNftAddr = requireAddress('SMPXNFT_ADDR', process.env.SMPXNFT_ADDR || '0x3AF6D9Ee862376A8DFC0a78847Eb20A153557291')
-const ownerAddress = process.env.OWNER_ADDRESS
-  ? requireAddress('OWNER_ADDRESS', process.env.OWNER_ADDRESS)
-  : undefined
-if (!ownerAddress) {
-  console.error(
-    'OWNER_ADDRESS must be set to the admin key.\n' +
-      '  It receives the registrar and the registry root for good, so no default\n' +
-      '  may pick the key for the operator.',
-  )
-  process.exit(1)
-}
-// The guardian holds the restrictive, no-delay powers: setRegistrarAllowance (the
-// money kill switch), setPublicSalesOpen (the pause), addReservedNames, and it is
-// `withdraw`'s payee. See docs/plans/names-v2-launch-to-freeze-plan.md.
-const guardianAddress = process.env.GUARDIAN_ADDRESS
-  ? requireAddress('GUARDIAN_ADDRESS', process.env.GUARDIAN_ADDRESS)
-  : undefined
-if (!guardianAddress) {
-  console.error(
-    'GUARDIAN_ADDRESS must be set.\n' +
-      '  `setBeneficiary` is owner-callable only while the beneficiary is unset; after\n' +
-      '  that only the guardian can replace itself.',
-  )
-  process.exit(1)
-}
+const TLD_NODE = namehash(TLD)
+const chainlinkEthUsd = '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
+const SMPXNFT = '0x3AF6D9Ee862376A8DFC0a78847Eb20A153557291'
+const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
 
 // SimplexNamePolicy.Reason — the on-chain enum. Append-only once names are
 // reserved, so these integers are fixed by the contract, not by this script.
@@ -143,10 +108,28 @@ const RESERVE_BATCH = 200
 const COMMUNITY_BATCH = 100
 // The labels users can register: simplex-app src/hooks/useValidate.ts ALLOWED_LABEL_REGEX.
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
-const reservedNamesPath = join(REPO_ROOT, `reserved-names.${tld}.csv`)
-const reservedByReason = loadReservedNames(reservedNamesPath)
-const terms = loadTerms(join(REPO_ROOT, `terms.${tld}.json`))
-const communityNames = loadCommunityNames(join(REPO_ROOT, `community-names.${tld}.csv`))
+const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
+const FRESH_RUN_LOG_DEPTH = 50_400n
+const RUN_ONE_INPUTS = ['scripts', 'governance.mainnet.json', `reserved-names.${TLD}.csv`, `terms.${TLD}.json`, `community-names.${TLD}.csv`]
+const REGISTRAR_STEP_INPUTS = ['scripts', 'governance.mainnet.json', `deployments.mainnet.${TLD}.json`]
+const ACCEPT_OWNERSHIP_ABI = parseAbi(['function acceptOwnership()'])
+const SPONSOR_ABI = parseAbi([
+  'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
+  'function registrarAllowance(address registrar) view returns (uint256)',
+])
+const LINKS_ABI = parseAbi([
+  'function sponsor() view returns (address)',
+  'function controller() view returns (address)',
+  'function beneficiary() view returns (address)',
+])
+
+const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
+const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
+const v1Files = [
+  v1AddressesPath,
+  join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.journal.jsonl`),
+  join(REPO_ROOT, `verification.mainnet.${TLD}-v1.json`),
+]
 
 /// RFC 4180: a quoted field may hold commas, line breaks and doubled quotes.
 function parseCsv(text) {
@@ -192,8 +175,8 @@ function loadReservedNames(path) {
     else if (seen.has(name)) errors.push(`${where}: duplicate`)
     else { seen.add(name); byReason.get(REASONS[category]).push(name) }
   })
-  if (tld !== 'testing' && rows.length === 0) {
-    errors.push(`no names: .${tld} is not deployed without its reserved set`)
+  if (rows.length === 0) {
+    errors.push(`no names: .${TLD} is not deployed without its reserved set`)
   }
   if (errors.length) {
     console.error(`${path}:\n  ${errors.join('\n  ')}`)
@@ -242,121 +225,60 @@ function loadCommunityNames(path) {
   return [...seen]
 }
 
-const bumpAfterMs = (parseFloat(process.env.BUMP_AFTER_HOURS) || (DEFAULTS.BUMP_AFTER_MS / 3600000)) * 3600 * 1000
-const bumpPct = BigInt(process.env.BUMP_PCT || DEFAULTS.BUMP_PCT)
-// Default 18545 (not 8546): Reth/Geth use 8546 for the WebSocket JSON-RPC
-// and 8545 for HTTP, so a stock node setup conflicts with the standard
-// 8546 default. Pick a port that's unlikely to overlap with anything.
-const forkPort = parseInt(process.env.FORK_PORT || '18545', 10)
-
-if (!deployerKey) { console.error('ERROR: DEPLOYER_KEY env var is required.'); process.exit(1) }
-if (!rpcUrl) { console.error('ERROR: MAINNET_RPC_URL env var is required.'); process.exit(1) }
-if (!maxBaseFeeGwei) {
-  console.error('ERROR: MAX_BASE_FEE_GWEI env var is required (e.g. "0.078").')
-  console.error('       Pick this from Dune (e.g. the 5th-percentile recent base fee).')
-  process.exit(1)
-}
-const maxBaseFeeWei = parseGwei(maxBaseFeeGwei)
-const absoluteMaxBaseFeeWei = process.env.ABSOLUTE_MAX_BASE_FEE_GWEI
-  ? parseGwei(process.env.ABSOLUTE_MAX_BASE_FEE_GWEI)
-  : undefined
-
-const account = privateKeyToAccount(deployerKey)
-if (ownerAddress.toLowerCase() === account.address.toLowerCase()) {
-  console.error('OWNER_ADDRESS must differ from the deploy key, which is destroyed after the handover.')
-  process.exit(1)
-}
-const addressesPath = join(REPO_ROOT, `deployments.mainnet.${tld}.json`)
-const journalPath = join(REPO_ROOT, `deployments.mainnet.${tld}.journal.jsonl`)
-const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${tld}.attempts.log`)
-
-function loadArtifact(path) {
-  const full = join(ARTIFACTS, path)
-  const json = JSON.parse(readFileSync(full, 'utf8'))
-  return { abi: json.abi, bytecode: json.bytecode }
+function loadV1Addresses() {
+  const missing = v1Files.filter((path) => !existsSync(path))
+  if (missing.length) {
+    console.error(
+      `${missing.join(', ')} missing. Rename the v1 addresses file, journal and verification file\n` +
+        `  to *.${TLD}-v1.* first: step 2 of docs/plans/upgradeable-stack.md, section 6.`,
+    )
+    process.exit(1)
+  }
+  return JSON.parse(readFileSync(v1AddressesPath, 'utf8'))
 }
 
-/**
- * The actual SNRC deploy sequence, parameterised by a runner. Called
- * once with a dry-run runner (forked node) to capture gas, then again
- * with the real wait-for-base runner against mainnet.
- *
- * Returns the addresses object suitable for deployments.mainnet.${tld}.json.
- */
-async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
-  const tldNode = namehash(tld)
+export function loadInputs() {
+  const { registrarWallet, ...governance } = loadGovernance()
+  return {
+    governance,
+    reservedByReason: loadReservedNames(join(REPO_ROOT, `reserved-names.${TLD}.csv`)),
+    terms: loadTerms(join(REPO_ROOT, `terms.${TLD}.json`)),
+    communityNames: loadCommunityNames(join(REPO_ROOT, `community-names.${TLD}.csv`)),
+    v1: loadV1Addresses(),
+  }
+}
 
-  const deploy = async (name, artifactPath, args = []) => {
-    const { abi, bytecode } = loadArtifact(artifactPath)
-    return deployRaw(name, abi, bytecode, args)
+async function deployAndWire({ deploy, write }, { governance, reservedByReason, terms, communityNames }, deployer, client) {
+  const setup = { tld: TLD, deployer, chainlinkEthUsd }
+  const addresses = {}
+  const upgradeable = {}
+  const proxied = async (name) => {
+    await requireGovernance(client, { adminSafe: governance.adminSafe }, deployer, `the ${name} proxy, its ProxyAdmin owned by the admin Safe,`)
+    const contract = await deployBehindProxy(deploy, name, addresses, setup, governance.adminSafe.address)
+    addresses[UPGRADEABLE[name].key] = contract.address
+    upgradeable[name] = contract
+    return contract
+  }
+  const immutable = async (name) => {
+    const contract = await deployImmutable(deploy, name, addresses, setup)
+    addresses[name] = contract.address
+    return contract
   }
 
-  const ensRegistry = await deploy('ENSRegistry',
-    'registry/ENSRegistry.sol/ENSRegistry.json')
-
-  const baseRegistrar = await deploy('BaseRegistrarImplementation',
-    'ethregistrar/BaseRegistrarImplementation.sol/BaseRegistrarImplementation.json',
-    [ensRegistry.address, tldNode])
+  const ensRegistry = await proxied('ENSRegistry')
+  const baseRegistrar = await proxied('BaseRegistrarImplementation')
 
   // No reverse registrar: SNRC maps names to SimpleX links in one direction and
   // nothing resolves an address back to a name. PublicResolver no longer inherits
   // ReverseClaimer, so nothing needs to own addr.reverse for the resolver to deploy.
-  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), account.address])
+  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(TLD), deployer])
 
-  // `.testing` is live on the vendored ExponentialPremiumPriceOracle with an
-  // all-zero curve (gas-only registration) and keeps it: swapping a deployed
-  // TLD's oracle is a separate change. `.simplex` gets SimplexPriceOracle,
-  // whose curve and feed are both settable by call afterwards, so it
-  // never has to be redeployed to change what a name costs. Its base price
-  // covers every length, so lowering minCharLength never hands out free names.
-  const isTesting = tld === 'testing'
-  const priceOracle = isTesting
-    ? await deploy('ExponentialPremiumPriceOracle',
-        'ethregistrar/ExponentialPremiumPriceOracle.sol/ExponentialPremiumPriceOracle.json',
-        [chainlinkEthUsd, [0n, 0n, 0n, 0n, 0n, 0n], 100000000000000000000000000n, 21n])
-    : await deploy('SimplexPriceOracle', SIMPLEX_PRICE_ORACLE_ARTIFACT,
-        [chainlinkEthUsd, USD_FEED_DECIMALS, SIMPLEX_PRICE_BASE, SIMPLEX_PRICE_RUNGS])
+  const priceOracle = await immutable('SimplexPriceOracle')
 
-  const smpxNft = { address: smpxNftAddr }
-
-  const controllerImpl = await deploy('SimplexControllerImpl',
-    'simplex/SimplexController.sol/SimplexController.json')
-
-  const initData = encodeFunctionData({
-    abi: controllerImpl.abi,
-    functionName: 'initialize',
-    args: [
-      baseRegistrar.address,
-      priceOracle.address,
-      60n,
-      86400n,
-      ensRegistry.address,
-      {
-        tldNode,
-        tldSuffix: `.${tld}`,
-        minCharLength: 6,
-        smpxNft: nftGateEnabled ? smpxNft.address : zeroAddress,
-        nftGateEnabled,
-      },
-      account.address,
-    ],
-  })
-
-  const controllerProxy = await deploy('SimplexControllerProxy',
-    'simplex/SimplexControllerProxy.sol/SimplexControllerProxy.json',
-    [controllerImpl.address, initData])
-
-  const controller = { address: controllerProxy.address, abi: controllerImpl.abi }
-
+  const controller = await proxied('SimplexController')
   await write(baseRegistrar, 'addController', [controller.address])
 
-  const namePolicyImpl = await deploy('SimplexNamePolicyImpl',
-    'simplex/SimplexNamePolicy.sol/SimplexNamePolicy.json',
-    [controller.address, baseRegistrar.address])
-  const namePolicyProxy = await deploy('SimplexNamePolicyProxy',
-    'simplex/SimplexNamePolicyProxy.sol/SimplexNamePolicyProxy.json',
-    [namePolicyImpl.address, '0x'])
-  const namePolicy = { address: namePolicyProxy.address, abi: namePolicyImpl.abi }
+  const namePolicy = await proxied('SimplexNamePolicy')
   await write(baseRegistrar, 'addController', [namePolicy.address])
   await write(controller, 'setNamePolicy', [namePolicy.address])
 
@@ -369,18 +291,14 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
   // SubnameRegistrar owns + resolves subnames, soulbound to the 2LD NFT. It is
   // deployed before the resolver because the resolver's nameWrapper slot points
   // at it (subname records authorise via subnameRegistrar.ownerOf).
-  const subnameRegistrar = await deploy('SubnameRegistrar',
-    'simplex/SubnameRegistrar.sol/SubnameRegistrar.json',
-    [ensRegistry.address, baseRegistrar.address])
+  const subnameRegistrar = await proxied('SubnameRegistrar')
 
   // SimplexResolver = PublicResolver + signed record writes (setTextWithSig,
   // clearRecordsWithSig), so a user with no ETH can have records relayed.
   // wrapper-free v3: the NameWrapper slot is repurposed for the SubnameRegistrar
   // (the 2LD itself is never wrapped — its node is owned directly by the NFT
   // holder via auto-reclaim). trustedReverseRegistrar is address(0) and inert.
-  const publicResolver = await deploy('SimplexResolver',
-    'simplex/SimplexResolver.sol/SimplexResolver.json',
-    [ensRegistry.address, subnameRegistrar.address, controller.address, zeroAddress])
+  const publicResolver = await proxied('SimplexResolver')
 
   // One-time wiring now that the resolver exists, while the deployer still owns
   // the registrar (before the ownership handover below).
@@ -390,12 +308,7 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
   // ever holding ETH.
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
-  // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
-  // and the owner's signature check. Only this contract may call the controller's
-  // sponsored entry points; `freeze` fixes it. The guardian funds registrars here.
-  const sponsor = await deploy('SimplexSponsor',
-    'simplex/SimplexSponsor.sol/SimplexSponsor.json',
-    [controller.address])
+  const sponsor = await proxied('SimplexSponsor')
   await write(controller, 'setSponsor', [sponsor.address])
 
   await write(namePolicy, 'setGeneralTerms', [terms.generalTerms.link])
@@ -405,30 +318,25 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
   }
   await write(baseRegistrar, 'setNamePolicy', [namePolicy.address])
 
-  const dummyGateway = await deploy('DummyGatewayProvider',
-    'mocks/DummyGatewayProvider.sol/DummyGatewayProvider.json')
-  const universalResolver = await deploy('UniversalResolver',
-    'universalResolver/UniversalResolver.sol/UniversalResolver.json',
-    [account.address, ensRegistry.address, dummyGateway.address])
+  await immutable('DummyGatewayProvider')
+  await proxied('UniversalResolver')
 
-  await write(ensRegistry, 'setResolver', [tldNode, publicResolver.address])
+  await write(ensRegistry, 'setResolver', [TLD_NODE, publicResolver.address])
   // The registry assigns a node to someone other than the caller only under the
   // root or a TLD, so the TLD is assigned to the registrar from the root.
-  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(tld), baseRegistrar.address])
+  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(TLD), baseRegistrar.address])
 
-  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), account.address])
+  await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), deployer])
   await write(ensRegistry, 'setResolver', [namehash('eth'), publicResolver.address])
-  await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), account.address])
+  await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), deployer])
   await write(ensRegistry, 'setResolver', [namehash('data.eth'), publicResolver.address])
-  await write(ensRegistry, 'setSubnodeOwner', [namehash('data.eth'), labelhash('eth-usd'), account.address])
+  await write(ensRegistry, 'setSubnodeOwner', [namehash('data.eth'), labelhash('eth-usd'), deployer])
   await write(ensRegistry, 'setResolver', [namehash('eth-usd.data.eth'), publicResolver.address])
   await write(publicResolver, 'setAddr', [namehash('eth-usd.data.eth'), chainlinkEthUsd])
 
   // On-chain NFT metadata + subname index. setMetadataRenderer must run while the
   // deployer still owns the registrar (before the ownership handover below).
-  const metadataRenderer = await deploy('MetadataRenderer',
-    'simplex/MetadataRenderer.sol/MetadataRenderer.json',
-    [`.${tld}`])
+  const metadataRenderer = await immutable('MetadataRenderer')
   await write(baseRegistrar, 'setMetadataRenderer', [metadataRenderer.address])
   // Cap label length at the DNS octet limit (63 bytes). Bounds labelOf storage
   // and on-chain SVG/JSON render size. (security.md L4)
@@ -438,106 +346,154 @@ async function runDeploySequence({ deploy: deployRaw, write, adminAccepted }) {
   // owner-callable only while it is unset and beneficiary-callable thereafter, so
   // doing it here is what makes revenue and the registrar kill switch independent
   // of the admin key from the first block. Skipping it leaves `withdraw` reverting.
-  await write(controller, 'setBeneficiary', [guardianAddress])
+  await requireGovernance(client, { guardianSafe: governance.guardianSafe }, deployer, 'setBeneficiary to the guardian Safe')
+  await write(controller, 'setBeneficiary', [governance.guardianSafe.address])
 
-  // Ownable2Step only proposes the admin, and a wrong proposal can be replaced.
-  // SimplexPriceOracle carries its own Ownable2Step owner, separate from the
-  // controller's. Forgetting it would leave the whole price curve and the feed
-  // pointer on the deploy key, which is destroyed after the handover. The
-  // vendored oracle `.testing` runs has no owner at all.
-  await write(controller, 'transferOwnership', [ownerAddress])
-  if (!isTesting) await write(priceOracle, 'transferOwnership', [ownerAddress])
+  return { addresses, upgradeable, priceOracle }
+}
 
-  // The rest takes effect at once and for good, so it waits until the admin has
-  // proven it can sign by accepting both proposals (launch plan A2).
-  if (await adminAccepted([controller, ...(isTesting ? [] : [priceOracle])])) {
-    await write(baseRegistrar, 'transferOwnership', [ownerAddress])
-    // The registry assigns a node to someone other than the caller only under
-    // the root or a TLD. data.eth is neither, so the deploy key sets the owner
-    // of eth-usd.data.eth to zero; data.eth's new owner can take it back.
-    await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
-    await write(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), ownerAddress])
-    await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), ownerAddress])
-    await write(ensRegistry, 'setOwner', [zeroHash, ownerAddress])
+async function handOver({ deploy, write }, { addresses, upgradeable, priceOracle }, client, adminSafe, deployer) {
+  const { ENSRegistry: ensRegistry, BaseRegistrarImplementation: baseRegistrar, SimplexController: controller } = upgradeable
+  const admin = adminSafe.address
+  const transferToAdminSafe = async (contract, functionName, args) => {
+    await requireGovernance(client, { adminSafe }, deployer, `${functionName} to the admin Safe`)
+    await write(contract, functionName, args)
   }
+  await transferToAdminSafe(baseRegistrar, 'transferOwnership', [admin])
+  // The registry assigns a node to someone other than the caller only under
+  // the root or a TLD. data.eth is neither, so the deploy key sets the owner
+  // of eth-usd.data.eth to zero; data.eth's new owner can take it back.
+  await write(ensRegistry, 'setOwner', [namehash('eth-usd.data.eth'), zeroAddress])
+  await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), admin])
+  await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), admin])
+  const root = await deployImmutable(deploy, 'Root', addresses, {})
+  if ((await client.getCode({ address: root.address })) !== runtimeCode(artifact(IMMUTABLE.Root.artifact), {})) {
+    throw new Error(`the code at ${root.address} is not the Root artifact's: Root is not called, and ens.setOwner(0x0, root) is not sent`)
+  }
+  await transferToAdminSafe(root, 'setController', [admin, true])
+  await transferToAdminSafe(root, 'transferOwnership', [admin])
+  await write(ensRegistry, 'setOwner', [zeroHash, root.address])
+  await write(controller, 'transferOwnership', [admin])
+  await write(priceOracle, 'transferOwnership', [admin])
+  return root.address
+}
 
+async function retireV1(write, v1) {
+  const registrar = { address: v1.BaseRegistrarImplementation, abi: V1_ABI }
+  await write(registrar, 'removeController', [v1.ETHRegistrarController])
+  await write(registrar, 'removeController', [v1.SimplexNamePolicy])
+  await write({ address: v1.ETHRegistrarController, abi: V1_ABI }, 'transferOwnership', [zeroAddress])
+  await write({ address: v1.SimplexPriceOracle, abi: V1_ABI }, 'transferOwnership', [zeroAddress])
+}
+
+function addressesFile(addresses) {
   return {
-    ENSRegistry: ensRegistry.address,
-    BaseRegistrarImplementation: baseRegistrar.address,
+    ENSRegistry: addresses.ENSRegistry,
+    BaseRegistrarImplementation: addresses.BaseRegistrarImplementation,
     ReverseRegistrar: zeroAddress,
     DefaultReverseRegistrar: zeroAddress,
     NameWrapper: zeroAddress, // wrapper-free v3
-    MetadataRenderer: metadataRenderer.address,
-    SubnameRegistrar: subnameRegistrar.address,
-    PublicResolver: publicResolver.address,
-    ETHRegistrarController: controller.address,
-    // Implementation address for the SimplexController behind the
-    // ETHRegistrarController proxy. Surfaced so Etherscan source
-    // verification can target both impl + proxy.
-    SimplexControllerImpl: controllerImpl.address,
-    SimplexSponsor: sponsor.address,
-    SimplexNamePolicy: namePolicy.address,
-    SimplexNamePolicyImpl: namePolicyImpl.address,
-    [isTesting ? 'ExponentialPremiumPriceOracle' : 'SimplexPriceOracle']:
-      priceOracle.address,
+    MetadataRenderer: addresses.MetadataRenderer,
+    SubnameRegistrar: addresses.SubnameRegistrar,
+    PublicResolver: addresses.PublicResolver,
+    ETHRegistrarController: addresses.ETHRegistrarController,
+    SimplexSponsor: addresses.SimplexSponsor,
+    SimplexNamePolicy: addresses.SimplexNamePolicy,
+    SimplexPriceOracle: addresses.SimplexPriceOracle,
     // 3rd constructor arg of UniversalResolver — kept so verification
     // can reconstruct that contract's calldata.
-    DummyGatewayProvider: dummyGateway.address,
+    DummyGatewayProvider: addresses.DummyGatewayProvider,
     DummyOracle: chainlinkEthUsd,
-    SMPXNFT: smpxNftAddr,
-    NameWrapperPublicResolver: publicResolver.address,
-    UniversalResolver: universalResolver.address,
-    Multicall: '0xcA11bde05977b3631167028862bE2a173976CA11',
-    DNSRegistrar: '0x0000000000000000000000000000000000000000',
-    DNSSECImpl: '0x0000000000000000000000000000000000000000',
-    LegacyETHRegistrarController: '0x0000000000000000000000000000000000000000',
-    LegacyPublicResolver: '0x0000000000000000000000000000000000000000',
-    WrappedEthRegistrarController: '0x0000000000000000000000000000000000000000',
-    WrappedStaticBulkRenewal: '0x0000000000000000000000000000000000000000',
-    UniversalRegistrarRenewalWithReferrer: '0x0000000000000000000000000000000000000000',
-    OffchainDNSResolver: '0x0000000000000000000000000000000000000000',
-    ExtendedDNSResolver: '0x0000000000000000000000000000000000000000',
-    OutdatedResolver: '0x0000000000000000000000000000000000000000',
+    SMPXNFT,
+    NameWrapperPublicResolver: addresses.PublicResolver,
+    UniversalResolver: addresses.UniversalResolver,
+    Multicall: MULTICALL3,
+    DNSRegistrar: zeroAddress,
+    DNSSECImpl: zeroAddress,
+    LegacyETHRegistrarController: zeroAddress,
+    LegacyPublicResolver: zeroAddress,
+    WrappedEthRegistrarController: zeroAddress,
+    WrappedStaticBulkRenewal: zeroAddress,
+    UniversalRegistrarRenewalWithReferrer: zeroAddress,
+    OffchainDNSResolver: zeroAddress,
+    ExtendedDNSResolver: zeroAddress,
+    OutdatedResolver: zeroAddress,
+    Root: addresses.Root,
   }
 }
 
-// keccak256('eip1967.proxy.implementation') - 1
-const ERC1967_IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
-
-/// L29: the journal proves each transaction was mined, not that the stack is
-/// wired the way the script intended — a mis-ordered or silently-reverted step
-/// leaves a deployment that looks complete and is not. Read the important state
-/// back off-chain and fail loudly while the deploy key can still fix it.
-async function verifyWiring(publicClient, addresses, handedOver) {
-  console.log(`\n--- Post-deploy read-back ---`)
+function readBack(client) {
   const failures = []
+  const report = (what, ok, detail) => {
+    console.log(`  ${ok ? '✓' : '✗'} ${what}: ${detail}`)
+    if (!ok) failures.push(what)
+  }
   const check = async (what, expected, read) => {
     try {
       const got = await read()
       const ok = String(got).toLowerCase() === String(expected).toLowerCase()
-      console.log(`  ${ok ? '✓' : '✗'} ${what}: ${got}${ok ? '' : `  (expected ${expected})`}`)
-      if (!ok) failures.push(what)
+      report(what, ok, `${got}${ok ? '' : `  (expected ${expected})`}`)
+      return got
     } catch (e) {
-      console.log(`  ✗ ${what}: read failed — ${e.shortMessage || e.message}`)
-      failures.push(what)
+      report(what, false, `read failed — ${e.shortMessage || e.message}`)
     }
   }
   const read = (address, sig, outputs, functionName, args = []) =>
-    publicClient.readContract({
+    client.readContract({
       address,
       abi: [{ type: 'function', name: functionName, inputs: sig, outputs, stateMutability: 'view' }],
       functionName,
       args,
     })
-  const ADDR = [{ type: 'address' }]
+  return { failures, report, check, read }
+}
+
+const ADDR = [{ type: 'address' }]
+const BYTES32 = [{ type: 'bytes32' }]
+const BOOL = [{ type: 'bool' }]
+
+export async function logsFailures(client, governance, journal) {
+  const registrar = journal.find(({ step }) => step === 'deploy:BaseRegistrarImplementationProxy')
+  const head = await client.getBlockNumber()
+  const needed = [
+    registrar
+      ? { block: BigInt(registrar.blockNumber), address: registrar.address, logs: `the ControllerAdded logs of the registrar proxy` }
+      : { block: head - FRESH_RUN_LOG_DEPTH, logs: `the ControllerAdded logs of the registrar proxy, ${FRESH_RUN_LOG_DEPTH} blocks after its deployment` },
+    ...Object.entries(governance).filter(([, { kind }]) => kind === 'TimelockController')
+      .map(([name, { address, deployBlock }]) => ({ block: BigInt(deployBlock), address, logs: `the RoleGranted logs of ${name}` })),
+  ]
+  const failures = []
+  for (const { block, address, logs } of needed) {
+    try {
+      await client.getLogs({ address, fromBlock: block, toBlock: block })
+    } catch (error) {
+      failures.push(`MAINNET_RPC_URL serves no eth_getLogs at block ${block}, from which run 1 reads ${logs}: ${error.shortMessage ?? error.message}`)
+    }
+  }
+  return failures
+}
+
+async function controllersAdded(client, registrar, fromBlock) {
+  const logs = await logsSince(client, { address: registrar, event: CONTROLLER_ADDED }, fromBlock)
+  return logs.map(({ args }) => args.controller)
+}
+
+/// L29: the journal proves each transaction was mined, not that the stack is
+/// wired the way the script intended — a mis-ordered or silently-reverted step
+/// leaves a deployment that looks complete and is not. Read the important state
+/// back off-chain and fail loudly while the deploy key can still fix it.
+async function readBackOne(client, deployed, { governance, terms, reservedByReason, communityNames }, deployer) {
+  console.log(`\n--- Run-1 read-back ---`)
+  const { failures, report, check, read } = readBack(client)
+  const { addresses } = deployed
   const registry = addresses.ENSRegistry
   const controller = addresses.ETHRegistrarController
   const registrar = addresses.BaseRegistrarImplementation
 
   await check('registry owner of the TLD node is the base registrar', registrar,
-    () => read(registry, [{ type: 'bytes32' }], ADDR, 'owner', [namehash(tld)]))
+    () => read(registry, BYTES32, ADDR, 'owner', [TLD_NODE]))
   await check('controller is a controller on the registrar', 'true',
-    () => read(registrar, ADDR, [{ type: 'bool' }], 'controllers', [controller]))
+    () => read(registrar, ADDR, BOOL, 'controllers', [controller]))
   await check('registrar maxLabelLength', '63',
     () => read(registrar, [], [{ type: 'uint256' }], 'maxLabelLength'))
   await check('registrar subnameHook', addresses.SubnameRegistrar,
@@ -546,7 +502,7 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     () => read(registrar, [], ADDR, 'metadataRenderer'))
   await check('controller defaultResolver', addresses.PublicResolver,
     () => read(controller, [], ADDR, 'defaultResolver'))
-  await check('controller beneficiary is the guardian', guardianAddress,
+  await check('controller beneficiary is the guardian', governance.guardianSafe.address,
     () => read(controller, [], ADDR, 'beneficiary'))
   await check('controller sponsor', addresses.SimplexSponsor,
     () => read(controller, [], ADDR, 'sponsor'))
@@ -557,27 +513,25 @@ async function verifyWiring(publicClient, addresses, handedOver) {
   await check('registrar namePolicy', addresses.SimplexNamePolicy,
     () => read(registrar, [], ADDR, 'namePolicy'))
   await check('name policy is a controller on the registrar', 'true',
-    () => read(registrar, ADDR, [{ type: 'bool' }], 'controllers', [addresses.SimplexNamePolicy]))
+    () => read(registrar, ADDR, BOOL, 'controllers', [addresses.SimplexNamePolicy]))
   for (const [kind, { link, hash }] of Object.entries(terms)) {
     await check(`${kind} link`, link,
       () => read(addresses.SimplexNamePolicy, [], [{ type: 'string' }], `${kind}Link`))
     await check(`${kind} hash`, hash,
-      () => read(addresses.SimplexNamePolicy, [], [{ type: 'bytes32' }], `${kind}Hash`))
+      () => read(addresses.SimplexNamePolicy, [], BYTES32, `${kind}Hash`))
   }
-  await check('controller nftGateEnabled', String(nftGateEnabled),
-    () => read(controller, [], [{ type: 'bool' }], 'nftGateEnabled'))
+  await check('controller nftGateEnabled', 'false',
+    () => read(controller, [], BOOL, 'nftGateEnabled'))
   await check('controller minCharLength', '6',
     () => read(controller, [], [{ type: 'uint8' }], 'minCharLength'))
-  await check('controller is not frozen', 'false',
-    () => read(controller, [], [{ type: 'bool' }], 'frozen'))
   await check('public sales are still closed', 'false',
-    () => read(controller, [], [{ type: 'bool' }], 'publicSalesOpen'))
+    () => read(controller, [], BOOL, 'publicSalesOpen'))
   await check('subname registrar resolver', addresses.PublicResolver,
     () => read(addresses.SubnameRegistrar, [], ADDR, 'resolver'))
   // The sales switch does not gate the sponsored path, so a label missing here is
   // registrable as soon as the guardian funds a registrar.
   const reserved = [...reservedByReason].flatMap(([reason, names]) => names.map((name) => ({ name, reason })))
-  const reasons = await publicClient.multicall({
+  const reasons = await client.multicall({
     batchSize: 65_536,
     contracts: reserved.map(({ name }) => ({
       address: addresses.SimplexNamePolicy,
@@ -587,7 +541,7 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     })),
   })
   const released = reserved.filter((r, i) => reasons[i].result === 0)
-  const expiries = await publicClient.multicall({
+  const expiries = await client.multicall({
     batchSize: 65_536,
     contracts: released.map(({ name }) => ({
       address: registrar,
@@ -598,11 +552,10 @@ async function verifyWiring(publicClient, addresses, handedOver) {
   })
   const handedOut = new Set(released.filter((r, i) => expiries[i].result > 0n))
   const unreserved = reserved.filter((r, i) => reasons[i].result !== r.reason && !handedOut.has(r))
-  console.log(`  ${unreserved.length ? '✗' : '✓'} reserved names read back: ${reserved.length - unreserved.length - handedOut.size} of ${reserved.length}, ${handedOut.size} handed out`)
-  if (unreserved.length) {
-    failures.push(`reserved names (${unreserved.slice(0, 5).map((r) => r.name).join(', ')}${unreserved.length > 5 ? ', …' : ''})`)
-  }
-  const listed = await publicClient.multicall({
+  report(`reserved names read back`, unreserved.length === 0,
+    `${reserved.length - unreserved.length - handedOut.size} of ${reserved.length}, ${handedOut.size} handed out` +
+      (unreserved.length ? `; missing ${unreserved.slice(0, 5).map((r) => r.name).join(', ')}${unreserved.length > 5 ? ', …' : ''}` : ''))
+  const listed = await client.multicall({
     batchSize: 65_536,
     contracts: communityNames.map((name) => ({
       address: addresses.SimplexNamePolicy,
@@ -612,111 +565,232 @@ async function verifyWiring(publicClient, addresses, handedOver) {
     })),
   })
   const unlisted = communityNames.filter((name, i) => listed[i].result !== true)
-  console.log(`  ${unlisted.length ? '✗' : '✓'} community names read back: ${communityNames.length - unlisted.length} of ${communityNames.length}`)
-  if (unlisted.length) {
-    failures.push(`community names (${unlisted.slice(0, 5).join(', ')}${unlisted.length > 5 ? ', …' : ''})`)
-  }
-  // A six-character name must quote the cheapest rung. `.testing` is priced at
-  // zero on purpose, so only a paid TLD can assert non-zero — for that one, zero
-  // means the oracle is misconfigured and every name would be free.
-  const expectPaid = tld !== 'testing'
+  report(`community names read back`, unlisted.length === 0,
+    `${communityNames.length - unlisted.length} of ${communityNames.length}` +
+      (unlisted.length ? `; missing ${unlisted.slice(0, 5).join(', ')}${unlisted.length > 5 ? ', …' : ''}` : ''))
   try {
-    const p = await publicClient.readContract({
+    const p = await client.readContract({
       address: controller,
       abi: [{ type: 'function', name: 'rentPrice', inputs: [{ type: 'string' }, { type: 'uint256' }],
         outputs: [{ type: 'tuple', components: [{ name: 'base', type: 'uint256' }, { name: 'premium', type: 'uint256' }] }],
         stateMutability: 'view' }],
       functionName: 'rentPrice', args: ['abcdef', 63072000n],
     })
-    const ok = !expectPaid || p.base > 0n
-    console.log(`  ${ok ? '✓' : '✗'} two-year price for a 6-char name: ${Number(p.base) / 1e18} ETH${expectPaid ? '' : '  (.testing is free by design)'}`)
-    if (!ok) failures.push('rentPrice is zero on a paid TLD')
+    report('two-year price for a 6-char name', p.base > 0n, `${Number(p.base) / 1e18} ETH`)
   } catch (e) {
-    console.log(`  ✗ rentPrice read failed — ${e.shortMessage || e.message}`)
-    failures.push('rentPrice')
+    report('rentPrice', false, `read failed — ${e.shortMessage || e.message}`)
   }
 
   // The curve itself, rung by rung, and the feed scale. `rentPrice` above only
   // proves a 6-char name is not free; a curve off by a factor (per-second args
   // pasted into a per-year contract, say) would sail past it.
-  if (addresses.SimplexPriceOracle) {
-    const oracle = addresses.SimplexPriceOracle
-    const U256 = [{ type: 'uint256' }]
-    await check('controller prices from this oracle', oracle,
-      () => read(controller, [], ADDR, 'prices'))
-    await check('oracle reads the Chainlink ETH/USD feed', chainlinkEthUsd,
-      () => read(oracle, [], ADDR, 'usdOracle'))
-    await check('oracle feed scale matches the Chainlink feed decimals', String(10 ** USD_FEED_DECIMALS),
-      () => read(oracle, [], U256, 'usdOracleScale'))
-    await check('oracle base price per year', String(SIMPLEX_PRICE_BASE),
-      () => read(oracle, [], U256, 'basePriceCentsPerYear'))
-    for (const { labelLength, priceCentsPerYear } of SIMPLEX_PRICE_RUNGS) {
-      await check(`oracle price at ${labelLength} char(s)`, String(priceCentsPerYear),
-        () => read(oracle, U256, U256, 'priceCentsPerYear', [labelLength]))
-    }
+  const oracle = addresses.SimplexPriceOracle
+  const U256 = [{ type: 'uint256' }]
+  await check('controller prices from this oracle', oracle,
+    () => read(controller, [], ADDR, 'prices'))
+  await check('oracle reads the Chainlink ETH/USD feed', chainlinkEthUsd,
+    () => read(oracle, [], ADDR, 'usdOracle'))
+  await check('oracle feed scale matches the Chainlink feed decimals', String(10 ** USD_FEED_DECIMALS),
+    () => read(oracle, [], U256, 'usdOracleScale'))
+  await check('oracle base price per year', String(SIMPLEX_PRICE_BASE),
+    () => read(oracle, [], U256, 'basePriceCentsPerYear'))
+  for (const { labelLength, priceCentsPerYear } of SIMPLEX_PRICE_RUNGS) {
+    await check(`oracle price at ${labelLength} char(s)`, String(priceCentsPerYear),
+      () => read(oracle, U256, U256, 'priceCentsPerYear', [labelLength]))
   }
 
   await check('eth-usd.data.eth resolves to the ETH/USD feed', chainlinkEthUsd,
-    () => read(addresses.PublicResolver, [{ type: 'bytes32' }], ADDR, 'addr', [namehash('eth-usd.data.eth')]))
-  await check('controller implementation (ERC-1967 slot)', addresses.SimplexControllerImpl,
-    async () => getAddress(`0x${(await publicClient.getStorageAt({ address: controller, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`))
-  await check('name policy implementation (ERC-1967 slot)', addresses.SimplexNamePolicyImpl,
-    async () => getAddress(`0x${(await publicClient.getStorageAt({ address: addresses.SimplexNamePolicy, slot: ERC1967_IMPLEMENTATION_SLOT })).slice(-40)}`))
+    () => read(addresses.PublicResolver, BYTES32, ADDR, 'addr', [namehash('eth-usd.data.eth')]))
 
-  // Ownership. Until the admin accepts, the deploy key holds everything and the
-  // admin is only proposed on the two Ownable2Step contracts; after the handover
-  // the admin holds everything and nothing is pending.
-  const holder = handedOver ? ownerAddress : account.address
-  await check('registrar owner', holder, () => read(registrar, [], ADDR, 'owner'))
-  for (const name of ['', 'eth', 'data.eth']) {
-    await check(`registry owner of ${name || 'the root'}`, holder,
-      () => read(registry, [{ type: 'bytes32' }], ADDR, 'owner', [namehash(name)]))
+  const proxyCode = artifact(TRANSPARENT_PROXY)
+  const matchesCode = (what, address, expected) => check(what, 'the artifact', async () => {
+    const code = await client.getCode({ address })
+    return code === expected() ? 'the artifact' : `code hash ${code && keccak256(code)}`
+  })
+  for (const [name, definition] of Object.entries(UPGRADEABLE)) {
+    const { address: proxy, implementation } = deployed.upgradeable[name]
+    const compiled = artifact(definition.artifact)
+    const proxyAdmin = proxyAdminOf(proxy)
+    await matchesCode(`${name} implementation code, with its immutables`, implementation,
+      () => runtimeCode(compiled, definition.immutables(addresses, { tld: TLD, deployer, self: implementation })))
+    if (definition.initialize) {
+      await check(`${name} implementation _initialized`, '255',
+        () => storedValue(client, implementation, compiled, '_initialized'))
+    }
+    await matchesCode(`${name} proxy code, with its ProxyAdmin`, proxy,
+      () => runtimeCode(proxyCode, { _admin: proxyAdmin }))
+    await check(`${name} proxy implementation slot`, implementation,
+      async () => (await proxySlots(client, proxy)).implementation)
+    await check(`${name} proxy admin slot`, proxyAdmin,
+      async () => (await proxySlots(client, proxy)).admin)
+    await check(`${name} ProxyAdmin owner is the admin Safe`, governance.adminSafe.address,
+      () => client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' }))
+    await matchesCode(`${name} ProxyAdmin code`, proxyAdmin, () => runtimeCode(artifact(PROXY_ADMIN_ARTIFACT), {}))
   }
-  await check('registry owner of eth-usd.data.eth', handedOver ? zeroAddress : account.address,
-    () => read(registry, [{ type: 'bytes32' }], ADDR, 'owner', [namehash('eth-usd.data.eth')]))
-  for (const [what, at] of [['controller', controller], ['oracle', addresses.SimplexPriceOracle]]) {
-    if (!at) continue
-    const owner = await read(at, [], ADDR, 'owner').catch(() => undefined)
-    // Before the second run the admin may already have accepted this one.
-    const accepted = handedOver || owner?.toLowerCase() === ownerAddress.toLowerCase()
-    await check(`${what} owner`, accepted ? ownerAddress : account.address, async () => owner)
-    await check(`${what} pendingOwner`, accepted ? zeroAddress : ownerAddress,
-      () => read(at, [], ADDR, 'pendingOwner'))
+  for (const name of Object.keys(IMMUTABLE).filter((name) => Object.hasOwn(addresses, name))) {
+    await matchesCode(`${name} code`, addresses[name], () => runtimeCode(artifact(IMMUTABLE[name].artifact), {}))
   }
+  await check('registrar ens', registry, () => read(registrar, [], ADDR, 'ens'))
+  await check('registrar baseNode', TLD_NODE, () => read(registrar, [], BYTES32, 'baseNode'))
+  await check('controller ens', registry, () => read(controller, [], ADDR, 'ens'))
+  await check('controller tldNode', TLD_NODE, () => read(controller, [], BYTES32, 'tldNode'))
+  const [base, , minCommitmentAge, maxCommitmentAge, , { tldSuffix }] =
+    UPGRADEABLE.SimplexController.initialize(addresses, { tld: TLD, deployer })
+  await check('controller base registrar', base, async () => getAddress(toHex(
+    await storedValue(client, controller, artifact(UPGRADEABLE.SimplexController.artifact), 'base'), { size: 20 })))
+  await check('controller minCommitmentAge', minCommitmentAge,
+    () => read(controller, [], [{ type: 'uint256' }], 'minCommitmentAge'))
+  await check('controller maxCommitmentAge', maxCommitmentAge,
+    () => read(controller, [], [{ type: 'uint256' }], 'maxCommitmentAge'))
+  await check('controller tldSuffix', tldSuffix, () => read(controller, [], [{ type: 'string' }], 'tldSuffix'))
+  await check('subname registrar ens', registry, () => read(addresses.SubnameRegistrar, [], ADDR, 'ens'))
+  await check('subname registrar baseRegistrar', registrar,
+    () => read(addresses.SubnameRegistrar, [], ADDR, 'baseRegistrar'))
+  await check('universal resolver registry', registry, () => read(addresses.UniversalResolver, [], ADDR, 'registry'))
+  await check('registry resolver of the TLD node', addresses.PublicResolver,
+    () => read(registry, BYTES32, ADDR, 'resolver', [TLD_NODE]))
+  await check('controllers added on the registrar', sortedAddresses([controller, addresses.SimplexNamePolicy]).join(', '),
+    async () => [...new Set(sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)))].join(', '))
 
-  if (failures.length) {
-    console.error(`\n  ${failures.length} read-back check(s) FAILED: ${failures.join(', ')}`)
-    console.error(handedOver
-      ? `  The handover is done: only the admin ${ownerAddress} can fix this now.`
-      : `  The deploy key still holds every role — fix the wiring before the admin accepts.`)
-    process.exitCode = 1
+  const handedOver = await read(registrar, [], ADDR, 'owner')
+    .then((owner) => owner.toLowerCase() === governance.adminSafe.address.toLowerCase(), () => false)
+  if (handedOver) {
+    console.log(`  · the admin Safe owns the registrar: section 8 began after a passing read-back, so the deploy key's roles are not read`)
   } else {
-    console.log(`  all read-back checks passed`)
+    await check('registrar owner is the deploy key', deployer, () => read(registrar, [], ADDR, 'owner'))
+    for (const name of ['', 'eth', 'data.eth', 'eth-usd.data.eth']) {
+      await check(`registry owner of ${name || 'the root node'} is the deploy key`, deployer,
+        () => read(registry, BYTES32, ADDR, 'owner', [namehash(name)]))
+    }
+    for (const [what, at] of [['controller', controller], ['oracle', addresses.SimplexPriceOracle]]) {
+      await check(`${what} owner is the deploy key`, deployer, () => read(at, [], ADDR, 'owner'))
+      await check(`${what} pendingOwner`, zeroAddress, () => read(at, [], ADDR, 'pendingOwner'))
+    }
+  }
+
+  return failures
+}
+
+async function requireGovernance(client, governance, deployer, withheld) {
+  console.log(`\n--- Governance check ---`)
+  if (!(await checkGovernance(client, governance, deployer))) {
+    throw new Error(`governance.mainnet.json does not match the chain: ${withheld} is not sent`)
   }
 }
 
-/// L33: the deploy reads compiled artifacts, never sources, so an edit made
-/// after the last compile would deploy the previous bytecode and the journal
-/// would record it as a success. Rather than guess freshness from mtimes —
-/// Hardhat caches on content, so a touched-but-unchanged file would block the
-/// run forever — just compile. It is idempotent, it is the only thing that
-/// actually guarantees the artifacts match the sources, and it fails the run on
-/// a branch that does not build at all.
-function assertBuildFresh() {
-  console.log('Compiling contracts (artifacts must match sources) …')
-  try {
-    execFileSync('npx', ['hardhat', 'compile'], {
-      cwd: ENS_CONTRACTS_DIR,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    })
-  } catch (e) {
-    console.error('`npx hardhat compile` failed — refusing to deploy.\n')
-    console.error(e.stdout || '')
-    console.error(e.stderr || '')
-    process.exit(1)
+export async function runOne(runner, client, inputs, deployer) {
+  await requireGovernance(client, inputs.governance, deployer, 'any transaction of this run')
+  const deployed = await deployAndWire(runner, inputs, deployer, client)
+  const failures = await readBackOne(client, deployed, inputs, deployer)
+  if (failures.length) {
+    throw new Error(
+      `${failures.length} run-1 read-back check(s) FAILED: ${failures.join(', ')}.\n` +
+        `  This run sends nothing further: the handover and the v1 retirement wait for a passing read-back.`,
+    )
   }
-  console.log('  build is current')
+  console.log(`  all run-1 read-back checks passed`)
+  const root = await handOver(runner, deployed, client, inputs.governance.adminSafe, deployer)
+  await retireV1(runner.write, inputs.v1)
+  return addressesFile({ ...deployed.addresses, Root: root })
+}
+
+export async function readBackTwo(client, addresses, { governance, v1 }, deployer) {
+  console.log(`\n--- Run-2 read-back ---`)
+  const { failures, report, check, read } = readBack(client)
+  const admin = governance.adminSafe.address
+  const registry = addresses.ENSRegistry
+  const owners = []
+  const owner = async (what, expected, readOwner) => owners.push([what, await check(what, expected, readOwner)])
+
+  for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
+    await owner(`${name} ProxyAdmin owner`, admin, async () => client.readContract({
+      address: (await proxySlots(client, addresses[key])).admin, abi: PROXY_ADMIN_ABI, functionName: 'owner',
+    }))
+  }
+  await owner('controller owner', admin, () => read(addresses.ETHRegistrarController, [], ADDR, 'owner'))
+  await owner('controller pendingOwner', zeroAddress, () => read(addresses.ETHRegistrarController, [], ADDR, 'pendingOwner'))
+  await check('controller beneficiary', governance.guardianSafe.address,
+    () => read(addresses.ETHRegistrarController, [], ADDR, 'beneficiary'))
+  await owner('registrar owner', admin, () => read(addresses.BaseRegistrarImplementation, [], ADDR, 'owner'))
+  await owner('oracle owner', admin, () => read(addresses.SimplexPriceOracle, [], ADDR, 'owner'))
+  await owner('oracle pendingOwner', zeroAddress, () => read(addresses.SimplexPriceOracle, [], ADDR, 'pendingOwner'))
+  await owner('registry owner of the root node', addresses.Root, () => read(registry, BYTES32, ADDR, 'owner', [zeroHash]))
+  await owner('registry owner of eth', admin, () => read(registry, BYTES32, ADDR, 'owner', [namehash('eth')]))
+  await owner('registry owner of data.eth', admin, () => read(registry, BYTES32, ADDR, 'owner', [namehash('data.eth')]))
+  await check('registry owner of eth-usd.data.eth', zeroAddress,
+    () => read(registry, BYTES32, ADDR, 'owner', [namehash('eth-usd.data.eth')]))
+  await check('Root ens', registry, () => read(addresses.Root, [], ADDR, 'ens'))
+  await owner('Root owner', admin, () => read(addresses.Root, [], ADDR, 'owner'))
+  await check('Root controllers(admin Safe)', 'true', () => read(addresses.Root, ADDR, BOOL, 'controllers', [admin]))
+  await check('Root controllers(deploy key)', 'false', () => read(addresses.Root, ADDR, BOOL, 'controllers', [deployer]))
+  await check(`Root locked(labelhash("${TLD}"))`, 'false', () => read(addresses.Root, BYTES32, BOOL, 'locked', [labelhash(TLD)]))
+  await check('v1 registrar controllers(v1 controller)', 'false', () => client.readContract({
+    address: v1.BaseRegistrarImplementation, abi: V1_ABI, functionName: 'controllers', args: [v1.ETHRegistrarController],
+  }))
+  await check('v1 registrar controllers(v1 name policy)', 'false', () => client.readContract({
+    address: v1.BaseRegistrarImplementation, abi: V1_ABI, functionName: 'controllers', args: [v1.SimplexNamePolicy],
+  }))
+  await owner('v1 controller pendingOwner', zeroAddress,
+    () => client.readContract({ address: v1.ETHRegistrarController, abi: V1_ABI, functionName: 'pendingOwner' }))
+  await owner('v1 oracle pendingOwner', zeroAddress,
+    () => client.readContract({ address: v1.SimplexPriceOracle, abi: V1_ABI, functionName: 'pendingOwner' }))
+  for (const [what, got] of owners) {
+    report(`${what} is not the deploy key`, got !== undefined && got.toLowerCase() !== deployer.toLowerCase(), got)
+  }
+  return failures
+}
+
+export const acceptanceBatch = (adminSafe, addresses) => safeBatch({
+  safe: adminSafe,
+  transactions: [addresses.ETHRegistrarController, addresses.SimplexPriceOracle]
+    .map((to) => ({ to, data: encodeFunctionData({ abi: ACCEPT_OWNERSHIP_ABI, functionName: 'acceptOwnership' }) })),
+  name: 'run 1: accept the controller and the oracle',
+  description: `acceptOwnership() on the controller proxy ${addresses.ETHRegistrarController} and on SimplexPriceOracle ${addresses.SimplexPriceOracle}`,
+})
+
+export async function registrarAllowanceBatch(client, { registrarWallet: wallet, guardianSafe }, addresses) {
+  if (!wallet) return refusal(['governance.mainnet.json has no registrarWallet entry'])
+  const failures = await entryFailures(client, wallet)
+  if (failures.length) return refusal(failures.map((failure) => `registrarWallet ${wallet.address} ${failure}`))
+  const { SimplexSponsor: sponsor, ETHRegistrarController: controller } = addresses
+  const { admin } = await proxySlots(client, sponsor)
+  const unlinked = admin === proxyAdminOf(sponsor)
+    ? []
+    : [`the sponsor ${sponsor} is not a v2 proxy: its admin slot holds ${admin}, not ${proxyAdminOf(sponsor)}`]
+  for (const [address, functionName, expected] of [
+    [controller, 'sponsor', sponsor],
+    [sponsor, 'controller', controller],
+    [controller, 'beneficiary', guardianSafe.address],
+  ]) {
+    const got = await client.readContract({ address, abi: LINKS_ABI, functionName })
+    if (got.toLowerCase() !== expected.toLowerCase()) unlinked.push(`${functionName}() of ${address} is ${got}, not ${expected}`)
+  }
+  if (unlinked.length) return refusal(unlinked)
+  const args = [wallet.address, wallet.allowance]
+  return accepted({
+    wallet,
+    batch: safeBatch({
+      safe: guardianSafe.address,
+      transactions: [{ to: addresses.SimplexSponsor, data: encodeFunctionData({ abi: SPONSOR_ABI, functionName: 'setRegistrarAllowance', args }) }],
+      name: 'registrar allowance',
+      description: `setRegistrarAllowance(${args.join(', ')}) on the sponsor proxy ${addresses.SimplexSponsor}`,
+    }),
+  })
+}
+
+export async function registrarAllowanceReadBack(client, { registrarWallet: wallet }, addresses) {
+  if (!wallet) return ['governance.mainnet.json has no registrarWallet entry']
+  console.log(`\n--- Registrar allowance read-back ---`)
+  const { failures, check } = readBack(client)
+  await check(`sponsor registrarAllowance of the registrar wallet ${wallet.address}`, wallet.allowance,
+    () => client.readContract({ address: addresses.SimplexSponsor, abi: SPONSOR_ABI, functionName: 'registrarAllowance', args: [wallet.address] }))
+  return failures
+}
+
+function printCall(to, signature, args) {
+  const abi = parseAbi([`function ${signature}`])
+  console.log(`    to ${to}: ${signature.replace(/\(.*/, '')}(${args.join(', ')})`)
+  console.log(`      calldata ${encodeFunctionData({ abi, args })}`)
 }
 
 // Track the spawned fork at module scope so cleanup handlers can reach it.
@@ -727,45 +801,73 @@ function cleanupFork() {
     activeFork = null
   }
 }
-process.on('SIGINT',  () => { cleanupFork(); process.exit(130) })
-process.on('SIGTERM', () => { cleanupFork(); process.exit(143) })
-process.on('exit',    () => { cleanupFork() })
 
-async function main() {
+async function runOneOnMainnet(rpcUrl, inputs) {
+  const deployerKey = requireEnv('DEPLOYER_KEY')
+  const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI',
+    ' (e.g. "0.078")\n       Pick this from Dune (e.g. the 5th-percentile recent base fee).')
+  const maxBaseFeeWei = parseGwei(maxBaseFeeGwei)
+  const absoluteMaxBaseFeeWei = process.env.ABSOLUTE_MAX_BASE_FEE_GWEI
+    ? parseGwei(process.env.ABSOLUTE_MAX_BASE_FEE_GWEI)
+    : undefined
+  const bumpAfterMs = (parseFloat(process.env.BUMP_AFTER_HOURS) || (DEFAULTS.BUMP_AFTER_MS / 3600000)) * 3600 * 1000
+  const bumpPct = BigInt(process.env.BUMP_PCT || DEFAULTS.BUMP_PCT)
+  // Default 18545 (not 8546): Reth/Geth use 8546 for the WebSocket JSON-RPC
+  // and 8545 for HTTP, so a stock node setup conflicts with the standard
+  // 8546 default. Pick a port that's unlikely to overlap with anything.
+  const forkPort = parseInt(process.env.FORK_PORT || '18545', 10)
+  const account = privateKeyToAccount(deployerKey)
+  const { governance } = inputs
+
   // Cheap and first: a stale build must not cost a fork spawn, let alone a
   // transaction.
+  assertTaggedSource(SOURCE_TAG)
+  assertCommitted(RUN_ONE_INPUTS)
   assertBuildFresh()
 
   // A populated addresses file with no journal beside it means a previous
   // deployment completed and its journal was moved or lost. Overwriting it
   // would erase the only record of what is live.
-  if (existsSync(addressesPath) && loadJournal(journalPath).length === 0) {
+  if (existsSync(ADDRESSES_PATH) && loadJournal(JOURNAL_PATH).length === 0) {
     console.error(
-      `${addressesPath} already exists but ${journalPath} is empty or missing.\n` +
+      `${ADDRESSES_PATH} already exists but ${JOURNAL_PATH} is empty or missing.\n` +
         `  That pairing means a completed deployment whose journal is gone — this run would\n` +
         `  overwrite the record of live addresses. Move it and ${attemptsLogPath} aside deliberately if you\n` +
         `  really are starting over.`,
     )
     process.exit(1)
   }
+  if (existsSync(VERIFICATION_PATH)) {
+    console.error(
+      `${VERIFICATION_PATH} exists. Run 1 writes it last, so run 1 is complete, and the file may record\n` +
+        `  upgrade candidates since; run 1 does not rewrite it. RUN=2 reads the handover back.`,
+    )
+    process.exit(1)
+  }
 
   for (const [role, kind] of [['general', 'generalTerms'], ['community', 'communityTerms']]) {
-    await checkTermsLink(role, terms[kind].link).catch((err) => {
-      console.error(`terms.${tld}.json ${kind}: ${err.message}`)
-      if (process.env.TERMS_UNCHECKED !== 'yes') process.exit(1)
-      console.error('  TERMS_UNCHECKED=yes: deploying it as a placeholder')
+    await checkTermsLink(role, inputs.terms[kind].link).catch((err) => {
+      console.error(`terms.${TLD}.json ${kind}: ${err.message}`)
+      process.exit(1)
     })
   }
 
-  console.log(`SNRC mainnet deploy for .${tld} (chainId ${mainnet.id})`)
+  console.log(`SNRC v2 mainnet deploy for .${TLD} (chainId ${mainnet.id}), run 1`)
   console.log(`  Deployer:          ${account.address}`)
-  console.log(`  Cold owner:        ${ownerAddress}`)
+  console.log(`  Admin Safe:        ${governance.adminSafe.address}`)
+  console.log(`  Guardian Safe:     ${governance.guardianSafe.address}`)
   console.log(`  Chainlink ETH/USD: ${chainlinkEthUsd}`)
-  console.log(`  SMPXNFT:           ${smpxNftAddr}`)
   console.log(`  Cap (gwei):        ${maxBaseFeeGwei}`)
   console.log(`  Bump rule:         after ${bumpAfterMs / 3600000}h stall, cap × ${Number(100n + bumpPct) / 100}`)
-  console.log(`  Journal:           ${journalPath}`)
+  console.log(`  Journal:           ${JOURNAL_PATH}`)
   console.log(`  Attempts log:      ${attemptsLogPath}`)
+
+  const publicClient = await mainnetClient(rpcUrl)
+  const unserved = await logsFailures(publicClient, governance, loadJournal(JOURNAL_PATH))
+  if (unserved.length) {
+    console.error(unserved.join('\n'))
+    process.exit(1)
+  }
 
   // ----- 1. Dry run against a forked mainnet -----
   activeFork = await spawnHardhatFork({
@@ -781,14 +883,9 @@ async function main() {
       weiHex: '0x56bc75e2d63100000',  // 100 ETH
     })
     const dry = createDryRunRunner({ forkUrl: activeFork.url, forkChainId: activeFork.chainId, account })
+    const forkClient = createPublicClient({ chain: { ...mainnet, id: activeFork.chainId }, transport: http(activeFork.url, { timeout: 120_000 }) })
     console.log(`\n--- Dry-run on fork ---`)
-    // The deploy key sends the single-step handovers itself, so the fork can
-    // price them without the admin.
-    await runDeploySequence({
-      deploy: dry.deploy,
-      write: dry.write,
-      adminAccepted: async () => true,
-    })
+    await runOne(dry, forkClient, inputs, account.address)
     dryTotals = dry.totals()
     console.log(`Dry-run captured ${dryTotals.perStep.length} steps, ${dryTotals.totalGas.toLocaleString()} gas total`)
   } finally {
@@ -796,18 +893,7 @@ async function main() {
   }
 
   // ----- 2. Preflight + confirm -----
-  const transport = http(rpcUrl)
-  const publicClient = createPublicClient({ chain: mainnet, transport })
-  const walletClient = createWalletClient({ chain: mainnet, transport, account })
-
-  // MAINNET_RPC_URL pointing at a testnet would deploy the whole stack to the
-  // wrong chain and journal it as a success. viem only asserts the chain id on
-  // some paths, so assert it here, once, before any spend.
-  const liveChainId = await publicClient.getChainId()
-  if (liveChainId !== mainnet.id) {
-    console.error(`MAINNET_RPC_URL is chainId ${liveChainId}, expected ${mainnet.id}. Refusing to deploy.`)
-    process.exit(1)
-  }
+  const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
 
   // A dead or misconfigured feed makes every price quote revert
   // (InvalidPriceFeed) and the payable path unusable from the first block.
@@ -828,9 +914,9 @@ async function main() {
   await analyzeAndConfirm({
     publicClient, account,
     maxBaseFeeWei, dryRunTotals: dryTotals,
-    journalPath,
+    journalPath: JOURNAL_PATH,
     bumpAfterMs, bumpPct,
-    label: `.${tld} mainnet deploy preflight`,
+    label: `.${TLD} v2 mainnet deploy preflight, run 1`,
   })
 
   // ----- 3. Real deploy against mainnet -----
@@ -838,69 +924,110 @@ async function main() {
   const real = createWaitForBaseRunner({
     publicClient, walletClient, account,
     maxBaseFeeWei, bumpAfterMs, bumpPct,
-    journalPath, attemptsLogPath, absoluteMaxBaseFeeWei,
+    journalPath: JOURNAL_PATH, attemptsLogPath, absoluteMaxBaseFeeWei,
   })
-
-  let handedOver = false
-  const awaitingAcceptance = new Set()
-  const addresses = await runDeploySequence({
-    deploy: real.deploy,
-    write: real.write,
-    adminAccepted: async (contracts) => {
-      for (const { address } of contracts) {
-        const owner = await publicClient.readContract({
-          address,
-          abi: [{ type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' }],
-          functionName: 'owner',
-        })
-        if (owner.toLowerCase() !== ownerAddress.toLowerCase()) awaitingAcceptance.add(address.toLowerCase())
-      }
-      handedOver = awaitingAcceptance.size === 0
-      return handedOver
-    },
-  })
+  const addresses = await runOne(real, publicClient, inputs, account.address)
 
   console.log(`\nDeployer remaining balance: ${(Number(await publicClient.getBalance({ address: account.address })) / 1e18).toFixed(6)} ETH`)
   console.log(`Total spent this run+prior: ${(Number(real.spent()) / 1e18).toFixed(6)} ETH`)
 
-  writeFileSync(addressesPath, JSON.stringify(addresses, null, 2))
-  console.log(`Wrote ${addressesPath}`)
+  writeFileSync(ADDRESSES_PATH, JSON.stringify(addresses, null, 2))
+  console.log(`Wrote ${ADDRESSES_PATH}`)
 
   // Emit verification metadata so `verify-etherscan.mjs` (with NETWORK=mainnet)
   // can pick this deploy up without a separate reconstruction pass.
-  const verificationPath = join(REPO_ROOT, `verification.mainnet.${tld}.json`)
-  const verificationMeta = assembleVerification({
-    network: 'mainnet', tld, addresses,
-    deployer: account.address, chainlinkEthUsd, smpxNftAddr,
+  const verificationMeta = await assembleVerification({
+    client: publicClient, addresses, deployer: account.address, adminSafe: governance.adminSafe.address,
   })
-  writeFileSync(verificationPath, JSON.stringify(verificationMeta, null, 2))
-  console.log(`Wrote ${verificationPath}`)
+  writeFileSync(VERIFICATION_PATH, JSON.stringify(verificationMeta, null, 2))
+  console.log(`Wrote ${VERIFICATION_PATH}`)
 
-  await verifyWiring(publicClient, addresses, handedOver)
-
-  if (handedOver) {
-    console.log(`\n--- Handover complete ---`)
-    console.log(`  ${ownerAddress} owns every contract and the registry root, eth and data.eth.`)
-  } else {
-    console.log(`\n--- Handover waits for the admin ---`)
-    console.log(`  Nothing irreversible has been handed over yet. From ${ownerAddress}, call:`)
-    for (const c of ['ETHRegistrarController', 'SimplexPriceOracle']) {
-      if (awaitingAcceptance.has(addresses[c]?.toLowerCase())) {
-        console.log(`    acceptOwnership()   on ${c}  ${addresses[c]}`)
-      }
-    }
-    console.log(`  Then run this command again: it checks both owners and hands over the registrar`)
-    console.log(`  and the registry root, eth and data.eth, which take effect at once.`)
-    console.log(`  Until then the deploy key ${account.address} controls everything — treat it as hot.`)
-  }
-  console.log(`  Guardian ${guardianAddress} is already the beneficiary and needs no acceptance.`)
-
-  console.log(`\nCommit ${addressesPath} AND ${journalPath} AND ${verificationPath} to the repo.`)
-  console.log(`See docs/deployment.md → Mainnet → Step 3.`)
+  console.log(`\n--- Run 1 complete; the admin Safe acts next ---`)
+  console.log(`  The admin Safe ${governance.adminSafe.address} accepts both proposals in one batch:`)
+  printCall(addresses.ETHRegistrarController, 'acceptOwnership()', [])
+  printCall(addresses.SimplexPriceOracle, 'acceptOwnership()', [])
+  const batchPath = join(REPO_ROOT, `safe-transaction.mainnet.${TLD}.run-1.json`)
+  writeFileSync(batchPath, JSON.stringify(acceptanceBatch(governance.adminSafe.address, addresses), null, 2))
+  console.log(`  Wrote ${batchPath}: load it into the Transaction Builder of the admin Safe.`)
+  console.log(`  Then run this command again with RUN=2: it reads the handover back.`)
+  console.log(`  Until the switch, the deploy key ${account.address} restores v1 if needed — treat it as hot.`)
+  console.log(`\nCommit ${ADDRESSES_PATH}, ${JOURNAL_PATH} and ${VERIFICATION_PATH} to the repo at the switch.`)
+  console.log(`See docs/deployment.md → Mainnet.`)
 }
 
-main().catch((err) => {
-  cleanupFork()
-  console.error(err)
-  process.exit(1)
-})
+async function runTwoOnMainnet(rpcUrl, inputs) {
+  const addresses = JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8'))
+  const { deployer } = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
+  const publicClient = await mainnetClient(rpcUrl)
+  const failures = await readBackTwo(publicClient, addresses, inputs, deployer)
+  if (failures.length) {
+    console.error(`\n  ${failures.length} run-2 read-back check(s) FAILED: ${failures.join(', ')}`)
+    process.exitCode = 1
+  } else {
+    console.log(`  all run-2 read-back checks passed`)
+  }
+}
+
+async function registrarStepInputs(rpcUrl) {
+  assertCommitted(REGISTRAR_STEP_INPUTS)
+  return {
+    governance: loadGovernance(),
+    addresses: JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')),
+    client: await mainnetClient(rpcUrl),
+  }
+}
+
+async function registrarReadBackOnMainnet(rpcUrl) {
+  const { governance, addresses, client } = await registrarStepInputs(rpcUrl)
+  const failures = await registrarAllowanceReadBack(client, governance, addresses)
+  if (failures.length) {
+    console.error(`\n  ${failures.length} registrar read-back check(s) FAILED: ${failures.join(', ')}`)
+    process.exitCode = 1
+  } else {
+    console.log(`  the registrar allowance reads back`)
+  }
+}
+
+async function registrarBatchOnMainnet(rpcUrl) {
+  const { governance, addresses, client } = await registrarStepInputs(rpcUrl)
+  const prepared = await registrarAllowanceBatch(client, governance, addresses)
+  if (prepared.refused) {
+    for (const failure of prepared.failures) console.error(`  ✗ ${failure}`)
+    process.exit(1)
+  }
+  const { wallet, batch } = prepared
+  console.log(`  ✓ registrarWallet ${wallet.address}`)
+  console.log(`  The guardian Safe ${governance.guardianSafe.address} sets the registrar allowance:`)
+  printCall(addresses.SimplexSponsor, 'setRegistrarAllowance(address,uint256)', [wallet.address, wallet.allowance])
+  const batchPath = join(REPO_ROOT, `safe-transaction.mainnet.${TLD}.registrar.json`)
+  writeFileSync(batchPath, JSON.stringify(batch, null, 2))
+  console.log(`  Wrote ${batchPath}: load it into the Transaction Builder of the guardian Safe.`)
+  console.log(`  Then run this command again with RUN=registrar-read-back: it reads the allowance back.`)
+}
+
+const RUNS = {
+  1: (rpcUrl) => runOneOnMainnet(rpcUrl, loadInputs()),
+  2: (rpcUrl) => runTwoOnMainnet(rpcUrl, loadInputs()),
+  registrar: registrarBatchOnMainnet,
+  'registrar-read-back': registrarReadBackOnMainnet,
+}
+
+async function main() {
+  const run = process.env.RUN
+  if (!Object.hasOwn(RUNS, run)) {
+    console.error(`RUN must be one of ${Object.keys(RUNS).join(', ')} (got ${JSON.stringify(run)})`)
+    process.exit(1)
+  }
+  await RUNS[run](requireEnv('MAINNET_RPC_URL'))
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.on('SIGINT',  () => { cleanupFork(); process.exit(130) })
+  process.on('SIGTERM', () => { cleanupFork(); process.exit(143) })
+  process.on('exit',    () => { cleanupFork() })
+  main().catch((err) => {
+    cleanupFork()
+    console.error(causes(err).join('\n  ← '))
+    process.exit(1)
+  })
+}

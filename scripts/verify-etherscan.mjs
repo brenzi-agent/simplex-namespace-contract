@@ -65,14 +65,13 @@ console.log(`Chain: ${network} (chainId=${chainId})`)
 
 let TARGETS
 if (meta.contracts) {
-  // Comprehensive format — iterate over the dict. Artifact paths in the
-  // verification file are stored with the `contracts/` prefix (which is
-  // the subdir inside ens-contracts/artifacts/).
   TARGETS = Object.entries(meta.contracts).map(([name, entry]) => ({
     label: name,
     address: entry.address,
     artifact: entry.artifact,
     constructorArgs: entry.constructorArgs,
+    buildInfoId: entry.buildInfoId,
+    ensContractsCommit: entry.ensContractsCommit,
   }))
 } else {
   // Legacy flat format — translate inline. Adding more contracts here is
@@ -156,6 +155,7 @@ function loadArtifactAndBuildInfo(artifactRelPath) {
 }
 
 const ETHERSCAN_API = 'https://api.etherscan.io/v2/api'
+const ALREADY_VERIFIED = /^(Contract source code already verified|Already Verified)/i
 
 async function verify(target) {
   console.log(`\n--- ${target.label} ---`)
@@ -180,13 +180,17 @@ async function verify(target) {
   const url = `${ETHERSCAN_API}?chainid=${chainId}&apikey=${apiKey}`
   const res = await fetch(url, { method: 'POST', body })
   const json = await res.json()
+  if (json.status !== '1' && ALREADY_VERIFIED.test(json.result ?? '')) {
+    console.log(`  OK: ${json.result}`)
+    return { verified: true }
+  }
   if (json.status !== '1') {
     console.error(`  FAILED: ${json.result || json.message}`)
     return null
   }
   const guid = json.result
   console.log(`  submitted, guid=${guid}`)
-  return guid
+  return { guid }
 }
 
 async function pollStatus(guid) {
@@ -200,13 +204,15 @@ async function pollStatus(guid) {
       continue
     }
     process.stdout.write('\n')
-    if (json.status === '1') return { ok: true, msg: json.result }
+    if (json.status === '1' || ALREADY_VERIFIED.test(json.result ?? '')) return { ok: true, msg: json.result }
     return { ok: false, msg: json.result }
   }
   return { ok: false, msg: 'timed out after 2 minutes' }
 }
 
 let failures = 0
+let verified = 0
+const skipped = []
 for (const t of TARGETS) {
   // Wrapper-free v3 leaves removed contracts (NameWrapper, DefaultReverseRegistrar,
   // legacy controllers) at the zero address — nothing is deployed there to verify,
@@ -215,18 +221,35 @@ for (const t of TARGETS) {
     console.log(`\n--- ${t.label} ---\n  address: ${t.address}\n  skipped (not deployed)`)
     continue
   }
-  const guid = await verify(t)
-  if (!guid) {
+  const localBuild = JSON.parse(readFileSync(join(ARTIFACTS_ROOT, t.artifact), 'utf8')).buildInfoId
+  if (t.buildInfoId && t.buildInfoId !== localBuild) {
+    console.log(`\n--- ${t.label} ---\n  address: ${t.address}\n  skipped: built as ${t.buildInfoId} from ens-contracts ` +
+      `${t.ensContractsCommit}, and the local artifact is ${localBuild}; check out and compile that commit to verify it`)
+    skipped.push(t)
+    continue
+  }
+  const submission = await verify(t)
+  if (!submission) {
     failures++
     continue
   }
-  const status = await pollStatus(guid)
+  if (submission.verified) {
+    verified++
+    continue
+  }
+  const status = await pollStatus(submission.guid)
   console.log(`  ${status.ok ? 'OK' : 'FAIL'}: ${status.msg}`)
-  if (!status.ok) failures++
+  if (status.ok) verified++
+  else failures++
 }
 
+const skippedCommits = [...new Set(skipped.map(({ ensContractsCommit }) => ensContractsCommit))]
+console.log(`\n${verified} verified, ${skipped.length} skipped` +
+  `${skippedCommits.length ? ` (built from ens-contracts ${skippedCommits.join(', ')})` : ''}.`)
 if (failures > 0) {
-  console.error(`\n${failures} contract(s) failed verification.`)
+  console.error(`${failures} contract(s) failed verification.`)
   process.exit(1)
 }
-console.log('\nAll contracts verified.')
+console.log(skipped.length
+  ? 'Not all contracts verified: run this again from a compiled checkout of each commit above.'
+  : 'All contracts verified.')

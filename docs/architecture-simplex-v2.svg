@@ -1,0 +1,496 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4041 2266" width="4041" height="2266" font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" role="img" aria-label=".simplex v2 — goal architecture">
+<rect x="0" y="0" width="4041" height="2266" fill="#ffffff"/>
+<text x="40" y="38" font-size="26" font-weight="600" fill="#111827">.simplex v2 — goal architecture</text>
+<rect x="945" y="554" width="2110" height="1211" rx="14" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2" stroke-dasharray="10 6"/>
+<polyline points="3712,756 3712,977 3709,977 3709,1066" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3709,1066 3704,1055 3714,1055" fill="#374151"/>
+<polyline points="3605,1555 3605,1397 3693,1397 3693,1255" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3693,1255 3698,1266 3688,1266" fill="#374151"/>
+<polyline points="3717,1555 3717,1397 3773,1397 3773,1255" fill="none" stroke="#374151" stroke-width="1.6" stroke-dasharray="8 5"/>
+<polygon points="3773,1255 3778,1266 3768,1266" fill="#374151"/>
+<polyline points="3875,1653 3885,1653 3885,2208 2348,2208 2348,2224 78,2224 78,1688 100,1688" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="100,1688 89,1693 89,1683" fill="#374151"/>
+<polyline points="3875,1573 3925,1573 3925,735 3880,735" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3880,735 3891,730 3891,740" fill="#374151"/>
+<polyline points="3515,1228 3055,1228 3055,1564 2985,1564 2985,1574" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2985,1574 2980,1563 2990,1563" fill="#374151"/>
+<polyline points="3565,1255 3565,1411 3545,1411 3545,1750 1303,1750 1303,1701 1285,1701" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1285,1701 1296,1696 1296,1706" fill="#374151"/>
+<polyline points="3533,1255 3533,1572 2465,1572 2465,1679 2130,1679" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2130,1679 2141,1674 2141,1684" fill="#374151"/>
+<polyline points="3515,1100 3263,1100 3263,1070 2858,1070 2858,1056 2678,1056 2678,1084 1403,1084 1403,1103 1280,1103" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1280,1103 1291,1098 1291,1108" fill="#374151"/>
+<polyline points="3515,1148 3492,1148 3492,1164 3265,1164 3265,1176 3010,1176" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3010,1176 3021,1171 3021,1181" fill="#374151"/>
+<polyline points="3515,1180 3492,1180 3492,1207 3282,1207 3282,1186 3021,1186 3021,1244 2671,1244 2671,1208 2140,1208" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2140,1208 2151,1203 2151,1213" fill="#374151"/>
+<polyline points="3515,1084 3128,1084 3128,712 2675,712 2675,696 2155,696" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2155,696 2166,691 2166,701" fill="#374151"/>
+<polyline points="3549,1255 3549,1399 3539,1399 3539,1592 3015,1592" fill="none" stroke="#374151" stroke-width="1.6" stroke-dasharray="8 5"/>
+<polygon points="3015,1592 3026,1587 3026,1597" fill="#374151"/>
+<polyline points="3515,1212 3266,1212 3266,1200 3038,1200 3038,1404 2453,1404 2453,1583 2130,1583" fill="none" stroke="#374151" stroke-width="1.6" stroke-dasharray="8 5"/>
+<polygon points="2130,1583 2141,1578 2141,1588" fill="#374151"/>
+<polyline points="3515,1116 3265,1116 3265,1144 3010,1144" fill="none" stroke="#374151" stroke-width="1.6" stroke-dasharray="8 5"/>
+<polygon points="3010,1144 3021,1139 3021,1149" fill="#374151"/>
+<polyline points="3515,1164 3504,1164 3504,1215 3274,1215 3274,1193 3030,1193 3030,1236 2108,1236 2108,1226" fill="none" stroke="#374151" stroke-width="1.6" stroke-dasharray="8 5"/>
+<polygon points="2108,1226 2113,1237 2103,1237" fill="#374151"/>
+<polyline points="3533,1066 3533,696 3128,696 3128,680 2155,680" fill="none" stroke="#374151" stroke-width="1.6" stroke-dasharray="8 5"/>
+<polygon points="2155,680 2166,675 2166,685" fill="#374151"/>
+<polyline points="134,1574 134,1383 100,1383 100,1025 122,1025 122,580 2734,580 2734,1094" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2734,1094 2729,1083 2739,1083" fill="#374151"/>
+<polyline points="262,1574 262,1288 1606,1288 1606,1208 1850,1208" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1850,1208 1839,1213 1839,1203" fill="#374151"/>
+<polyline points="450,1640 586,1640 586,1637 985,1637" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="985,1637 974,1642 974,1632" fill="#374151"/>
+<polyline points="294,1574 294,1545 1573,1545 1573,1583 1860,1583" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1860,1583 1849,1588 1849,1578" fill="#374151"/>
+<polyline points="278,1706 278,1951 271,1951 271,2064" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="271,2064 266,2053 276,2053" fill="#374151"/>
+<polyline points="278,1574 278,1414 531,1414 531,1215 990,1215" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="990,1215 979,1220 979,1210" fill="#374151"/>
+<polyline points="150,1574 150,1371 110,1371 110,1037 134,1037 134,611 1365,611 1365,664 1835,664" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1835,664 1824,669 1824,659" fill="#374151"/>
+<polyline points="430,1199 715,1199 715,1573 985,1573" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="985,1573 974,1578 974,1568" fill="#374151"/>
+<polyline points="430,1183 515,1183 515,1195 912,1195 912,1402 1878,1402 1878,1565" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1878,1565 1873,1554 1883,1554" fill="#374151"/>
+<polyline points="298,1085 298,1041 2690,1041 2690,1112 2700,1112" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2700,1112 2689,1117 2689,1107" fill="#374151"/>
+<polyline points="430,1103 960,1103 960,1075 1415,1075 1415,1128 1850,1128" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1850,1128 1839,1133 1839,1123" fill="#374151"/>
+<polyline points="394,1085 394,898 510,898 510,591 712,591 712,608 1377,608 1377,632 1835,632" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1835,632 1824,637 1824,627" fill="#374151"/>
+<polyline points="430,1167 990,1167" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="990,1167 979,1172 979,1162" fill="#374151"/>
+<polyline points="410,1085 410,913 1048,913 1048,727" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1048,727 1053,738 1043,738" fill="#374151"/>
+<polyline points="120,1167 90,1167 90,2082 125,2082" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="125,2082 114,2087 114,2077" fill="#374151"/>
+<polyline points="282,1085 282,965 275,965 275,712" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="275,712 280,723 270,723" fill="#374151"/>
+<polyline points="3575,219 3140,219 3140,1112 3010,1112" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3010,1112 3021,1107 3021,1117" fill="#374151"/>
+<polyline points="2695,1640 2477,1640 2477,1726 1315,1726 1315,1669 1285,1669" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1285,1669 1296,1664 1296,1674" fill="#374151"/>
+<polyline points="1227,1555 1227,1358 2159,1358 2159,1264 2683,1264 2683,1208 2700,1208" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2700,1208 2689,1213 2689,1203" fill="#374151"/>
+<polyline points="1211,1555 1211,1505 1225,1505 1225,1308 1868,1308 1868,1226" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1868,1226 1873,1237 1863,1237" fill="#374151"/>
+<polyline points="1131,1555 1131,1276 1136,1276 1136,1236" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1136,1236 1141,1247 1131,1247" fill="#374151"/>
+<polyline points="1285,1637 1566,1637 1566,1599 1860,1599" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1860,1599 1849,1604 1849,1594" fill="#374151"/>
+<polyline points="985,1653 913,1653 913,2082 425,2082" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="425,2082 436,2077 436,2087" fill="#374151"/>
+<polyline points="1147,1725 1147,1833 1201,1833 1201,2054" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1201,2054 1196,2043 1206,2043" fill="#374151"/>
+<polyline points="1860,1647 1566,1647 1566,1685 1285,1685" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1285,1685 1296,1680 1296,1690" fill="#374151"/>
+<polyline points="2070,1565 2070,1424 2441,1424 2441,1384 2492,1384 2492,1369 2734,1369 2734,1226" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2734,1226 2739,1237 2729,1237" fill="#374151"/>
+<polyline points="1990,1565 1990,1330 1996,1330 1996,1226" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1996,1226 2001,1237 1991,1237" fill="#374151"/>
+<polyline points="1894,1565 1894,1394 1594,1394 1594,1215 1280,1215" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1280,1215 1291,1210 1291,1220" fill="#374151"/>
+<polyline points="2700,1128 2140,1128" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2140,1128 2151,1123 2151,1133" fill="#374151"/>
+<polyline points="2718,1094 2718,728 2155,728" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2155,728 2166,723 2166,733" fill="#374151"/>
+<polyline points="2718,1226 2718,1363 2069,1363 2069,1510 2054,1510 2054,1565" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2054,1565 2049,1554 2059,1554" fill="#374151"/>
+<polyline points="2846,1094 2846,668 2847,668 2847,247" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2847,247 2852,258 2842,258" fill="#374151"/>
+<polyline points="1997,746 1997,1053 1996,1053 1996,1094" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1996,1094 1991,1083 2001,1083" fill="#374151"/>
+<polyline points="1853,746 1853,906 1248,906 1248,1085" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1248,1085 1243,1074 1253,1074" fill="#374151"/>
+<polyline points="1280,1183 1677,1183 1677,1176 1850,1176" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1850,1176 1839,1181 1839,1171" fill="#374151"/>
+<polyline points="1152,1085 1152,1010 1869,1010 1869,746" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1869,746 1874,757 1864,757" fill="#374151"/>
+<polyline points="1240,699 1692,699 1692,1053 1868,1053 1868,1094" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1868,1094 1863,1083 1873,1083" fill="#374151"/>
+<polyline points="1128,727 1128,833 1136,833 1136,1085" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1136,1085 1131,1074 1141,1074" fill="#374151"/>
+<polyline points="1144,633 1144,578 1177,578 1177,247" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1177,247 1182,258 1172,258" fill="#374151"/>
+<polyline points="2135,2072 2164,2072 2164,1504 2092,1504 2092,1226" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2092,1226 2097,1237 2087,1237" fill="#374151"/>
+<polyline points="125,2114 55,2114 55,1248 66,1248 66,682 145,682" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="145,682 134,687 134,677" fill="#374151"/>
+<polyline points="3025,2136 3150,2136 3150,2120 3555,2120" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3555,2120 3544,2125 3544,2115" fill="#374151"/>
+<polyline points="2685,2088 2257,2088 2257,1766 1903,1766 1903,1896 1259,1896 1259,1725" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1259,1725 1264,1736 1254,1736" fill="#374151"/>
+<polyline points="2685,2072 2411,2072 2411,1740 2102,1740 2102,1716" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2102,1716 2107,1727 2097,1727" fill="#374151"/>
+<polyline points="3025,2120 3068,2120 3068,1865 3047,1865 3047,1208 3010,1208" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3010,1208 3021,1203 3021,1213" fill="#374151"/>
+<polyline points="2703,2186 2703,2196 399,2196 399,2177" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="399,2177 404,2188 394,2188" fill="#374151"/>
+<polyline points="2685,2120 2135,2120" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2135,2120 2146,2115 2146,2125" fill="#374151"/>
+<polyline points="1217,2054 1217,1986 1927,1986 1927,1757 2713,1757 2713,1706" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="2713,1706 2718,1717 2708,1717" fill="#374151"/>
+<polyline points="1041,2054 1041,1953 1035,1953 1035,1725" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1035,1725 1040,1736 1030,1736" fill="#374151"/>
+<polyline points="1295,2120 1802,2120 1802,1695 1860,1695" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="1860,1695 1849,1700 1849,1690" fill="#374151"/>
+<polyline points="3573,2054 3573,1840 3055,1840 3055,1765" fill="none" stroke="#374151" stroke-width="1.6"/>
+<polygon points="3055,1765 3060,1776 3050,1776" fill="#374151"/>
+<rect x="3550" y="605" width="330" height="151" rx="10" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="3564" y="627" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#6d28d9">OFF-CHAIN</text>
+<text x="3564" y="651" font-size="17" font-weight="600" fill="#111827">Webstore — simplex.domains</text>
+<text x="3564" y="677" font-size="14" fill="#1f2937">browser app served by StoreService:</text>
+<text x="3564" y="696" font-size="14" fill="#1f2937">search, order (BTCPay, Stripe, codes);</text>
+<text x="3564" y="715" font-size="14" fill="#1f2937">signs RegisterName, terms and record</text>
+<text x="3564" y="734" font-size="14" fill="#1f2937">edits with the owner code's key</text>
+<rect x="3555" y="1555" width="320" height="170" rx="10" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="3569" y="1577" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#6d28d9">OFF-CHAIN</text>
+<text x="3569" y="1601" font-size="17" font-weight="600" fill="#111827">SimpleX app</text>
+<text x="3569" y="1627" font-size="14" fill="#1f2937">resolves names over SMP through a</text>
+<text x="3569" y="1646" font-size="14" fill="#1f2937">names-role SMP server; opens</text>
+<text x="3569" y="1665" font-size="14" fill="#1f2937">simplex.domains; planned: buys names</text>
+<text x="3569" y="1684" font-size="14" fill="#1f2937">(App Store, Google Play), signs</text>
+<text x="3569" y="1703" font-size="14" fill="#1f2937">RegisterName with the name's key</text>
+<rect x="120" y="1085" width="310" height="151" rx="10" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="134" y="1107" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#6d28d9">OFF-CHAIN</text>
+<text x="134" y="1131" font-size="17" font-weight="600" fill="#111827">dApp — simplex-app</text>
+<text x="134" y="1157" font-size="14" fill="#1f2937">ENS app v3 fork; the user's wallet</text>
+<text x="134" y="1176" font-size="14" fill="#1f2937">signs and pays: register, terms,</text>
+<text x="134" y="1195" font-size="14" fill="#1f2937">records, offer and claim, subnames;</text>
+<text x="134" y="1214" font-size="14" fill="#1f2937">admin page for the owner's calls</text>
+<rect x="3575" y="153" width="280" height="94" rx="10" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="3589" y="175" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#6d28d9">OFF-CHAIN</text>
+<text x="3589" y="199" font-size="17" font-weight="600" fill="#111827">Wallets and marketplaces</text>
+<text x="3589" y="225" font-size="14" fill="#1f2937">ERC-721 view of each name</text>
+<rect x="3515" y="1066" width="400" height="189" rx="10" fill="#fae8ff" stroke="#a21caf" stroke-width="1.5"/>
+<text x="3529" y="1088" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#a21caf">OFF-CHAIN</text>
+<text x="3529" y="1112" font-size="17" font-weight="600" fill="#111827">StoreService — simplex-store-service</text>
+<text x="3529" y="1138" font-size="14" fill="#1f2937">holds the registrar key, which pays gas only;</text>
+<text x="3529" y="1157" font-size="14" fill="#1f2937">rent is spent from its sponsor allowance;</text>
+<text x="3529" y="1176" font-size="14" fill="#1f2937">commits, registers, and relays the owners'</text>
+<text x="3529" y="1195" font-size="14" fill="#1f2937">signed terms acceptances and record edits;</text>
+<text x="3529" y="1214" font-size="14" fill="#1f2937">planned: relays offers and claims,</text>
+<text x="3529" y="1233" font-size="14" fill="#1f2937">subnames, claim terms and renewals</text>
+<rect x="100" y="1574" width="350" height="132" rx="10" fill="#fae8ff" stroke="#a21caf" stroke-width="1.5"/>
+<text x="114" y="1596" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#a21caf">OFF-CHAIN</text>
+<text x="114" y="1620" font-size="17" font-weight="600" fill="#111827">Resolver service — snrc-resolve</text>
+<text x="114" y="1646" font-size="14" fill="#1f2937">answers the names role of SMP</text>
+<text x="114" y="1665" font-size="14" fill="#1f2937">servers over HTTP; batches its</text>
+<text x="114" y="1684" font-size="14" fill="#1f2937">reads through Multicall3</text>
+<rect x="2695" y="1574" width="320" height="132" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="2709" y="1596" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="2709" y="1620" font-size="17" font-weight="600" fill="#111827">SimplexSponsor</text>
+<text x="2709" y="1646" font-size="14" fill="#1f2937">registrar allowances in attoUSD;</text>
+<text x="2709" y="1665" font-size="14" fill="#1f2937">registerWithCredit, renewWithCredit,</text>
+<text x="2709" y="1684" font-size="14" fill="#1f2937">with the owner's signature</text>
+<rect x="985" y="1555" width="300" height="170" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="999" y="1577" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="999" y="1601" font-size="17" font-weight="600" fill="#111827">SimplexController</text>
+<text x="999" y="1627" font-size="14" fill="#1f2937">commit, register, renew (payable);</text>
+<text x="999" y="1646" font-size="14" fill="#1f2937">registerSponsored, renewSponsored</text>
+<text x="999" y="1665" font-size="14" fill="#1f2937">(sponsor only); sales switch;</text>
+<text x="999" y="1684" font-size="14" fill="#1f2937">owner: admin Safe;</text>
+<text x="999" y="1703" font-size="14" fill="#1f2937">beneficiary: guardian Safe</text>
+<rect x="1860" y="1565" width="270" height="151" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="1874" y="1587" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="1874" y="1611" font-size="17" font-weight="600" fill="#111827">SimplexNamePolicy</text>
+<text x="1874" y="1637" font-size="14" fill="#1f2937">reserved and community names;</text>
+<text x="1874" y="1656" font-size="14" fill="#1f2937">general and community terms;</text>
+<text x="1874" y="1675" font-size="14" fill="#1f2937">acceptances; registerReserved;</text>
+<text x="1874" y="1694" font-size="14" fill="#1f2937">owner: the controller's owner</text>
+<rect x="2700" y="1094" width="310" height="132" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="2714" y="1116" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="2714" y="1140" font-size="17" font-weight="600" fill="#111827">BaseRegistrarImplementation</text>
+<text x="2714" y="1166" font-size="14" fill="#1f2937">ERC-721 of 2LDs, expiries, labels;</text>
+<text x="2714" y="1185" font-size="14" fill="#1f2937">offer and claim, approveWithSig,</text>
+<text x="2714" y="1204" font-size="14" fill="#1f2937">claimWithSig; owner: admin Safe</text>
+<rect x="990" y="1085" width="290" height="151" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="1004" y="1107" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="1004" y="1131" font-size="17" font-weight="600" fill="#111827">SimplexResolver</text>
+<text x="1004" y="1157" font-size="14" fill="#1f2937">records of names and subnames:</text>
+<text x="1004" y="1176" font-size="14" fill="#1f2937">simplex.contact, simplex.channel;</text>
+<text x="1004" y="1195" font-size="14" fill="#1f2937">setText, setTextWithSig,</text>
+<text x="1004" y="1214" font-size="14" fill="#1f2937">clearRecordsWithSig</text>
+<rect x="1835" y="614" width="320" height="132" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="1849" y="636" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="1849" y="660" font-size="17" font-weight="600" fill="#111827">SubnameRegistrar</text>
+<text x="1849" y="686" font-size="14" fill="#1f2937">subnames, soulbound to the 2LD;</text>
+<text x="1849" y="705" font-size="14" fill="#1f2937">createSubname, createSubnameWithSig,</text>
+<text x="1849" y="724" font-size="14" fill="#1f2937">deleteSubname, purge</text>
+<rect x="1850" y="1094" width="290" height="132" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="1864" y="1116" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="1864" y="1140" font-size="17" font-weight="600" fill="#111827">ENSRegistry</text>
+<text x="1864" y="1166" font-size="14" fill="#1f2937">owner and resolver of every node;</text>
+<text x="1864" y="1185" font-size="14" fill="#1f2937">setApprovalForAll,</text>
+<text x="1864" y="1204" font-size="14" fill="#1f2937">setApprovalForAllWithSig</text>
+<rect x="1030" y="633" width="210" height="94" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+<text x="1044" y="655" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#1d4ed8">UPGRADEABLE</text>
+<text x="1044" y="679" font-size="17" font-weight="600" fill="#111827">UniversalResolver</text>
+<text x="1044" y="705" font-size="14" fill="#1f2937">resolve(name, data)</text>
+<rect x="125" y="2064" width="300" height="113" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="139" y="2086" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE · setPriceOracle swaps it</text>
+<text x="139" y="2110" font-size="17" font-weight="600" fill="#111827">SimplexPriceOracle</text>
+<text x="139" y="2136" font-size="14" fill="#1f2937">US cents per year; feed settable;</text>
+<text x="139" y="2155" font-size="14" fill="#1f2937">owner: admin Safe</text>
+<rect x="145" y="648" width="260" height="64" rx="10" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="159" y="670" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#b45309">EXTERNAL</text>
+<text x="159" y="694" font-size="17" font-weight="600" fill="#111827">Chainlink ETH/USD feed</text>
+<rect x="2685" y="153" width="340" height="94" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="2699" y="175" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE · setMetadataRenderer swaps it</text>
+<text x="2699" y="199" font-size="17" font-weight="600" fill="#111827">MetadataRenderer</text>
+<text x="2699" y="225" font-size="14" fill="#1f2937">tokenURI: on-chain JSON and SVG</text>
+<rect x="1015" y="153" width="240" height="94" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="1029" y="175" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE</text>
+<text x="1029" y="199" font-size="17" font-weight="600" fill="#111827">DummyGatewayProvider</text>
+<text x="1029" y="225" font-size="14" fill="#1f2937">gateways()</text>
+<rect x="1855" y="2054" width="280" height="132" rx="10" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="1869" y="2076" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#4b5563">IMMUTABLE</text>
+<text x="1869" y="2100" font-size="17" font-weight="600" fill="#111827">Root</text>
+<text x="1869" y="2126" font-size="14" fill="#1f2937">owns the registry root;</text>
+<text x="1869" y="2145" font-size="14" fill="#1f2937">lock(simplex) at GOV9;</text>
+<text x="1869" y="2164" font-size="14" fill="#1f2937">owner and controller: admin Safe</text>
+<rect x="2685" y="2054" width="340" height="132" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="2699" y="2076" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#15803d">GOVERNANCE</text>
+<text x="2699" y="2100" font-size="17" font-weight="600" fill="#111827">admin Safe — 2 of 4</text>
+<text x="2699" y="2126" font-size="14" fill="#1f2937">owns the eight ProxyAdmins, the</text>
+<text x="2699" y="2145" font-size="14" fill="#1f2937">controller, registrar, oracle and Root;</text>
+<text x="2699" y="2164" font-size="14" fill="#1f2937">7-day timelock in front from GOV8</text>
+<rect x="975" y="2054" width="320" height="132" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="989" y="2076" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#15803d">GOVERNANCE · 1 of 4, 2 of 4 from GOV7</text>
+<text x="989" y="2100" font-size="17" font-weight="600" fill="#111827">guardian Safe</text>
+<text x="989" y="2126" font-size="14" fill="#1f2937">the controller's beneficiary:</text>
+<text x="989" y="2145" font-size="14" fill="#1f2937">receives the revenue; halts sales,</text>
+<text x="989" y="2164" font-size="14" fill="#1f2937">funds registrars, reserves names</text>
+<rect x="3555" y="2054" width="320" height="132" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="3569" y="2076" font-size="11" font-weight="600" letter-spacing="0.06em" fill="#15803d">UPGRADE AUTHORITY</text>
+<text x="3569" y="2100" font-size="17" font-weight="600" fill="#111827">8 × ProxyAdmin</text>
+<text x="3569" y="2126" font-size="14" fill="#1f2937">one per upgradeable contract (blue),</text>
+<text x="3569" y="2145" font-size="14" fill="#1f2937">created by its proxy; upgrades it;</text>
+<text x="3569" y="2164" font-size="14" fill="#1f2937">renounceOwnership freezes it</text>
+<rect x="959" y="548" width="200.16000000000003" height="20" rx="4" fill="#eff6ff"/>
+<text x="965" y="563" font-size="14" font-weight="600" fill="#1d4ed8">UPGRADEABLE UNTIL FROZEN</text>
+<rect x="3582.68" y="836.5" width="258.64" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3712" y="851.5" font-size="12" text-anchor="middle" fill="#374151">HTTPS /api: search, terms, invoice,</text>
+<text x="3712" y="866.5" font-size="12" text-anchor="middle" fill="#374151">register, reveal (signed RegisterName</text>
+<text x="3712" y="881.5" font-size="12" text-anchor="middle" fill="#374151">and terms), find, record edits</text>
+<rect x="3624.16" y="1317.5" width="137.68" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3693" y="1332.5" font-size="12" text-anchor="middle" fill="#374151">SMP: badge commands</text>
+<rect x="3617.92" y="1454.5" width="198.16000000000003" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3717" y="1469.5" font-size="12" text-anchor="middle" fill="#374151">planned, SMP: name purchases</text>
+<text x="3717" y="1484.5" font-size="12" text-anchor="middle" fill="#374151">(App Store, Google Play),</text>
+<text x="3717" y="1499.5" font-size="12" text-anchor="middle" fill="#374151">signed RegisterName</text>
+<rect x="3063.28" y="2190" width="191.44000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3159" y="2205" font-size="12" text-anchor="middle" fill="#374151">SMP: name lookup,</text>
+<text x="3159" y="2220" font-size="12" text-anchor="middle" fill="#374151">through a names-role server</text>
+<rect x="3849.44" y="1012.5" width="151.12" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3925" y="1027.5" font-size="12" text-anchor="middle" fill="#374151">opens simplex.domains</text>
+<rect x="3070.64" y="1210" width="184.72000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3163" y="1225" font-size="12" text-anchor="middle" fill="#374151">registerWithCredit;</text>
+<text x="3163" y="1240" font-size="12" text-anchor="middle" fill="#374151">nonces, registrarAllowance</text>
+<rect x="3069.48" y="1724.5" width="225.04000000000002" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3182" y="1739.5" font-size="12" text-anchor="middle" fill="#374151">commit; rentPriceUSD, available,</text>
+<text x="3182" y="1754.5" font-size="12" text-anchor="middle" fill="#374151">commitments, commitment ages,</text>
+<text x="3182" y="1769.5" font-size="12" text-anchor="middle" fill="#374151">namePolicy</text>
+<rect x="2176.76" y="1646" width="238.48000000000002" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2296" y="1661" font-size="12" text-anchor="middle" fill="#374151">commitUnderGeneralTermsWithSig,</text>
+<text x="2296" y="1676" font-size="12" text-anchor="middle" fill="#374151">commitUnderCommunityTermsWithSig;</text>
+<text x="2296" y="1691" font-size="12" text-anchor="middle" fill="#374151">reservedNames, communityNames,</text>
+<text x="2296" y="1706" font-size="12" text-anchor="middle" fill="#374151">terms links, acceptedTerms, nonces</text>
+<rect x="2170.04" y="1066" width="251.92000000000002" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2296" y="1081" font-size="12" text-anchor="middle" fill="#374151">setTextWithSig, clearRecordsWithSig,</text>
+<text x="2296" y="1096" font-size="12" text-anchor="middle" fill="#374151">multicall of them; text, nonces</text>
+<rect x="3292.64" y="1131" width="184.72000000000003" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3385" y="1146" font-size="12" text-anchor="middle" fill="#374151">nameExpires, ownerOf,</text>
+<text x="3385" y="1161" font-size="12" text-anchor="middle" fill="#374151">GRACE_PERIOD, ens; census:</text>
+<text x="3385" y="1176" font-size="12" text-anchor="middle" fill="#374151">enumeration, labelOf,</text>
+<text x="3385" y="1191" font-size="12" text-anchor="middle" fill="#374151">baseNode, subnameHook</text>
+<rect x="2244.6" y="1197.5" width="110.80000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2300" y="1212.5" font-size="12" text-anchor="middle" fill="#374151">owner, resolver</text>
+<rect x="2861.8" y="694" width="144.4" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2934" y="709" font-size="12" text-anchor="middle" fill="#374151">childrenLength,</text>
+<text x="2934" y="724" font-size="12" text-anchor="middle" fill="#374151">getChildren, ownerOf</text>
+<rect x="3187.36" y="1581.5" width="171.28000000000003" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3273" y="1596.5" font-size="12" text-anchor="middle" fill="#374151">planned: renewWithCredit</text>
+<rect x="2630.4" y="1378.5" width="245.20000000000002" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2753" y="1393.5" font-size="12" text-anchor="middle" fill="#374151">planned:</text>
+<text x="2753" y="1408.5" font-size="12" text-anchor="middle" fill="#374151">acceptGeneralTermsForClaimWithSig,</text>
+<text x="2753" y="1423.5" font-size="12" text-anchor="middle" fill="#374151">acceptCommunityTermsForClaimWithSig</text>
+<rect x="3065.36" y="1126" width="171.28000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3151" y="1141" font-size="12" text-anchor="middle" fill="#374151">planned: approveWithSig,</text>
+<text x="3151" y="1156" font-size="12" text-anchor="middle" fill="#374151">claimWithSig</text>
+<rect x="2482.36" y="1218" width="171.28000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2568" y="1233" font-size="12" text-anchor="middle" fill="#374151">planned:</text>
+<text x="2568" y="1248" font-size="12" text-anchor="middle" fill="#374151">setApprovalForAllWithSig</text>
+<rect x="3251.2" y="678" width="211.60000000000002" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3357" y="693" font-size="12" text-anchor="middle" fill="#374151">planned: createSubnameWithSig,</text>
+<text x="3357" y="708" font-size="12" text-anchor="middle" fill="#374151">deleteSubnameWithSig</text>
+<rect x="752.64" y="562" width="184.72000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="845" y="577" font-size="12" text-anchor="middle" fill="#374151">nameExpires, GRACE_PERIOD,</text>
+<text x="845" y="592" font-size="12" text-anchor="middle" fill="#374151">labelOf, subnameHook</text>
+<rect x="1701.6" y="1197.5" width="110.80000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1757" y="1212.5" font-size="12" text-anchor="middle" fill="#374151">resolver, owner</text>
+<rect x="722.16" y="1619" width="137.68" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="791" y="1634" font-size="12" text-anchor="middle" fill="#374151">namePolicy, prices,</text>
+<text x="791" y="1649" font-size="12" text-anchor="middle" fill="#374151">minCharLength</text>
+<rect x="834.3199999999999" y="1534.5" width="97.36000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="883" y="1549.5" font-size="12" text-anchor="middle" fill="#374151">reservedNames</text>
+<rect x="252.84" y="1816.5" width="50.32000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="278" y="1831.5" font-size="12" text-anchor="middle" fill="#374151">prices</text>
+<rect x="388.4" y="1403.5" width="77.2" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="427" y="1418.5" font-size="12" text-anchor="middle" fill="#374151">text, addr</text>
+<rect x="614.48" y="600.5" width="57.040000000000006" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="643" y="615.5" font-size="12" text-anchor="middle" fill="#374151">ownerOf</text>
+<rect x="595.76" y="1399.5" width="238.48000000000002" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="715" y="1414.5" font-size="12" text-anchor="middle" fill="#374151">commit, register, renew (payable);</text>
+<text x="715" y="1429.5" font-size="12" text-anchor="middle" fill="#374151">rentPrice, commitments, limits;</text>
+<text x="715" y="1444.5" font-size="12" text-anchor="middle" fill="#374151">admin page: setMinCharLength</text>
+<rect x="1364.56" y="1369" width="204.88000000000002" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1467" y="1384" font-size="12" text-anchor="middle" fill="#374151">commitUnder…Terms,</text>
+<text x="1467" y="1399" font-size="12" text-anchor="middle" fill="#374151">accept…TermsForClaim;</text>
+<text x="1467" y="1414" font-size="12" text-anchor="middle" fill="#374151">reservedNames, terms reads;</text>
+<text x="1467" y="1429" font-size="12" text-anchor="middle" fill="#374151">admin page: the owner's calls</text>
+<rect x="718.2" y="1015.5" width="211.60000000000002" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="824" y="1030.5" font-size="12" text-anchor="middle" fill="#374151">approve (offer), transferFrom</text>
+<text x="824" y="1045.5" font-size="12" text-anchor="middle" fill="#374151">(claim); ownerOf, nameExpires,</text>
+<text x="824" y="1060.5" font-size="12" text-anchor="middle" fill="#374151">enumeration, tokenURI, offers</text>
+<rect x="1538.76" y="1102.5" width="238.48000000000002" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1658" y="1117.5" font-size="12" text-anchor="middle" fill="#374151">setApprovalForAll, setResolver;</text>
+<text x="1658" y="1132.5" font-size="12" text-anchor="middle" fill="#374151">owner, resolver, isApprovedForAll,</text>
+<text x="1658" y="1147.5" font-size="12" text-anchor="middle" fill="#374151">NewOwner logs</text>
+<rect x="1501.48" y="614" width="225.04000000000002" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1614" y="629" font-size="12" text-anchor="middle" fill="#374151">createSubname, deleteSubname;</text>
+<text x="1614" y="644" font-size="12" text-anchor="middle" fill="#374151">getChildren, ownerOf, generation</text>
+<rect x="600.48" y="1149" width="225.04000000000002" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="713" y="1164" font-size="12" text-anchor="middle" fill="#374151">multicall (setText, setAddr, …),</text>
+<text x="713" y="1179" font-size="12" text-anchor="middle" fill="#374151">clearRecords; ABI, record logs</text>
+<rect x="650.08" y="895" width="157.84" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="729" y="910" font-size="12" text-anchor="middle" fill="#374151">resolve, findResolver,</text>
+<text x="729" y="925" font-size="12" text-anchor="middle" fill="#374151">reverse</text>
+<rect x="64.84" y="1517.5" width="50.32000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="90" y="1532.5" font-size="12" text-anchor="middle" fill="#374151">prices</text>
+<rect x="229.68" y="823.5" width="90.64000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="275" y="838.5" font-size="12" text-anchor="middle" fill="#374151">latestAnswer</text>
+<rect x="3297.16" y="201" width="137.68" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3366" y="216" font-size="12" text-anchor="middle" fill="#374151">ERC-721: balanceOf,</text>
+<text x="3366" y="231" font-size="12" text-anchor="middle" fill="#374151">ownerOf, tokenURI</text>
+<rect x="2487" y="1614.5" width="178.00000000000003" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2576" y="1629.5" font-size="12" text-anchor="middle" fill="#374151">registerSponsored,</text>
+<text x="2576" y="1644.5" font-size="12" text-anchor="middle" fill="#374151">renewSponsored,</text>
+<text x="2576" y="1659.5" font-size="12" text-anchor="middle" fill="#374151">rentPriceUSD, beneficiary</text>
+<rect x="1799" y="1332.5" width="178.00000000000003" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1888" y="1347.5" font-size="12" text-anchor="middle" fill="#374151">registerWithLabel, renew,</text>
+<text x="1888" y="1362.5" font-size="12" text-anchor="middle" fill="#374151">transferFrom; available,</text>
+<text x="1888" y="1377.5" font-size="12" text-anchor="middle" fill="#374151">nameExpires</text>
+<rect x="1426.16" y="1297.5" width="137.68" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1495" y="1312.5" font-size="12" text-anchor="middle" fill="#374151">setRecord, resolver</text>
+<rect x="1048.72" y="1419" width="164.56" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1131" y="1434" font-size="12" text-anchor="middle" fill="#374151">multicallWithNodeCheck,</text>
+<text x="1131" y="1449" font-size="12" text-anchor="middle" fill="#374151">clearRecords</text>
+<rect x="1325.28" y="1611.5" width="191.44000000000003" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1421" y="1626.5" font-size="12" text-anchor="middle" fill="#374151">consumeRegistration,</text>
+<text x="1421" y="1641.5" font-size="12" text-anchor="middle" fill="#374151">isReserved, communityNames,</text>
+<text x="1421" y="1656.5" font-size="12" text-anchor="middle" fill="#374151">controller</text>
+<rect x="618.6" y="2071.5" width="110.80000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="674" y="2086.5" font-size="12" text-anchor="middle" fill="#374151">price, priceUSD</text>
+<rect x="1125.44" y="1941.5" width="151.12" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1201" y="1956.5" font-size="12" text-anchor="middle" fill="#374151">withdraw: ETH revenue</text>
+<rect x="1615.56" y="1614" width="204.88000000000002" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1718" y="1629" font-size="12" text-anchor="middle" fill="#374151">commit; commitments,</text>
+<text x="1718" y="1644" font-size="12" text-anchor="middle" fill="#374151">maxCommitmentAge, owner,</text>
+<text x="1718" y="1659" font-size="12" text-anchor="middle" fill="#374151">beneficiary, defaultResolver,</text>
+<text x="1718" y="1674" font-size="12" text-anchor="middle" fill="#374151">wasDefaultResolver</text>
+<rect x="2170.72" y="1406" width="164.56" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2253" y="1421" font-size="12" text-anchor="middle" fill="#374151">registerWithLabel,</text>
+<text x="2253" y="1436" font-size="12" text-anchor="middle" fill="#374151">transferFrom, available</text>
+<rect x="1921.16" y="1434.5" width="137.68" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1990" y="1449.5" font-size="12" text-anchor="middle" fill="#374151">setRecord, resolver</text>
+<rect x="1335.68" y="1204.5" width="90.64000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1381" y="1219.5" font-size="12" text-anchor="middle" fill="#374151">clearRecords</text>
+<rect x="2489.52" y="1110" width="130.96" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2555" y="1125" font-size="12" text-anchor="middle" fill="#374151">setSubnodeOwner,</text>
+<text x="2555" y="1140" font-size="12" text-anchor="middle" fill="#374151">setResolver, owner</text>
+<rect x="2377.6" y="710" width="110.80000000000001" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2433" y="725" font-size="12" text-anchor="middle" fill="#374151">onReregister,</text>
+<text x="2433" y="740" font-size="12" text-anchor="middle" fill="#374151">onExpiryChanged</text>
+<rect x="2168.64" y="1352.5" width="184.72000000000003" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2261" y="1367.5" font-size="12" text-anchor="middle" fill="#374151">consumeTransfer, registrar</text>
+<rect x="2815.12" y="447.5" width="63.760000000000005" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2847" y="462.5" font-size="12" text-anchor="middle" fill="#374151">tokenURI</text>
+<rect x="1901.28" y="886" width="191.44000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1997" y="901" font-size="12" text-anchor="middle" fill="#374151">setSubnodeRecord, setOwner,</text>
+<text x="1997" y="916" font-size="12" text-anchor="middle" fill="#374151">setResolver, owner</text>
+<rect x="1389.16" y="895.5" width="137.68" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1458" y="910.5" font-size="12" text-anchor="middle" fill="#374151">clearSubnameRecords</text>
+<rect x="1460.2" y="1172.5" width="43.6" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1482" y="1187.5" font-size="12" text-anchor="middle" fill="#374151">owner</text>
+<rect x="1490.48" y="999.5" width="57.040000000000006" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1519" y="1014.5" font-size="12" text-anchor="middle" fill="#374151">ownerOf</text>
+<rect x="1430.12" y="688.5" width="63.760000000000005" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1462" y="703.5" font-size="12" text-anchor="middle" fill="#374151">resolver</text>
+<rect x="1050.36" y="939" width="171.28000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1136" y="954" font-size="12" text-anchor="middle" fill="#374151">supportsInterface; text,</text>
+<text x="1136" y="969" font-size="12" text-anchor="middle" fill="#374151">addr, … as requested</text>
+<rect x="1145.12" y="398.5" width="63.760000000000005" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1177" y="413.5" font-size="12" text-anchor="middle" fill="#374151">gateways</text>
+<rect x="2105.24" y="1776" width="117.52000000000001" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2164" y="1791" font-size="12" text-anchor="middle" fill="#374151">setSubnodeOwner,</text>
+<text x="2164" y="1806" font-size="12" text-anchor="middle" fill="#374151">setResolver</text>
+<rect x="20.679999999999993" y="956.5" width="90.64000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="66" y="971.5" font-size="12" text-anchor="middle" fill="#374151">latestAnswer</text>
+<rect x="3275.52" y="2094.5" width="130.96" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3341" y="2109.5" font-size="12" text-anchor="middle" fill="#374151">upgradeAndCall,</text>
+<text x="3341" y="2124.5" font-size="12" text-anchor="middle" fill="#374151">transferOwnership,</text>
+<text x="3341" y="2139.5" font-size="12" text-anchor="middle" fill="#374151">renounceOwnership</text>
+<rect x="1481.84" y="1863" width="218.32000000000002" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1591" y="1878" font-size="12" text-anchor="middle" fill="#374151">setSponsor, setDefaultResolver,</text>
+<text x="1591" y="1893" font-size="12" text-anchor="middle" fill="#374151">setNamePolicy, setPriceOracle,</text>
+<text x="1591" y="1908" font-size="12" text-anchor="middle" fill="#374151">setMinCharLength, recoverFunds,</text>
+<text x="1591" y="1923" font-size="12" text-anchor="middle" fill="#374151">acceptOwnership</text>
+<rect x="2291.76" y="1866" width="238.48000000000002" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2411" y="1881" font-size="12" text-anchor="middle" fill="#374151">registerReserved,</text>
+<text x="2411" y="1896" font-size="12" text-anchor="middle" fill="#374151">removeReservedNames,</text>
+<text x="2411" y="1911" font-size="12" text-anchor="middle" fill="#374151">removeCommunityNames,</text>
+<text x="2411" y="1926" font-size="12" text-anchor="middle" fill="#374151">setGeneralTerms, setCommunityTerms</text>
+<rect x="2945.4" y="1954" width="245.20000000000002" height="66" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3068" y="1969" font-size="12" text-anchor="middle" fill="#374151">addController, removeController,</text>
+<text x="3068" y="1984" font-size="12" text-anchor="middle" fill="#374151">setMetadataRenderer, setNamePolicy,</text>
+<text x="3068" y="1999" font-size="12" text-anchor="middle" fill="#374151">setSubnameHook, setMaxLabelLength,</text>
+<text x="3068" y="2014" font-size="12" text-anchor="middle" fill="#374151">setResolver</text>
+<rect x="1461.36" y="2178" width="171.28000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1547" y="2193" font-size="12" text-anchor="middle" fill="#374151">setPrices, setUsdOracle,</text>
+<text x="1547" y="2208" font-size="12" text-anchor="middle" fill="#374151">acceptOwnership</text>
+<rect x="2313.28" y="2102" width="191.44000000000003" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="2409" y="2117" font-size="12" text-anchor="middle" fill="#374151">setController, setResolver,</text>
+<text x="2409" y="2132" font-size="12" text-anchor="middle" fill="#374151">lock, setSubnodeOwner</text>
+<rect x="1596.44" y="1975.5" width="151.12" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1672" y="1990.5" font-size="12" text-anchor="middle" fill="#374151">setRegistrarAllowance</text>
+<rect x="966.16" y="1815" width="137.68" height="36" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1035" y="1830" font-size="12" text-anchor="middle" fill="#374151">setPublicSalesOpen,</text>
+<text x="1035" y="1845" font-size="12" text-anchor="middle" fill="#374151">setBeneficiary</text>
+<rect x="1475.44" y="2094.5" width="151.12" height="51" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="1551" y="2109.5" font-size="12" text-anchor="middle" fill="#374151">addReservedNames,</text>
+<text x="1551" y="2124.5" font-size="12" text-anchor="middle" fill="#374151">setReservationReason,</text>
+<text x="1551" y="2139.5" font-size="12" text-anchor="middle" fill="#374151">addCommunityNames</text>
+<rect x="3255.24" y="1829.5" width="117.52000000000001" height="21" rx="4" fill="#ffffff" fill-opacity="0.94" stroke="#d1d5db" stroke-width="0.8"/>
+<text x="3314" y="1844.5" font-size="12" text-anchor="middle" fill="#374151">upgradeToAndCall</text>
+<rect x="65" y="80" width="340" height="244" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+<text x="79" y="104" font-size="13" font-weight="600" fill="#111827">LEGEND</text>
+<rect x="79" y="114" width="22" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+<text x="111" y="127" font-size="13" fill="#1f2937">upgradeable: own proxy and ProxyAdmin</text>
+<rect x="79" y="140" width="22" height="16" rx="3" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.2"/>
+<text x="111" y="153" font-size="13" fill="#1f2937">immutable, swappable without downtime</text>
+<rect x="79" y="166" width="22" height="16" rx="3" fill="#eff6ff" stroke="#1d4ed8" stroke-width="1.2"/>
+<text x="111" y="179" font-size="13" fill="#1f2937">dashed frame: upgradeable contracts</text>
+<rect x="79" y="192" width="22" height="16" rx="3" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.2"/>
+<text x="111" y="205" font-size="13" fill="#1f2937">off-chain: users' clients</text>
+<rect x="79" y="218" width="22" height="16" rx="3" fill="#fae8ff" stroke="#a21caf" stroke-width="1.2"/>
+<text x="111" y="231" font-size="13" fill="#1f2937">off-chain: SimpleX services</text>
+<rect x="79" y="244" width="22" height="16" rx="3" fill="#dcfce7" stroke="#15803d" stroke-width="1.2"/>
+<text x="111" y="257" font-size="13" fill="#1f2937">governance</text>
+<rect x="79" y="270" width="22" height="16" rx="3" fill="#fef3c7" stroke="#b45309" stroke-width="1.2"/>
+<text x="111" y="283" font-size="13" fill="#1f2937">external</text>
+<line x1="79" y1="304" x2="101" y2="304" stroke="#374151" stroke-width="1.6" stroke-dasharray="8 5"/>
+<text x="111" y="309" font-size="13" fill="#1f2937">dashed arrow: a call the plans assign</text>
+</svg>

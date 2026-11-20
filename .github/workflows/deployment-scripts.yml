@@ -1,0 +1,208 @@
+name: Deployment scripts
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pin
+        run: echo "sha=$(git ls-tree HEAD ens-contracts | cut -f1 | cut -d' ' -f3)" >> "$GITHUB_OUTPUT"
+
+      - id: upstream
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: simplex-network/ens-contracts
+          ref: ${{ steps.pin.outputs.sha }}
+          path: ens-contracts
+
+      - if: steps.upstream.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          repository: brenzi-agent/ens-contracts
+          ref: ${{ steps.pin.outputs.sha }}
+          path: ens-contracts
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ens-contracts/.nvmrc
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: ens-contracts
+
+      - run: npx hardhat compile
+        working-directory: ens-contracts
+
+      - name: Script tests
+        run: node --test scripts/governance-check.test.mjs scripts/prepare-upgrade.test.mjs scripts/deploy-mainnet.test.mjs scripts/verify-etherscan.test.mjs scripts/build-verification.test.mjs scripts/stack.test.mjs
+
+      - name: Journal checks
+        run: |
+          set -o pipefail
+          node scripts/journal-check.mjs 2>&1 | tee journal-check.log
+          ! grep -q 'Assertion failed' journal-check.log
+
+      - name: Governance Safes against mainnet
+        env:
+          MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
+        run: node scripts/governance-check.mjs adminSafe guardianSafe
+
+      - name: Start a local Hardhat node
+        working-directory: ens-contracts
+        run: |
+          nohup ./node_modules/.bin/hardhat --network hardhat node > "$GITHUB_WORKSPACE/hardhat-node.log" 2>&1 &
+          for i in $(seq 1 120); do
+            if curl -sf -X POST -H 'content-type: application/json' \
+              --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' http://127.0.0.1:8545 > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$GITHUB_WORKSPACE/hardhat-node.log"
+          exit 1
+
+      - name: Deploy .simplex and .testing to the local node
+        run: |
+          SIMPLEX_TLD=simplex node scripts/deploy-local.mjs
+          SIMPLEX_TLD=testing node scripts/deploy-local.mjs
+
+      - name: Rename the v1 files, as the operator does at step 2
+        run: |
+          mv deployments.mainnet.simplex.json deployments.mainnet.simplex-v1.json
+          mv deployments.mainnet.simplex.journal.jsonl deployments.mainnet.simplex-v1.journal.jsonl
+          mv verification.mainnet.simplex.json verification.mainnet.simplex-v1.json
+
+      - name: Rehearse runs 1 and 2 on a fork of mainnet
+        env:
+          MAINNET_RPC_URL: https://ethereum-rpc.publicnode.com
+        run: node scripts/rehearse-mainnet.mjs
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tld: simplex
+            app: simplex-app
+            repository: simplex-chat/simplex-domains-app-v3
+            project: simplex-tld
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pin
+        run: |
+          echo "contracts=$(git ls-tree HEAD ens-contracts | cut -f1 | cut -d' ' -f3)" >> "$GITHUB_OUTPUT"
+          echo "app=$(git ls-tree HEAD ${{ matrix.app }} | cut -f1 | cut -d' ' -f3)" >> "$GITHUB_OUTPUT"
+
+      - id: upstream
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: simplex-network/ens-contracts
+          ref: ${{ steps.pin.outputs.contracts }}
+          path: ens-contracts
+
+      - if: steps.upstream.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          repository: brenzi-agent/ens-contracts
+          ref: ${{ steps.pin.outputs.contracts }}
+          path: ens-contracts
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ steps.pin.outputs.app }}
+          path: ${{ matrix.app }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: ens-contracts
+
+      - run: npx hardhat compile
+        working-directory: ens-contracts
+
+      - name: Install the dApp
+        working-directory: ${{ matrix.app }}
+        run: npx --yes pnpm@10.23.0 install --no-frozen-lockfile --prefer-frozen-lockfile
+
+      - name: Start the terms server and a local Hardhat node
+        run: |
+          nohup node scripts/serve-terms.mjs > terms.log 2>&1 &
+          (cd ens-contracts && nohup ./node_modules/.bin/hardhat --network hardhat node > "$GITHUB_WORKSPACE/hardhat-node.log" 2>&1 &)
+          for i in $(seq 1 120); do
+            if curl -sf -X POST -H 'content-type: application/json' \
+              --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' http://127.0.0.1:8545 > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat hardhat-node.log
+          exit 1
+
+      - name: Deploy .${{ matrix.tld }} to the local node
+        id: deploy
+        run: |
+          set -o pipefail
+          SIMPLEX_TLD=${{ matrix.tld }} node scripts/deploy-local.mjs | tee deploy-local.log
+          echo "addresses=$(grep '^NEXT_PUBLIC_DEPLOYMENT_ADDRESSES=' deploy-local.log | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
+          curl -sf -X POST -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"evm_setIntervalMining","params":[5000]}' http://127.0.0.1:8545
+
+      - name: Build the dApp
+        working-directory: ${{ matrix.app }}
+        env:
+          NEXT_PUBLIC_DEPLOYMENT_ADDRESSES: ${{ steps.deploy.outputs.addresses }}
+          NEXT_PUBLIC_CHAIN_NAME: localhost
+          NEXT_PUBLIC_PROVIDER: http://127.0.0.1:8545
+          NEXT_PUBLIC_SIMPLEX_TLD: ${{ matrix.tld }}
+        run: npx --yes pnpm@10.23.0 build
+
+      - name: Start the dApp
+        working-directory: ${{ matrix.app }}
+        run: |
+          nohup npx --yes pnpm@10.23.0 start > "$GITHUB_WORKSPACE/dapp.log" 2>&1 &
+          for i in $(seq 1 120); do
+            if curl -sf http://localhost:3000 > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          tail -100 "$GITHUB_WORKSPACE/dapp.log"
+          exit 1
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm exec playwright test --project=${{ matrix.project }}
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.tld }}
+          path: |
+            playwright-report
+            dapp.log
+            hardhat-node.log
+          retention-days: 7

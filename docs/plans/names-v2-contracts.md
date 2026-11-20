@@ -11,6 +11,16 @@ Amended by [`recipient-consent.md`](./recipient-consent.md): the sponsored path
 `approveWithSig` plus the recipient's `claimWithSig`. The rest of this plan is the
 record of names-v2 as built.
 
+Amended by [`upgradeable-stack.md`](./upgradeable-stack.md) for the `.simplex` v2
+redeploy: `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexResolver`,
+`SubnameRegistrar`, `SimplexController`, `SimplexNamePolicy`, `SimplexSponsor` and
+`UniversalResolver` are deployed behind transparent proxies, each with a `ProxyAdmin` that the admin Safe owns, and each contract is frozen
+on its own when its `ProxyAdmin` is renounced. `freeze()`, `frozen` and the UUPS code
+are removed. For the `.simplex` v2 redeploy, the following are superseded by that
+plan: every statement below about `freeze()` and UUPS, the immutability of the
+registrar, the resolver and the subname registrar, the custody statements of §5 and
+§7, the storage layout of §6, and the dates of §7.
+
 ## 1. Table of contents
 
 1. Table of contents
@@ -44,8 +54,8 @@ subname creation, registry approval — is a one-shot EIP-712 signature submitte
 relayer that pays gas and nothing else. No standing delegation.
 
 **Relayed writes are metered off-chain.** The relayer is the only caller of the sponsored
-write path — it is the party with ETH — so an on-chain budget could only reject a
-transaction the relayer had already chosen to pay for. Authority comes from the signature
+write path — it is the party with ETH — so, with an on-chain budget, a transaction the
+relayer had already chosen to pay for could only be rejected. Authority comes from the signature
 and the nonce; how much relaying a name may consume is the service's ledger, alongside the
 payload and gas limits it already enforces (§9).
 
@@ -102,10 +112,10 @@ flag closes both: after the freeze the implementation is permanent and the sales
 holds whatever value it had, so the contract can no longer be made to do less than it does
 at that moment.
 
-`freeze()` refuses while `publicSalesOpen` is false. Freezing then would shut the payable
+`freeze()` is refused while `publicSalesOpen` is false. Freezing then would shut the payable
 path permanently, since the same flag disables both the switch and the upgrade escape, and
 the ordering is racy in practice: the pause belongs to the guardian and is immediate, the
-freeze belongs to the owner and sits behind a timelock, so a pause answering an incident
+freeze belongs to the owner and is subject to a timelock, so a pause answering an incident
 can land between a queued freeze and its execution. The check makes that race fail safe —
 the freeze reverts and is re-queued — and turns a runbook step into an enforced invariant.
 
@@ -217,7 +227,7 @@ feature, for the reason in §5.
 `REVERSE_RECORD_*` bit constants and the branches in `_registerCore`.
 `Registration.reverseRecord` stays in the struct — it belongs to
 `IETHRegistrarController` and removing it would change the ABI tooling encodes against —
-but `makeCommitment` now rejects any non-zero value with `ReverseRecordNotSupported`, so
+but any non-zero value is now rejected by `makeCommitment` with `ReverseRecordNotSupported`, so
 the field is refused rather than silently dropped.
 
 One upstream deviation was unavoidable: `PublicResolver` inherited `ReverseClaimer`, whose
@@ -341,8 +351,8 @@ in — and `setPriceOracle` is typed to `IPriceOracleUSD` so a replacement oracl
 provide it.
 
 **Relayed writes are metered off-chain, not on-chain.** The relayer is the only caller of
-`setTextWithSig` and `clearRecordsWithSig`, so an on-chain per-name budget could only
-reject a transaction the relayer had already agreed to pay for. It is the same reasoning
+`setTextWithSig` and `clearRecordsWithSig`, so, with an on-chain per-name budget, a
+transaction the relayer had already agreed to pay for could only be rejected. It is the same reasoning
 that puts payload and gas ceilings in the service (§9): the party paying is the party that
 must decide before submitting. What stays on-chain is what an off-chain ledger genuinely
 cannot do — the signature that authorises the write, and the nonce that makes it
@@ -385,7 +395,7 @@ of paying gas.
 **The `SubnameRegistrar` deployed on 30 Oct is final.** `PublicResolver` declares
 `INameWrapper immutable nameWrapper` and authorises subname records through it, so the
 resolver is permanently bound to the registrar address given at its construction. A
-registrar deployed later would produce subnodes the resolver refuses to authorise.
+registrar deployed later would produce subnodes that are not authorised by the resolver.
 Everything the sponsored subname flow needs therefore ships at deployment and lies dormant
 until the client uses it.
 
@@ -490,17 +500,17 @@ community name hooks left the controller 315 B under the size limit. Moving the 
 `SimplexNamePolicy` frees about 2.9 KB and puts every rule about who may hold a name in one
 place.
 
-- *One call per registration.* The controller's existing call to the policy now also
-  refuses a reserved name, so `NameReserved` is raised after the commitment checks rather
+- *One call per registration.* A reserved name is now also refused in the controller's
+  existing call to the policy, so `NameReserved` is raised after the commitment checks rather
   than first. `available()` and renewal ask the policy directly.
 - *`registerReserved` mints from the policy.* The policy is a registrar controller: it
   registers the name to itself, retires a former default resolver's records as the node's
   owner, sets the default resolver and transfers the token.
-- *The controller always has a policy.* Its setter refuses zero, so the reserved list
+- *The controller always has a policy.* Zero is refused by its setter, so the reserved list
   always applies; the registrar's pointer may be zero, which turns the transfer check off.
-- *Upgrades keep the lists.* The policy sits behind a UUPS proxy. Upgrades need the
-  controller's owner, end when the controller is frozen, and refuse an implementation
-  built for another controller or registrar. A new policy contract would start empty, so
+- *Upgrades keep the lists.* The policy is deployed behind a UUPS proxy. Upgrades need the
+  controller's owner and end when the controller is frozen, and an implementation built
+  for another controller or registrar is refused. A new policy contract would start empty, so
   an upgrade, not a replacement, is how the policy changes.
 
 ## 5b. Adversarial review outcomes
@@ -548,7 +558,7 @@ the feed at all: `registerWithCredit` and `renewWithCredit` used to compute a we
 purely to fill an event field, which coupled the app-store flow to Chainlink — a dead feed
 took registration *and* renewal down on both paths, not just the payable one, which the
 review understated. They now emit a zero cost, which is also the honest figure: nothing is
-paid on-chain, and `RegistrarAllowanceSpent` carries what was consumed in attoUSD. That
+paid on-chain, and what was consumed is recorded in attoUSD in `RegistrarAllowanceSpent`. That
 closes the review's INFO about credited events overstating on-chain revenue too.
 
 Deferred deliberately: a staleness bound would mean moving to `latestRoundData`, which
@@ -642,7 +652,7 @@ default resolver, so the first `setDefaultResolver` rotation would have silently
 retiring records for every name still pointing at the old one; the controller now remembers
 every resolver it has ever defaulted to (`wasDefaultResolver`, appended, `__gap` 45 → 44).
 And the deploy runner treated inclusion as success — a reverted transaction was journalled as
-done and skipped on every later resume — so `recordSuccess` now refuses a non-success receipt.
+done and skipped on every later resume — so a non-success receipt is now refused by `recordSuccess`.
 
 **H2, shadow subnames: documented, not fixed, and it cannot be fixed on-chain.** A 2LD holder
 owns its registry node and can create subnodes the registrar never tracks — or pull tracked
@@ -722,18 +732,17 @@ rewritten, and stealth-received names reconstructed from the announcements.
 The client holds no contract address — `Simplex/Chat/Names.hs` has none, and resolution
 goes over SMP to the names role — so a redeploy never requires an app release. What does
 change: `deployments.mainnet.simplex.json` and `verification.mainnet.simplex.json`;
-`SNRC_REGISTRY_SIMPLEX` for `snrc-resolve.py`, and nothing at all if the registry is kept;
-the names service's registrar and controller addresses and its announcement scan start
-block; `ens-metadata-service`'s `ADDRESS_ETH_REGISTRAR` and `ADDRESS_ETH_REGISTRY`;
-`ens-subgraph/subgraph.yaml` addresses and start blocks plus a re-index; and in
-`ens-app-v3`, `.env.simplex`'s `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES`,
-`deploy/01_get_contract_addresses.ts`, its copy of the deployments JSON, and
-`src/constants/{chains,resolverAddressData,tldData}.ts`, which are keyed by chain id and
-must move together. Then Etherscan verification.
+`SNRC_REGISTRY_SIMPLEX`, `SNRC_REGISTRAR_SIMPLEX` and `SNRC_CONTROLLER_SIMPLEX` for
+`snrc-resolve.py`; the names service's four `[chain]` addresses (`controller`, `sponsor`,
+`base_registrar`, `resolver`) and a restart of the service; and the dApp's own
+`deployments.mainnet.simplex.json` (simplex-chat/simplex-domains-app-v3), from which
+app.simplex.domains is built by `.github/workflows/deploy-pages.yml`. Then Etherscan
+verification. The switch of the v2 redeploy is in `docs/plans/upgradeable-stack.md`,
+section 9.
 
 ## 9. Requirements handed to the names service
 
-These carry security properties the contracts deliberately do not:
+These security properties are left to the names service, by design not to the contracts:
 
 - Pre-flight simulate every relayed transaction and refuse to submit above a gas
   threshold. This covers both oversized payloads and the gas an ERC-1271 fallthrough would
@@ -759,8 +768,8 @@ New files under `ens-contracts/test/simplex/`, following the existing fixture id
 
 - `TestRegistrarAllowance.test.ts` — a sponsored registration deducts the name's list
   price in attoUSD and attaches no value; a longer term and a shorter label cost more; the
-  deduction is unchanged when the ETH price moves; the allowance refuses a name it cannot
-  cover; the payable path is unaffected and still refunds; `setRegistrarAllowance` zeroes
+  deduction is unchanged when the ETH price moves; a name the allowance cannot cover is
+  refused; the payable path is unaffected and still refunds; `setRegistrarAllowance` zeroes
   in one transaction; only the beneficiary may call it.
 - `TestReservationRace.test.ts` — a squatter who commits on seeing the reservation cannot
   land in time; a matured speculative commitment is refused just the same; an immature
@@ -809,10 +818,11 @@ New files under `ens-contracts/test/simplex/`, following the existing fixture id
 - `TestAdminSplit.test.ts` — the access split the custody model depends on:
   `addReservedNames` accepts owner and beneficiary; `removeReservedNames`,
   `registerReserved`, `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` and
-  `freeze` accept the owner only and reject the beneficiary; `setRegistrarAllowance` and
-  `setBeneficiary` accept the beneficiary only and reject the owner.
+  `freeze` are accepted from the owner only and rejected from the beneficiary;
+  `setRegistrarAllowance` and `setBeneficiary` are accepted from the beneficiary only and
+  rejected from the owner.
 - `TestBeneficiaryAndFreeze.test.ts` — beneficiary bootstrap and permanence, `withdraw`
-  pays the beneficiary and not the owner, `freeze` refuses while sales are closed and the
+  pays the beneficiary and not the owner, `freeze` is refused while sales are closed and the
   guardian's mid-timelock pause makes a queued freeze fail safe, `freeze` blocks
   `upgradeTo`, `upgradeToAndCall` and
   `setPublicSalesOpen` and is one-way, while `setPriceOracle`, `registerReserved` and the
@@ -825,7 +835,7 @@ New files under `ens-contracts/test/simplex/`, following the existing fixture id
   of the linear range.
 - `TestRegistrarAllowance.test.ts` also walks the price ladder — a name at each rung from
   thirteen characters down to three — asserting the deduction matches that length's price,
-  that an allowance covering a long name refuses a short one, and that the deduction is
+  that a short name is refused under an allowance covering only a long one, and that the deduction is
   unchanged when the ETH price moves.
 - `TestStaleRecords.test.ts` — the squatter scenario end to end (register, set records, let
   the name lapse past grace, re-register to someone else, confirm every key reads empty),
@@ -834,7 +844,7 @@ New files under `ens-contracts/test/simplex/`, following the existing fixture id
   assertions fail with the fix reverted.
 - `TestSubnameLapse.test.ts` — reviving a subname left behind by a previous 2LD owner is
   refused; after `purge` the label is free and carries no records; `deleteSubname` retires
-  records too; `clearSubnameRecords` rejects everyone but the registrar; a lapsed 2LD loses
+  records too; `clearSubnameRecords` is rejected for everyone but the registrar; a lapsed 2LD loses
   `ownerOf` and cannot create subnames; a renewal restores both; only the base registrar may
   move the mirror. Reverting each of the three guards fails 1, 2 and 2 of them respectively.
 - `TestTransferWithSig.test.ts` pins the extended `TRANSFER_TYPEHASH` and the exact ERC-5564

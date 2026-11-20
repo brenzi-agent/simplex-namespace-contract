@@ -1,5 +1,6 @@
 // Exercises the resume logic changed for M5/M6 with stub clients: no chain.
 import { writeFileSync, rmSync, readFileSync, existsSync } from 'fs'
+import { TransactionNotFoundError, encodeFunctionData, keccak256, toHex } from 'viem'
 import { createWaitForBaseRunner, makeStepKeys, DEFAULTS } from './gas-tools.mjs'
 
 const J = '/tmp/j.jsonl', A = '/tmp/a.jsonl'
@@ -16,6 +17,17 @@ const receipts = new Map()
 const txs = new Map()
 let nextStatus = 'success'
 const mk = (hash) => ({ transactionHash: hash, gasUsed: 21000n, effectiveGasPrice: 1n, contractAddress: null, status: nextStatus, blockNumber: 100n })
+const signedRequests = new Map()
+const signTransaction = async (request) => {
+  const serialized = toHex(`signed ${signedRequests.size}`)
+  signedRequests.set(serialized, request)
+  return serialized
+}
+const broadcast = (accept) => async ({ serializedTransaction }) => {
+  const hash = keccak256(serializedTransaction)
+  return accept(hash, signedRequests.get(serializedTransaction))
+}
+let lastHash
 
 const stub = (opts = {}) => createWaitForBaseRunner({
   publicClient: {
@@ -28,10 +40,10 @@ const stub = (opts = {}) => createWaitForBaseRunner({
     },
     getTransaction: async ({ hash }) => txs.get(hash),
   },
-  walletClient: { sendTransaction: async ({ to, data, value }) => {
-    sent++; const h = `0xdead${sent}`; receipts.set(h, mk(h))
-    txs.set(h, { from: ADDR, to, input: data, value }); return h
-  } },
+  walletClient: { signTransaction, sendRawTransaction: broadcast((h, { to, data, value, nonce, maxFeePerGas }) => {
+    sent++; lastHash = h; receipts.set(h, mk(h))
+    txs.set(h, { from: ADDR, to, input: data, value, nonce, maxFeePerGas }); return h
+  }) },
   account: { address: ADDR },
   maxBaseFeeWei: 10n, bumpAfterMs: 1000, bumpPct: 20n,
   journalPath: J, attemptsLogPath: A, ...opts,
@@ -70,7 +82,7 @@ console.log('3 ok: a changed call is rejected')
 clean(); sent = 0
 r = stub()
 await r.write(C, 'setBeneficiary', [ADDR])
-const orphanHash = '0xdead1'
+const orphanHash = lastHash
 writeFileSync(J, '')                                   // journal lost / never written
 writeFileSync(A, JSON.stringify({ step: 'write:setBeneficiary', txHash: orphanHash, outcome: 'submitted' }) + '\n')
 const sentBefore = sent
@@ -109,7 +121,7 @@ r = createWaitForBaseRunner({
     getTransactionCount: async () => 0,
     getTransactionReceipt: async () => { stalls++; throw new Error('never mined') },
   },
-  walletClient: { sendTransaction: async () => { sent++; return `0xstall${sent}` } },
+  walletClient: { signTransaction, sendRawTransaction: broadcast((h) => { sent++; return h }) },
   account: { address: ADDR },
   maxBaseFeeWei: 10n, absoluteMaxBaseFeeWei: 15n,   // one 20% bump fits, the second does not
   bumpAfterMs: 1, bumpPct: 20n,
@@ -135,7 +147,7 @@ r = createWaitForBaseRunner({
       throw new Error('reorged out')            // then it vanishes
     },
   },
-  walletClient: { sendTransaction: async () => { sent++; return `0xreorg${sent}` } },
+  walletClient: { signTransaction, sendRawTransaction: broadcast((h) => { sent++; return h }) },
   account: { address: ADDR },
   maxBaseFeeWei: 10n, bumpAfterMs: 1200, bumpPct: 20n, confirmations: 3,
   journalPath: J, attemptsLogPath: A,
@@ -151,13 +163,101 @@ clean(); sent = 0
 r = stub()
 await r.write(C, 'setBeneficiary', ['0x3333333333333333333333333333333333333333'])
 writeFileSync(J, '')
-writeFileSync(A, JSON.stringify({ step: 'write:setBeneficiary', txHash: '0xdead1', outcome: 'submitted' }) + '\n')
+writeFileSync(A, JSON.stringify({ step: 'write:setBeneficiary', txHash: lastHash, outcome: 'submitted' }) + '\n')
 r = stub()
 threw = null
 try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
 console.assert(threw && /earlier\s+run's call/.test(threw), `expected refusal, got ${threw}`)
 console.assert(readFileSync(J, 'utf8') === '', 'a different call was journalled')
 console.log('9 ok: an earlier run\'s different call is not adopted')
+
+clean(); sent = 0; receipts.clear()
+const pendingHash = '0xpending'
+txs.set(pendingHash, {
+  from: ADDR, to: C.address, input: encodeFunctionData({ abi: ABI, functionName: 'setBeneficiary', args: [ADDR] }),
+  value: 0n, nonce: 7, maxFeePerGas: 12n,
+})
+writeFileSync(A, JSON.stringify({ ts: new Date().toISOString(), step: 'write:setBeneficiary', txHash: pendingHash, outcome: 'submitted', bumps: 0 }) + '\n')
+r = stub({ pollReceiptMs: 1 })
+setTimeout(() => receipts.set(pendingHash, mk(pendingHash)), 50)
+await r.write(C, 'setBeneficiary', [ADDR])
+console.assert(sent === 0, `a pending tx was sent again: ${sent} sends`)
+console.assert(readFileSync(J, 'utf8').includes(pendingHash), 'the pending tx was not journalled once mined')
+console.assert(readFileSync(A, 'utf8').includes('adopted-pending'), 'the adoption was not logged')
+console.log('10 ok: a tx still pending from an earlier run is waited for, not sent again')
+
+const submitted = (txHash) => JSON.stringify({ ts: new Date().toISOString(), step: 'write:setBeneficiary', txHash, nonce: 5, maxFeePerGas: '10', bumps: 0, outcome: 'submitted' }) + '\n'
+const unknown = async ({ hash }) => { throw new TransactionNotFoundError({ hash }) }
+
+clean(); receipts.clear()
+writeFileSync(A, submitted('0xdropped'))
+const nonces = []
+r = createWaitForBaseRunner({
+  publicClient: {
+    getBlock: async () => ({ baseFeePerGas: 1n }),
+    getBlockNumber: async () => 200n,
+    estimateGas: async () => 21000n,
+    getTransactionCount: async () => 5,
+    getTransactionReceipt: async ({ hash }) => { const r = receipts.get(hash); if (!r) throw new Error('none'); return r },
+    getTransaction: unknown,
+  },
+  walletClient: { signTransaction, sendRawTransaction: broadcast((h, { nonce }) => {
+    nonces.push(nonce); receipts.set('0xdropped', mk('0xdropped')); return h
+  }) },
+  account: { address: ADDR },
+  maxBaseFeeWei: 10n, bumpAfterMs: 20, bumpPct: 20n, pollReceiptMs: 1,
+  journalPath: J, attemptsLogPath: A,
+})
+await r.write(C, 'setBeneficiary', [ADDR])
+console.assert(JSON.stringify(nonces) === '[5]', `sent at nonces [${nonces}], not once at the recorded nonce 5`)
+console.assert(readFileSync(J, 'utf8').includes('0xdropped'), 'the dropped tx, mined elsewhere, was not journalled')
+console.log('11 ok: a tx the node dropped is sent again only at its recorded nonce, and its mined hash is journalled')
+
+clean(); sent = 0
+writeFileSync(A, submitted('0xunreadable'))
+r = stub({ publicClient: { getTransaction: async () => { throw new Error('fetch failed') } } })
+threw = null
+try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
+console.assert(threw === 'fetch failed' && sent === 0, `expected a stop without a send, got ${threw} after ${sent} sends`)
+console.log('12 ok: an attempts-log tx that cannot be read stops the run before any send')
+
+clean(); sent = 0; receipts.clear()
+writeFileSync(A, submitted('0xlost'))
+r = stub({ publicClient: { getTransaction: unknown, getTransactionCount: async () => 6, getTransactionReceipt: async () => { throw new Error('none') } } })
+threw = null
+try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
+console.assert(threw && /nonce 5 of 0xlost is used/.test(threw) && sent === 0, `expected a stop without a send, got ${threw} after ${sent} sends`)
+console.log('13 ok: a recorded nonce used by another tx stops the run')
+
+clean(); sent = 0; receipts.clear()
+r = stub({ pollReceiptMs: 1, walletClient: { signTransaction, sendRawTransaction: broadcast((h) => {
+  sent++; lastHash = h; receipts.set(h, mk(h)); throw new Error('The request took too long to respond.')
+}) } })
+await r.write(C, 'setBeneficiary', [ADDR])
+const attempts = readFileSync(A, 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+console.assert(sent === 1 && readFileSync(J, 'utf8').includes(lastHash), `expected the accepted tx journalled after one send, got ${sent} sends`)
+console.assert(attempts.findIndex(({ outcome }) => outcome === 'submitted') < attempts.findIndex(({ outcome }) => outcome === 'broadcast-error') &&
+  attempts.some(({ outcome, txHash, nonce }) => outcome === 'submitted' && txHash === lastHash && nonce === 0), 'the hash and nonce were not logged before the broadcast')
+console.log('14 ok: a broadcast that fails after the node accepted the tx is waited for, its hash and nonce logged first')
+
+clean(); sent = 0; receipts.clear()
+threw = null
+r = createWaitForBaseRunner({
+  publicClient: {
+    getBlock: async () => ({ baseFeePerGas: 1n }),
+    getBlockNumber: async () => 200n,
+    estimateGas: async () => 21000n,
+    getTransactionCount: async ({ blockTag }) => (blockTag === 'latest' ? 1 : 0),
+    getTransactionReceipt: async () => { throw new Error('none') },
+  },
+  walletClient: { signTransaction, sendRawTransaction: broadcast(() => { sent++; throw new Error('nonce too low') }) },
+  account: { address: ADDR },
+  maxBaseFeeWei: 10n, bumpAfterMs: 20, bumpPct: 20n, pollReceiptMs: 1,
+  journalPath: J, attemptsLogPath: A,
+})
+try { await r.write(C, 'setBeneficiary', [ADDR]) } catch (e) { threw = e.message }
+console.assert(threw && /nonce 0 of 0x[0-9a-f]{64} is used/.test(threw) && sent === 1, `expected a stop after one send, got ${threw} after ${sent} sends`)
+console.log('15 ok: "nonce too low" with the nonce used by another tx stops the run instead of sending at the next nonce')
 
 clean()
 console.log('\nall journal checks passed')

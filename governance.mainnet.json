@@ -1,0 +1,24 @@
+{
+  "adminSafe": {
+    "kind": "Safe",
+    "address": "0xf38920389740E46A7f4160DaF1672f3df2754Df4",
+    "threshold": 2,
+    "owners": [
+      "0xDce9402a2F7E1969B22BeBf362bE93D5A8E4527b",
+      "0x9da7Ff03a134887DA9Fe26E9824fCf87c482B680",
+      "0x6c519199411C51731d3Ad1F95D932F48CfF1847E",
+      "0xDa064C4567fAD2c9Da7b6DD08b5C2B2607960340"
+    ]
+  },
+  "guardianSafe": {
+    "kind": "Safe",
+    "address": "0xE6623AA6b8d335367828C2A8b06A714678d22e2c",
+    "threshold": 1,
+    "owners": [
+      "0xDce9402a2F7E1969B22BeBf362bE93D5A8E4527b",
+      "0x9da7Ff03a134887DA9Fe26E9824fCf87c482B680",
+      "0x6c519199411C51731d3Ad1F95D932F48CfF1847E",
+      "0xDa064C4567fAD2c9Da7b6DD08b5C2B2607960340"
+    ]
+  }
+}

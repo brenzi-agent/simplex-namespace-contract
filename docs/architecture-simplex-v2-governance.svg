@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" width="960" height="600" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" role="img" aria-label="Governance — who controls what">
+<rect x="0" y="0" width="960" height="600" fill="#ffffff"/>
+<text class="title" x="24" y="28" font-size="16" font-weight="600" fill="#111827">Governance — who controls what</text>
+<rect class="frame" x="24" y="260" width="920" height="204" rx="12" fill="#f8fafc" stroke="#1d4ed8" stroke-width="1.5"/>
+<text class="frame-label" x="40" y="278" font-size="13" font-weight="600" fill="#1d4ed8">upgradeable contracts</text>
+<polyline class="arrow" points="510,178 708,178" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="708,178 699,182 699,174" fill="#4b5563"/>
+<polyline class="arrow" points="480,152 480,70 570,70" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="6 4"/>
+<polygon class="head" points="570,70 561,74 561,66" fill="#4b5563"/>
+<polyline class="arrow" points="750,70 830,70 830,152" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="6 4"/>
+<polygon class="head" points="830,152 826,143 834,143" fill="#4b5563"/>
+<polyline class="arrow" points="880,204 880,260" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="880,260 876,251 884,251" fill="#4b5563"/>
+<polyline class="arrow" points="500,204 500,236 700,236 700,292" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="700,292 696,283 704,283" fill="#4b5563"/>
+<polyline class="arrow" points="350,204 350,236 210,236 210,292" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="210,292 206,283 214,283" fill="#4b5563"/>
+<polyline class="arrow" points="440,204 440,292" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="440,292 436,283 444,283" fill="#4b5563"/>
+<polyline class="arrow" points="330,178 214,178" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="214,178 223,174 223,182" fill="#4b5563"/>
+<polyline class="arrow" points="350,152 350,70 214,70" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="214,70 223,66 223,74" fill="#4b5563"/>
+<polyline class="arrow" points="530,538 660,538 660,344" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="660,344 664,353 656,353" fill="#4b5563"/>
+<polygon class="head" points="530,538 539,534 539,542" fill="#4b5563"/>
+<polyline class="arrow" points="420,512 420,448" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="420,448 424,457 416,457" fill="#4b5563"/>
+<polyline class="arrow" points="330,538 150,538 150,344" fill="none" stroke="#4b5563" stroke-width="1.5"/>
+<polygon class="head" points="150,344 154,353 146,353" fill="#4b5563"/>
+<rect class="box" x="24" y="44" width="190" height="52" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="36" y="66" font-size="15" font-weight="600" fill="#111827">Root</text>
+<text x="36" y="85" font-size="13" fill="#4b5563">owns the registry root</text>
+<rect class="box" x="570" y="44" width="180" height="52" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="582" y="66" font-size="15" font-weight="600" fill="#111827">Timelock</text>
+<text x="582" y="85" font-size="13" fill="#4b5563">7 days, from GOV8</text>
+<rect class="box" x="24" y="152" width="190" height="52" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="36" y="174" font-size="15" font-weight="600" fill="#111827">SimplexPriceOracle</text>
+<text x="36" y="193" font-size="13" fill="#4b5563">prices in US cents</text>
+<rect class="box" x="330" y="152" width="180" height="52" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="342" y="174" font-size="15" font-weight="600" fill="#111827">admin Safe</text>
+<text x="342" y="193" font-size="13" fill="#4b5563">2 of 4</text>
+<rect class="box" x="708" y="152" width="228" height="52" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="720" y="174" font-size="15" font-weight="600" fill="#111827">8 × ProxyAdmin</text>
+<text x="720" y="193" font-size="13" fill="#4b5563">one per upgradeable contract</text>
+<rect class="box" x="60" y="292" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="72" y="314" font-size="15" font-weight="600" fill="#111827">SimplexNamePolicy</text>
+<text x="72" y="333" font-size="13" fill="#4b5563">reserved names, terms</text>
+<rect class="box" x="330" y="292" width="240" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="342" y="314" font-size="15" font-weight="600" fill="#111827">BaseRegistrarImplementation</text>
+<text x="342" y="333" font-size="13" fill="#4b5563">NFT registrar</text>
+<rect class="box" x="640" y="292" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="652" y="314" font-size="15" font-weight="600" fill="#111827">SimplexController</text>
+<text x="652" y="333" font-size="13" fill="#4b5563">registers and renews</text>
+<rect class="box" x="330" y="396" width="180" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="342" y="418" font-size="15" font-weight="600" fill="#111827">SimplexSponsor</text>
+<text x="342" y="437" font-size="13" fill="#4b5563">registrar allowances</text>
+<rect class="box" x="696" y="396" width="232" height="52" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="708" y="418" font-size="15" font-weight="600" fill="#111827">the other four</text>
+<text x="708" y="437" font-size="13" fill="#4b5563">registry, subnames, resolvers</text>
+<rect class="box" x="330" y="512" width="200" height="52" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="342" y="534" font-size="15" font-weight="600" fill="#111827">guardian Safe</text>
+<text x="342" y="553" font-size="13" fill="#4b5563">1 of 4, 2 of 4 from GOV7</text>
+<rect class="label" x="542.225" y="159" width="133.55" height="38" rx="4" fill="#ffffff"/>
+<text x="609" y="174" font-size="13" text-anchor="middle" fill="#111827">upgrades, freezes</text>
+<text x="609" y="190" font-size="13" text-anchor="middle" fill="#111827">(until GOV8)</text>
+<rect class="label" x="406.075" y="92" width="147.85000000000002" height="38" rx="4" fill="#ffffff"/>
+<text x="480" y="107" font-size="13" text-anchor="middle" fill="#111827">planned: schedules,</text>
+<text x="480" y="123" font-size="13" text-anchor="middle" fill="#111827">from GOV8</text>
+<rect class="label" x="763.225" y="92" width="133.55" height="38" rx="4" fill="#ffffff"/>
+<text x="830" y="107" font-size="13" text-anchor="middle" fill="#111827">planned: executes</text>
+<text x="830" y="123" font-size="13" text-anchor="middle" fill="#111827">after 7 days</text>
+<rect class="label" x="813.225" y="221" width="133.55" height="22" rx="4" fill="#ffffff"/>
+<text x="880" y="236" font-size="13" text-anchor="middle" fill="#111827">replaces the code</text>
+<rect class="label" x="529.65" y="225" width="140.70000000000002" height="22" rx="4" fill="#ffffff"/>
+<text x="600" y="240" font-size="13" text-anchor="middle" fill="#111827">settings, pointers</text>
+<rect class="label" x="231.1" y="217" width="97.80000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="280" y="232" font-size="13" text-anchor="middle" fill="#111827">brand names,</text>
+<text x="280" y="248" font-size="13" text-anchor="middle" fill="#111827">terms</text>
+<rect class="label" x="391.1" y="217" width="97.80000000000001" height="38" rx="4" fill="#ffffff"/>
+<text x="440" y="232" font-size="13" text-anchor="middle" fill="#111827">controllers,</text>
+<text x="440" y="248" font-size="13" text-anchor="middle" fill="#111827">metadata</text>
+<rect class="label" x="223.1" y="167" width="97.80000000000001" height="22" rx="4" fill="#ffffff"/>
+<text x="272" y="182" font-size="13" text-anchor="middle" fill="#111827">prices, feed</text>
+<rect class="label" x="243.825" y="59" width="76.35000000000001" height="22" rx="4" fill="#ffffff"/>
+<text x="282" y="74" font-size="13" text-anchor="middle" fill="#111827">TLD, lock</text>
+<rect class="label" x="596.8" y="351" width="126.4" height="38" rx="4" fill="#ffffff"/>
+<text x="660" y="366" font-size="13" text-anchor="middle" fill="#111827">pauses sales,</text>
+<text x="660" y="382" font-size="13" text-anchor="middle" fill="#111827">receives revenue</text>
+<rect class="label" x="346.075" y="469" width="147.85000000000002" height="22" rx="4" fill="#ffffff"/>
+<text x="420" y="484" font-size="13" text-anchor="middle" fill="#111827">registrar allowance</text>
+<rect class="label" x="93.94999999999999" y="409" width="112.10000000000001" height="22" rx="4" fill="#ffffff"/>
+<text x="150" y="424" font-size="13" text-anchor="middle" fill="#111827">reserves names</text>
+<rect class="legend" x="24" y="571" width="20" height="14" rx="3" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text class="legend" x="52" y="583" font-size="13" fill="#4b5563">governance</text>
+<rect class="legend" x="147.5" y="571" width="20" height="14" rx="3" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text class="legend" x="175.5" y="583" font-size="13" fill="#4b5563">upgradeable</text>
+<rect class="legend" x="278.15" y="571" width="20" height="14" rx="3" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text class="legend" x="306.15" y="583" font-size="13" fill="#4b5563">immutable</text>
+<line class="legend" x1="394.5" y1="578" x2="414.5" y2="578" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text class="legend" x="422.5" y="583" font-size="13" fill="#4b5563">planned</text>
+</svg>

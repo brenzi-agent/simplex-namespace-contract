@@ -20,8 +20,8 @@ versus an oversight. Update it when the design or these decisions change.
 
 | ID | Severity | Status | Summary |
 |----|----------|--------|---------|
-| H1 | High (operational) | Accepted (runbook) | Deployer keeps `SimplexController` ownership (incl. UUPS upgrade) until the multisig calls `acceptOwnership()` |
-| L1 | Low / informational | Accepted | `SubnameRegistrar` holds a registry-wide operator grant; safe only by immutability + the `_controller(parentNode)==msg.sender` gate |
+| H1 | High (operational) | Accepted (runbook) | Deployer keeps `SimplexController` ownership (on `.testing` incl. UUPS upgrade) until the multisig calls `acceptOwnership()` |
+| L1 | Low / informational | Accepted | `SubnameRegistrar` holds a registry-wide operator grant; safe only by fixed code (on `.simplex`, once its `ProxyAdmin` is renounced) + the `_controller(parentNode)==msg.sender` gate |
 | L2 | Low / informational | Accepted (by design) | Subnames are **soulbound to the 2LD NFT** (`ownerOf` derives from the token holder); not independently owned or transferable |
 | L3 | Low | Accepted | `setMetadataRenderer` does no contract/ERC-165 check (fat-finger → recoverable metadata outage) |
 | L4 | Low | **Fixed** | Label length now capped at 63 bytes at deploy (`setMaxLabelLength(63)`) |
@@ -57,23 +57,25 @@ Subname labels are capped the same way: `SubnameRegistrar.MAX_LABEL_LENGTH = 63`
 `SimplexController` is `Ownable2StepUpgradeable`. The deploy script calls
 `transferOwnership(coldOwner)`, which only sets `pendingOwner`; the cold owner
 must then call `acceptOwnership()`. Until it does, the **ephemeral deployer key**
-still owns the controller — including `_authorizeUpgrade` (UUPS), `setPriceOracle`
-(and, on `.simplex`, the price oracle's own `setPrices` / `setUsdOracle` /
-`setPremium`, which have a second, separate `Ownable2Step` handover),
-`disableNftGate`, `setMinCharLength`, `setDefaultResolver`, `setPublicSalesOpen`
-and `freeze()`, and through it the name policy, which reads its keys from the
-controller: `addReservedNames` / `removeReservedNames`, `registerReserved` and
-the policy's upgrades.
+still owns the controller — including `setPriceOracle`
+(and, on `.simplex`, the price oracle's own `setPrices` / `setUsdOracle`, which
+have a second, separate `Ownable2Step` handover),
+`disableNftGate`, `setMinCharLength`, `setDefaultResolver` and
+`setPublicSalesOpen`, and through it the name policy, which reads its keys from the
+controller: `addReservedNames` / `removeReservedNames` and `registerReserved`.
+On `.testing` it also holds `_authorizeUpgrade` (UUPS); the `.simplex` upgrade
+authority belongs to the admin Safe, which owns the eight `ProxyAdmin`s from their
+creation.
 (The registrar is 1-step `Ownable` and transfers immediately; only the controller
-has this window. There is no reverse registrar — removed in names-v2.)
+and, on `.simplex`, the price oracle have this window. The reverse registrar was removed in names-v2.)
 
 Two names-v2 changes narrow this window. `withdraw()` now pays `beneficiary`,
 not `owner()`, and the beneficiary is set *before* the ownership transfer and can
 afterwards only be changed by itself — so revenue is out of the deployer's reach
 from the first block. And `setRegistrarAllowance` is beneficiary-only, so the
 deployer cannot fund a registrar even while it still owns everything else. It can
-still point the controller at a sponsor of its own with `setSponsor`, but that is
-no more than the upgrade authority it already holds in this window.
+still point the controller at a sponsor of its own with `setSponsor`, and through
+that sponsor register and renew names without payment.
 
 **Accepted because** it is inherent to the ephemeral-deployer + 2-step pattern
 and cannot be closed from the deploy script (only the cold owner can accept).
@@ -86,12 +88,15 @@ and cannot be closed from the deploy script (only the cold owner can accept).
 Each user grants `ens.setApprovalForAll(subnameRegistrar, true)`, a
 registry-wide operator permission over **all** their ENS nodes. This is safe
 only because of two properties that an auditor must re-verify on any change:
-1. The contract is **immutable** (no proxy, no general `owner`, no `delegatecall`,
-   no `selfdestruct`) and its only operator-authorised registry write is
+1. The contract's code is **fixed** (`.testing`: immutable; `.simplex`: once its
+   `ProxyAdmin` is renounced) and lacks a general `owner`, `delegatecall` and
+   `selfdestruct`; its only operator-authorised registry write is
    `ens.setSubnodeRecord(parentNode, labelhash, address(this), resolver, 0)` in
    `createSubname` — i.e. it can only create a subnode **owned by itself** under
    a node the caller controls. (Its other registry writes, `setOwner`/`setResolver`
-   in `_clear`, act only on nodes it already owns.)
+   in `_clear`, act only on nodes it already owns.) Until that `ProxyAdmin` is
+   renounced, its owner can install an implementation that uses the operator
+   approval of every user who granted it.
 2. `createSubname`/`deleteSubname` gate on `_controller(parentNode) == msg.sender`
    — the 2LD NFT holder (for a 2LD parent, the registry owner via auto-reclaim;
    for a subname parent, `ownerOf`). This is **load-bearing**: without it, since
@@ -176,8 +181,9 @@ SNRC resolves on-chain (text records), so no off-chain gateway is relied upon.
 The dummy provider does not stop the UR from re-emitting `OffchainLookup` when a
 name's resolver reverts with one, so a client that follows CCIP-Read fetches
 whatever URL a name holder's resolver names: the holder learns who looked the name
-up, and can serve that reader different records. The `.simplex` dApp therefore
-refuses every CCIP-Read request: its client's `ccipRead.request` always rejects,
+up, and can serve that reader different records. Every CCIP-Read request is therefore
+refused by the `.simplex` dApp: the promise of its client's `ccipRead.request` is always
+rejected,
 which also covers ensjs's multicall decoder, a path that ignores `ccipRead: false`
 (pre-launch review rounds 2 and 3, R2-2 and R3-1). **Accepted** as long as clients
 do not follow CCIP-Read; revisit if off-chain resolution is ever added.
@@ -276,7 +282,7 @@ above as "the cold owner."
   the reverse bits were set, but both are `address(0)` on mainnet, so such a call
   reverted after the 60 s commit was already spent. The recommended mitigation
   (early-revert) is implemented, and then some: reverse resolution is removed from
-  the deployment altogether. `makeCommitment` rejects any non-zero `reverseRecord`
+  the deployment altogether. Any non-zero `reverseRecord` is rejected by `makeCommitment`
   with `ReverseRecordNotSupported`, so the commit is never spent; the two registrars
   are no longer deployed; and `PublicResolver` no longer inherits `ReverseClaimer`,
   which was the last thing forcing one to exist. A related defect found on the way:
@@ -294,15 +300,17 @@ above as "the cold owner."
   `beneficiary`, a role set once by the owner while unset and thereafter only by
   itself, so the deploy key never controls revenue and the H1 window does not
   cover it. Still open: the inherited one-step `renounceOwnership` is not
-  disabled, and an owner slip would permanently orphan admin and upgrades. That
+  disabled, and an owner slip would orphan admin, and `.testing` upgrades with it;
+  only a `.simplex` controller upgrade before its freeze can restore an owner. That
   now matters *more*, not less — the plan deliberately keeps the owner alive
   forever so brand reservation can continue, so there is no point at which
   renouncing is the intended move. Consider overriding it to revert.
 - **N8 — FIXED.** The two items this left open outside `docs/` are now corrected:
   `CLAUDE.md`'s claim about keeping upstream `register(uint256,…)`, and
   `ens-contracts/docs/upgrades.md`'s stale `__gap[49]`. `upgrades.md` now
-  documents the real layout (`__gap[45]`, the names-v2 block, and the reserved
-  placeholder slots) and the fact that `freeze()` ends upgradeability entirely.
+  documents the real layout (the controller's `__gap[43]`, the names-v2 block, and
+  the reserved placeholder slots) and that a contract is frozen when its
+  `ProxyAdmin` is renounced.
 
 **Verdict:** no new critical/high in the contracts themselves. The dominant risk
 remains operational — the ownership handoff is still open with a hot deployer key
@@ -317,7 +325,10 @@ registration).
 names-v2 adds sponsored registration (a registrar spends a money allowance, the
 user never holds ETH), one-shot EIP-712 intents relayed on the user's behalf, a
 two-key governance split, and a one-way `freeze()`. It removes reverse
-resolution and, in an earlier revision, an on-chain edit-credit system.
+resolution and, in an earlier revision, an on-chain edit-credit system. The
+`.simplex` v2 redeploy replaces that `freeze()` with eight contracts behind proxies,
+each frozen on its own when its `ProxyAdmin` is renounced
+([`plans/upgradeable-stack.md`](./plans/upgradeable-stack.md)).
 
 ### New privileged surface
 
@@ -325,25 +336,27 @@ resolution and, in an earlier revision, an on-chain edit-credit system.
 |---|---|---|
 | `SimplexSponsor.setRegistrarAllowance(registrar, attoUSD)` | the controller's beneficiary only | Replaces, not adds. Zeroing it is the kill switch for a compromised registrar and must take one transaction. |
 | `setBeneficiary(address)` | owner while unset, beneficiary thereafter | Set before the ownership handover, so revenue is independent of the deploy key from the first block. |
-| `setPublicSalesOpen(bool)` | owner **or** beneficiary | Restrictive direction on the fast key: an exploit in the payable path accrues harm per block. Dies at `freeze()`. |
+| `setPublicSalesOpen(bool)` | owner **or** beneficiary | Restrictive direction on the fast key: an exploit in the payable path accrues harm per block. Survives every freeze, unless a seal is added by the controller's last upgrade (upgradeable-stack plan, D7). |
 | `SimplexNamePolicy.addReservedNames(string[],Reason)` | owner **or** beneficiary | Also fast, and for a sharper reason: a scheduled reservation would tell a squatter which name is valuable and how long it stays unprotected. Reserving a held name also stops its renewal, so after expiry and grace only `registerReserved` can assign it. |
 | `removeReservedNames`, `registerReserved` (name policy), `setDefaultResolver`, `setMinCharLength`, `setPriceOracle` | owner only | Permissive directions stay behind the timelock. `registerReserved` also releases the reservation, so the holder can renew. |
-| `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Dies at `freeze()`. |
-| `freeze()` | owner only | One-way. Makes the implementation, the name policy's implementation and the sponsor permanent and seals `setPublicSalesOpen`. Refuses while sales are closed or no sponsor is set, so a mis-ordered freeze cannot shut the payable or the sponsored path forever. |
+| `setSponsor(address)` | owner only | The one contract allowed to call `registerSponsored` / `renewSponsored`, trusted with the allowance and the owner-consent check. Survives every freeze, unless a seal is added by the controller's last upgrade. |
+| `ProxyAdmin.upgradeAndCall(proxy, implementation, data)` | the owner of that proxy's `ProxyAdmin`: the admin Safe from its creation | One `ProxyAdmin` per proxy, for the registry, the registrar, the resolver, the subname registrar, the controller, the name policy, the sponsor and `UniversalResolver`. Replaces that contract's code; its address and state stay. An upgrade of the sponsor reaches what `setSponsor` reaches, the controller's sponsored entry points, and keeps the sponsor's address, allowances and nonces. An upgrade of `UniversalResolver` changes the answers it gives the dApp and integrators that resolve through it; the names service reads the registry and the resolver directly. |
+| `ProxyAdmin.renounceOwnership()` | the owner of that `ProxyAdmin` | The freeze of one contract, at any time and in any order. `upgradeAndCall` then reverts, and an upgrade of the proxy is accepted from its `ProxyAdmin` only, an address fixed at the proxy's creation. The contract's own owner calls stay callable. |
+| `ProxyAdmin.transferOwnership(address)` | the owner of that `ProxyAdmin` | Single-step: it takes effect without the recipient's acceptance, so it is sent only after `scripts/governance-check.mjs` passes for the recipient; `scripts/prepare-upgrade.mjs` prepares it only once the GOV8 prerequisites exist. |
 | `SimplexNamePolicy.addCommunityNames(string[])` | owner **or** beneficiary | Restrictive: a listed name can then be registered or received only by someone who accepts the current community terms, except through `registerReserved` and other registrar controllers (admin), under an off-chain agreement. Skips any name that is registered or in its grace period, since its holder never accepted them. Sent privately, like reservations: a pending listing reveals the name, which a squatter can then register under the general terms. |
 | `removeCommunityNames`, `setGeneralTerms(string)`, `setCommunityTerms(string)` | owner only | Each setter stores a link to one file at one commit and its keccak256; an empty link reverts. After a new link, an acceptance of that kind not yet used at registration or claim must be made again; the other kind's acceptances stay valid, and existing holders are not asked to accept. |
-| `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive `freeze()`. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. The controller's setter refuses zero, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
-| `SimplexNamePolicy` upgrade (UUPS) | controller owner, until the controller is frozen | Keeps the lists, acceptances and nonces. The new implementation must be built for the same controller and registrar (`ImplementationMismatch`). The policy is a registrar controller, so until the freeze an upgrade can mint any available name; the admin can already add a controller. |
+| `setNamePolicy(address)` on the controller and on the registrar | owner only | Survive every freeze. The policy is called on every paid or sponsored registration, every renewal and every non-controller transfer of every name, so a wrong or hostile target blocks them. Zero is refused by the controller's setter, so the reserved list always applies; the registrar's accepts zero, which drops the transfer check. A setter reverts unless the target's `controller()` (or `registrar()`) returns that controller or registrar: this catches a target bound to another controller or registrar, not a hostile one, so check that both pointers reference the same instance. The controller's setter also reverts for the policy's implementation; the registrar's accepts it, and every holder transfer then reverts until the pointer is corrected. A new policy contract starts empty: its reservations must be in place before the controller points at it, and it cannot list held names as community names; upgrading the policy keeps both lists. |
+| `SimplexNamePolicy` upgrade (`ProxyAdmin.upgradeAndCall`) | the owner of its `ProxyAdmin`, until it is renounced | Keeps the lists, acceptances and nonces. That the new implementation is built for the same controller and registrar is checked off-chain, by `scripts/prepare-upgrade.mjs`. The policy is a registrar controller, so until its freeze an upgrade can mint any available name; the admin can already add a controller. |
 | `commitUnderGeneralTerms`, `commitUnderCommunityTerms`, `acceptGeneralTermsForClaim`, `acceptCommunityTermsForClaim`, and their `WithSig` variants | the registrant or recipient, or anyone holding their signature | Records acceptance of the current terms hash of that kind, keyed by the acceptor and, for a claim, by the holder and the offer, so a copied commitment cannot block the owner and an acceptance cannot be reused for another holder. |
 | `SimplexSponsor.registerWithCredit`, `renewWithCredit` | any address with allowance | Deducts the name's own list price in attoUSD. No value attached. Registering for anyone but the caller needs the owner's `RegisterName` signature. |
 | `approveWithSig`, `setTextWithSig`, `clearRecordsWithSig`, `setApprovalForAllWithSig`, `createSubnameWithSig`, `deleteSubnameWithSig` | anyone holding the owner's signature | The relayer pays gas and chooses nothing else. Each contract keeps its own per-signer nonce. |
 | `claimWithSig` | anyone holding the recipient's signature | Completes an open offer to that recipient. |
 
-### What `freeze()` does not stop
+### What the freezes do not stop
 
-`freeze()` fixes the implementation, the name policy's implementation and the sponsor, and
-seals the sales switch. It does **not** end issuance, and the plan should not be read as
-saying it does:
+A contract is frozen when its `ProxyAdmin` is renounced: its code is then fixed,
+and the owner calls of every contract stay callable. Freezes do **not** end issuance, and
+the plan should not be read as saying they do:
 
 - the guardian can still fund a registrar (`setRegistrarAllowance`, on the
   sponsor) and that registrar can still mint names through `registerWithCredit`,
@@ -357,14 +370,32 @@ saying it does:
   `SimplexNamePolicy`, and repoint or unset the registrar's. Unsetting the
   registrar's drops the transfer check; a wrong target can block every
   registration, renewal or transfer, or apply another instance's list and terms,
-  until the owner corrects it, after the timelock.
+  until the owner corrects it, after the timelock;
+- the owner can still replace the sponsor (`setSponsor`), and the owner or the
+  guardian can still open and close the payable path (`setPublicSalesOpen`),
+  unless a seal is added by the controller's last upgrade (upgradeable-stack
+  plan, D7).
 
 That is deliberate — brand reservation, outreach and disputes have to continue
 for the life of the namespace, which is why the owner is never renounced. The
-guarantee a freeze gives is narrower and worth stating exactly: **no key can
-change the code, and no key can take a name from its holder before its
-registration expires.** Names that are unregistered remain issuable by the two
-governance keys forever.
+guarantees that follow from the freezes are narrower and worth stating exactly. Each holds
+from the last of its conditions (upgradeable-stack plan, section 4):
+
+| Guarantee | Condition |
+|---|---|
+| **no key can take, transfer or re-point a name before it expires** | registry `ProxyAdmin` renounced |
+| | registrar `ProxyAdmin` renounced |
+| | subname registrar `ProxyAdmin` renounced |
+| | `root.lock(labelhash("simplex"))` |
+| **only its holder writes a name's records** | registry `ProxyAdmin` renounced |
+| | registrar `ProxyAdmin` renounced |
+| | resolver `ProxyAdmin` renounced |
+| | subname registrar `ProxyAdmin` renounced |
+| | controller `ProxyAdmin` renounced |
+| | `root.lock(labelhash("simplex"))` |
+
+The paths of V3 below stay open after all of them. Names that are unregistered
+remain issuable by the two governance keys forever.
 
 ### Bounds that are the registrar's job, not the contract's
 
@@ -374,8 +405,8 @@ a subtree built to depth D costs O(D²) to create. Nothing on-chain caps D.
 
 This is left off-chain on purpose. The relayer is the only sponsored caller: it
 sees the full call before it pays for it, so it can refuse an abusive depth for
-free, whereas a constant compiled into an immutable contract is a guess at a
-limit that can never be revised. A user paying their own gas is only ever
+free, whereas a constant compiled into the contract is a guess at a limit that
+only an upgrade can revise, before the contract's freeze. A user paying their own gas is only ever
 grieving themselves. **Relayer operators must enforce a depth limit** (5 is
 ample for the SimpleX UX) along with the payload and gas bounds they already
 apply.
@@ -392,8 +423,8 @@ while `alice.simplex` belongs to the buyer.
 Registry authority over a subnode belongs to the parent's owner by construction,
 and the registrar's soulbinding works only because the registrar happens to own
 the nodes it created; a 2LD owner can pull even a *tracked* subname back out the
-same way. Since recipient consent the registry refuses to make anyone but the
-caller the owner of such a node, so a shadow subnode can no longer name a third
+same way. Since recipient consent, an owner of such a node other than the caller is
+refused by the registry, so a shadow subnode can no longer name a third
 party — but its holder can still keep one for themselves, and that cannot be
 prevented on-chain.
 
@@ -439,19 +470,20 @@ Accepted:
 
 - **The root's and the TLDs' owners are trusted until GOV9.** They assign nodes
   to anyone, and so do their registry operators. The registrar owns `simplex` and
-  assigns a name's node only to its holder. The deploy gives the root and `eth` to
-  the admin key, which moves the root into `Root` at the handover (launch-to-freeze
-  plan A2). Until `root.lock(labelhash("simplex"))` at GOV9, the admin key can
-  point `simplex` at itself and re-point the registry owner and resolver of any
-  held name; after the lock, no key can.
+  assigns a name's node only to its holder. At the handover the deploy key gives
+  `eth` to the admin Safe and moves the root into a `Root` that the admin Safe
+  owns and controls (launch-to-freeze plan A2). Until `root.lock(labelhash("simplex"))`
+  at GOV9, `Root`'s controller, the admin, can point `simplex` at itself and re-point the registry
+  owner and resolver of any held name; after the lock and the freezes of the
+  registry, the registrar and the subname registrar, no key can.
 - **`registerReserved` is exempt.** The admin assigns a reserved name to any
   address, for a term of two to eleven years (at most three for a community name), without its signature, also after
-  `freeze`, and releases the reservation; the admin or the guardian can reserve
+  every freeze, and releases the reservation; the admin or the guardian can reserve
   any name at once, and a reserved name cannot be renewed.
   It is an admin call, and public.
 - **Controllers are trusted.** A controller may register any available name
   directly to any address and transfer a name it holds, was offered or operates
-  for to anyone, and `addController` survives `freeze` as the repair path.
+  for to anyone, and `addController` survives every freeze as the repair path.
 - **Consent covers the name, not its contents.** Between the recipient's consent
   and the claim landing, the holder can still change the name's records, point
   its registry resolver at a contract of the holder's own, and create subnames
@@ -535,7 +567,7 @@ Accepted:
   signature can be submitted. The offer itself stands until a transfer, a burn or
   a withdrawal, including through the grace period, so a renewal by anyone
   revives it. Plain `approve` still accepts a lapsed name, and a renewal makes
-  that offer claimable too. `approveWithSig` refuses a lapsed name, so a holder
+  that offer claimable too. A lapsed name is refused by `approveWithSig`, so a holder
   without ETH withdraws an offer during the grace period only after a renewal.
 - **Records can still name someone else.** An `addr` record, and the registry's
   resolver pointer, can point at any address, and a text record can contain
@@ -586,8 +618,10 @@ offering again.
 `TRANSFER_TYPEHASH` gained `ephemeralPubKey` and `viewTag`, and the transfer
 announcement is now ERC-5564's `Announcement` rather than a bespoke event. Both
 are consensus between the contract and everything that signs for or watches it,
-and `BaseRegistrarImplementation` is **not** upgradeable — so the two shapes
-cannot coexist in one deployment and cannot be migrated after the fact.
+and `.testing`'s `BaseRegistrarImplementation` is **not** upgradeable — so the two
+shapes cannot coexist in one deployment and cannot be migrated after the fact. On
+`.simplex` an upgrade before the registrar's freeze can change them, under the
+lockstep rule below.
 
 - Signers, relayers and scanners must ship in lockstep with the deployment they
   talk to.
@@ -606,22 +640,27 @@ cannot coexist in one deployment and cannot be migrated after the fact.
 
 The deploy runner is as much a part of the security boundary as the contracts,
 because a mis-run is unrecoverable in the same way a bad constructor argument is.
-What it now refuses to do:
+What it is now prevented from doing:
 
 - **Run against the wrong chain.** `chainId` is asserted to be 1 before any
   spend, so an `MAINNET_RPC_URL` pointing at a testnet stops the run instead of
   deploying a full stack to the wrong place and journalling it as a success.
 - **Accept a mistyped address.** Every address input goes through viem's
-  `getAddress`, which re-checksums rather than rejects a wrong EIP-55 checksum, so
-  a transposed character is not caught. The admin is covered anyway: nothing
-  irreversible goes to `OWNER_ADDRESS` before it has accepted ownership. The
-  guardian is not: run 1 makes `GUARDIAN_ADDRESS` the permanent beneficiary with
-  no proof that anyone can sign for it, and `GUARDIAN_ADDRESS` equal to the deploy
-  key is not refused. A wrong guardian loses registrar funding and the `withdraw`
-  payee until an admin upgrade before `freeze()`; the admin keeps the pause and
-  reservations. Accepted (pre-launch review round 2, R2-1): plan A1's rehearsal
-  transaction and the guardian's first use at GOV3 surface it before any third
-  party holds a name.
+  `getAddress`, by which a wrong EIP-55 checksum is re-checksummed rather than rejected, so
+  a transposed character is not caught there. The governance addresses are read
+  from `governance.mainnet.json` only, and `scripts/governance-check.mjs` checks
+  each Safe against its entry before the first transaction of run 1: the SafeProxy
+  1.5.0 code and singleton, the version, the threshold, the owners, an empty
+  module list, a zero guard slot, the fallback handler, and a nonce of at least 1,
+  the proof that the Safe has executed a transaction. The check runs first because
+  several roles take effect without an acceptance: the eight `ProxyAdmin`s are the
+  admin Safe's from their creation, run 1 hands the registrar, `eth`, `data.eth`
+  and `Root` to the admin Safe in single steps, and it makes the guardian Safe the
+  permanent beneficiary. A wrong guardian would lose registrar funding and the
+  `withdraw` payee until a controller upgrade before the controller's freeze; the
+  admin keeps the pause and reservations. That risk was accepted in pre-launch
+  review round 2 (R2-1) on the basis of a rehearsal transaction, which the
+  governance check replaces.
 - **Deploy against a dead price feed.** `latestAnswer()` is probed up front; a
   feed returning zero or negative makes every quote revert and the payable path
   unusable from the first block.
@@ -644,24 +683,34 @@ What it now refuses to do:
 And what it now proves rather than assumes: a **post-deploy read-back** checks
 the TLD node's owner, the controller's registration, `maxLabelLength`, the
 subname hook, the metadata renderer, the default resolver, the beneficiary, the
-sponsor and its controller, the NFT gate, `minCharLength`, the freeze and sales flags, the subname registrar's
-resolver, every reserved label, the oracle and its feed, and that a six-character name quotes a non-zero price. A journal proves
+sponsor and its controller, the NFT gate, `minCharLength`, the sales flag, the subname registrar's
+resolver, every reserved label, the oracle and its feed, that a six-character name quotes a non-zero price,
+that the registrar's only controllers ever added are the controller and the name
+policy, and, for each of the eight proxies, the implementation's runtime code, the
+ERC-1967 implementation and admin slots, the proxy's runtime code and the admin
+Safe as its `ProxyAdmin`'s owner. A journal proves
 each transaction was mined; only the read-back proves the stack is wired the way
 the script intended. The first run reads back while the deploy key still owns
-everything, then prints the `acceptOwnership()` calls the admin must make — until
-those land, `Ownable2Step` leaves the deploy key in control and it must be
-treated as hot. The registrar and the registry root, `eth` and `data.eth` take
-effect at once when handed over, so only a second run hands them over, and only
-after reading that the admin owns both `Ownable2Step` contracts; its read-back
-checks that the admin owns everything and nothing is pending.
+everything except the upgrade authority, which the admin Safe holds from the
+creation of each proxy. Only after that does the first run hand over: the
+registrar, `eth` and `data.eth` to the admin Safe and the registry root into a
+`Root` that the admin Safe owns and controls, all at once, and the controller and
+the oracle as `Ownable2Step` proposals, which the admin Safe accepts in one
+batch. Until it does, the deploy key stays in control of both and must be
+treated as hot. A second run sends no transaction; its read-back checks that the
+admin Safe owns everything, the eight `ProxyAdmin`s included, that nothing is
+pending, and that the deploy key holds none of the roles read.
 
 ### The invariant everything rests on
 
 `BaseRegistrarImplementation._register` opens with `require(available(id))`, and
 `available(id)` is `expiries[id] + GRACE_PERIOD < block.timestamp`. That check is
-in the **immutable** registrar, so no owner power on any contract — including an
-arbitrary controller upgrade before the freeze — can seize, transfer or re-point
-a name someone holds. `reclaim` requires `_isApprovedOrOwner` and points the node
+in the registrar, whose code is fixed once its `ProxyAdmin` is renounced. When the
+`ProxyAdmin`s of the registry, the registrar and the subname registrar are
+renounced and `simplex` is locked in `Root`, no owner power on any contract —
+including an arbitrary controller upgrade — can seize, transfer or re-point
+a name someone holds; until then the owners of those `ProxyAdmin`s can replace
+the code that enforces this. `reclaim` requires `_isApprovedOrOwner` and points the node
 at the holder only; `approveWithSig` requires the holder's signature and a
 grace-aware `ownerOf`, and only the recipient, or a controller, can complete the transfer.
 
@@ -709,30 +758,34 @@ A third pass over those fixes found two more, both fixed here:
   registrant's gas on a hostile resolver.
 - **The deploy runner treated inclusion as success.** A transaction that reverted
   at inclusion still produced a receipt, and the step was journalled as done and
-  skipped on every later resume. `recordSuccess` now refuses a non-success
-  receipt and stops the run.
+  skipped on every later resume. A non-success receipt is now refused by
+  `recordSuccess`, and the run stops.
 
 Accepted, and new to this ledger:
 
-- **V1 — a compromised guardian is unrecoverable after the freeze.** Only the
-  beneficiary may rotate itself, and the post-freeze upgrade escape is closed, so
+- **V1 — a compromised guardian is unrecoverable after the controller's freeze.**
+  Only the beneficiary may rotate itself, and the upgrade escape is closed once
+  the controller is frozen, so
   a compromised guardian permanently holds `withdraw` and `setRegistrarAllowance`.
   No name can be taken from its holder before it expires, but the guardian can
   reserve held names, which stops their renewal, and reserve them again whenever
   the admin releases them. The admin's recovery is to release and renew each
   such name in one atomic timelock batch, every term, or to add a
   `BaseRegistrar` controller that renews regardless of reservations
-  (`addController` survives the freeze). Accepted on the basis that the guardian
+  (`addController` survives every freeze). Accepted on the basis that the guardian
   is a Safe:
   compromise requires the multisig threshold, and the alternative — letting the
-  slow owner replace the beneficiary — would put the treasury back under the key
-  the split exists to keep it away from.
+  owner replace the beneficiary — would give the admin Safe, and from GOV8 the
+  timelock, a call that redirects the revenue. The two Safes share their four
+  owners, so the split separates calls, the threshold until GOV7 and the delay
+  from GOV8; the signers are the same.
   The same power is unbounded in amount: the guardian can give itself any
   allowance and mint unreserved names to itself for free, up to eleven years each, three for a community name,
-  and renew any name for free. Until GOV8 it is a single hardware wallet, not a
-  Safe, so one compromised device suffices. Accepted for that window as well
-  (pre-launch review, 2026-10-21); before the freeze the admin can stop it with
-  `setSponsor(0)` or rotate the guardian by upgrade, but names already minted
+  and renew any name for free. Until GOV7 its Safe is 1 of 4, so one compromised
+  owner key suffices. Accepted for that window as well (upgradeable-stack plan,
+  D11); the admin can stop it with `setSponsor(0)`, unless a seal of the sponsor
+  is added by the controller's last upgrade, and can rotate the guardian by a
+  controller upgrade before the controller's freeze, but names already minted
   stay minted.
 - **V2 — relayed gas is bounded off-chain, not on-chain.** Several sponsored
   entry points take unbounded arguments, and OZ `SignatureChecker` falls through
@@ -742,16 +795,28 @@ Accepted, and new to this ledger:
   can judge abuse, so it must pre-flight simulate every relayed transaction and
   refuse above a gas threshold, and validate payload sizes before submitting.
   This is a security property carried by the service, not the contracts.
-- **V3 — after GOV9, hostile pricing is the one path from a retained key to a
-  held name that is not reserved.**
-  `setPriceOracle` survives the freeze by necessity: the Chainlink feed is
-  `immutable` inside the oracle, so freezing pricing would let a retired feed end
-  registration and renewal forever. The cost is that an admin could price
+- **V3 — after GOV9, retained keys keep indirect paths to held names.** These
+  stay open after every freeze and the lock (upgradeable-stack plan, section 4):
+
+  | Path | Call | Caller |
+  |---|---|---|
+  | renewals stopped, so names lapse and become available | `baseRegistrar.removeController(controller)` | admin |
+  | | `baseRegistrar.setSubnameHook` to a contract that reverts | admin |
+  | | `controller.setNamePolicy` to a policy that reserves every name | admin |
+  | renewals priced out | `controller.setPriceOracle` | admin |
+  | | `priceOracle.setPrices` | admin |
+  | | `priceOracle.setUsdOracle` to a feed with a tiny positive answer, for the payable path | admin |
+  | renewal of one name stopped | `namePolicy.addReservedNames` | admin or guardian |
+  | the previous holder's subnames and records kept under a re-registered name | `baseRegistrar.setSubnameHook(0x0)` during the re-registration | admin |
+
+  `setPriceOracle` survives every freeze because a defective oracle is repaired
+  only by replacing it; a retired feed is repaired by `setUsdOracle`. The cost is
+  that an admin could price
   renewals out of reach and take names as they lapse. It is the slowest and
   loudest attack available — public for the timelock delay, then each name's
   remaining term plus 90 days of grace, with renewal permissionless throughout.
-  The other path is reservation: a reserved name cannot be renewed, and after
-  its grace period `registerReserved` assigns it (see "What `freeze()` does not
+  Reservation stops renewal too: a reserved name cannot be renewed, and after
+  its grace period `registerReserved` assigns it (see "What the freezes do not
   stop").
 - **V4 — `SimplexPriceOracle` does not check feed staleness.** It reads
   `latestAnswer()` and ignores `updatedAt`, so a frozen but positive feed keeps

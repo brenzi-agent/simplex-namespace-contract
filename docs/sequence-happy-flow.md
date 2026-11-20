@@ -121,13 +121,15 @@ sequenceDiagram
     note over U,R: the subnode is owned by the registrar#59; its EFFECTIVE owner is<br/>the live 2LD NFT holder (ownerOf) — soulbound to the token
 ```
 
-Note: subname creation/indexing lives in a dedicated **immutable `SubnameRegistrar`**, not
+Note: subnames are created and indexed by a dedicated **`SubnameRegistrar`** (`.testing`:
+immutable; `.simplex`: behind a transparent proxy, upgradeable until its `ProxyAdmin` is
+renounced), not
 the controller — clean separation (the controller does only 2LD registration policy) and a
 tighter security boundary: the one-time `registry.setApprovalForAll` operator grant goes to
 a minimal single-purpose contract whose only operator-authorised write is
 `setSubnodeRecord(parent, label, address(this), …)` — it can *only* create a subnode **owned
 by itself**, gated on `_controller(parentNode) == msg.sender` (the live 2LD holder), so the
-grant is provably safe. `createSubname` is atomic — it creates the subnode, **sets its
+grant is provably safe once that code is fixed. `createSubname` is atomic — it creates the subnode, **sets its
 resolver**, and indexes it in one tx. The subnode is registry-owned by the registrar, and its
 effective owner is derived on read: `ownerOf` walks `parentOf` up to the 2LD node and returns
 that node's registry owner — which the BaseRegistrar **auto-reclaim** hook keeps equal to the
@@ -135,9 +137,11 @@ NFT holder (flow 7). So subnames are **soulbound**: they follow the NFT automati
 be sold or assigned to a third party, and the previous holder loses them (and the right to
 mint new ones) the instant the token moves. The depth-ready walk-up means subnames of
 subnames work the same way (single-level in the UI for now). Because the index is
-reconstructible by re-creating subnames, the contract is immutable yet replaceable: a fixed
+reconstructible by re-creating subnames, the `.testing` contract is immutable yet replaceable: a fixed
 redeploy is re-approved and re-created, no data migration, though holders of names registered
-before it can create subnames only after their next renewal. No payment, gate, or expiry
+before it can create subnames only after their next renewal. On `.simplex` its code is
+replaced in place by an upgrade until its freeze, and its address, the approvals and the
+index are kept. No payment, gate, or expiry
 applies to subnames; a bumped `generation` (after 2LD re-registration) retires them — flow 7.
 
 _vs ENS:_ ENS lets a parent set a subname to any owner, uses the full NameWrapper
@@ -240,7 +244,7 @@ passing the stored label; the delegation is internal, so callers see one self-co
 call. Subnames are not tokens, so wallets never list them — by design; they are visible in
 the dApp via `getChildren` (flow 5).
 
-The `MetadataRenderer` sits behind a registrar-held pointer, swappable by the multisig via
+The `MetadataRenderer` is reached through a registrar-held pointer, swappable by the multisig via
 `setMetadataRenderer` (an auditable on-chain event), so rendering can be fixed without a TLD
 redeploy; the renderer JSON/XML-escapes labels (`_jsonEscape` / `_xmlEscape`), so arbitrary
 characters can't break the JSON/SVG — there is no on-chain charset restriction.

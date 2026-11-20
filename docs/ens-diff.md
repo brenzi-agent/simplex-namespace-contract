@@ -47,11 +47,15 @@ since been lifted. Pricing is USD-denominated ($50/year); `.testing` is free.
 **Prices can be changed without a new contract.** ENS bakes its price list into
 the oracle at deployment, so every price change means deploying a replacement.
 SNRC's `SimplexPriceOracle` keeps the list in storage: a base yearly price plus a
-short list of "names this long or shorter cost this much" steps, both replaceable
-by one owner call. The contract refuses any change that would make a shorter name
-cheaper than a longer one.
+short list of "names exactly this long cost this much" exceptions, both replaceable
+by one owner call.
 
-**Almost nothing can change after launch.** Only two contracts — the registration
-controller and the name policy that holds the reserved and community names — are
-upgradeable, and that power is meant to move to a cold owner and eventually be
-renounced. Everything else is fixed once deployed.
+**Contracts can change until they are frozen.** On `.simplex`, eight contracts — the
+registry, the registrar (the NFT contract), the resolver, the subname registrar, the
+registration controller, the name policy that holds the reserved and community
+names, the sponsor through which app-store registrations are made, and the universal resolver
+the dApp looks names up through — can be upgraded during a stabilization period, expected to last 12 to 24
+months from the first registration (the names conditions). The upgrade power is held
+by a 2-of-4 multisig, later behind a 7-day delay, and each contract is made immutable
+on its own when that power over it is renounced. Everything else is fixed once
+deployed, and on `.testing` only the registration controller can be upgraded.
