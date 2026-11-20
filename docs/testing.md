@@ -1,13 +1,17 @@
 # Testing
 
-Three layers.
-
 | Layer                  | Where                | Runner                                  |
 |------------------------|----------------------|-----------------------------------------|
 | Solidity unit + fuzz   | `ens-contracts/`     | `npx vitest run`                        |
 | Frontend unit          | `testing-app/`, `simplex-app/` | `pnpm test`                   |
 | End-to-end (Hardhat)   | parent repo          | `npx playwright test --project=simplex` |
 | End-to-end `.simplex`  | parent repo          | `npx playwright test --project=simplex-tld` |
+| Deployment-script tests | parent repo, `scripts/*.test.mjs` | `node --test`, with the files the step "Script tests" of `.github/workflows/deployment-scripts.yml` names |
+| Journal checks         | parent repo          | `node scripts/journal-check.mjs`        |
+| Rehearsal of runs 1 and 2, the registrar step and the upgrade tooling on a mainnet fork | parent repo | `MAINNET_RPC_URL=… node scripts/rehearse-mainnet.mjs` |
+
+The deployment-script tests, the journal checks and the rehearsal are described in
+`docs/deployment.md`, "Rehearsal on a mainnet fork".
 
 ## Solidity unit tests
 
