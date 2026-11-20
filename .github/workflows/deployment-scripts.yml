@@ -47,7 +47,7 @@ jobs:
         working-directory: ens-contracts
 
       - name: Script tests
-        run: node --test scripts/governance-check.test.mjs scripts/prepare-upgrade.test.mjs
+        run: node --test scripts/governance-check.test.mjs scripts/prepare-upgrade.test.mjs scripts/deploy-mainnet.test.mjs
 
       - name: Journal checks
         run: |

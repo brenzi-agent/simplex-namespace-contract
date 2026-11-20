@@ -29,7 +29,8 @@
  *
  * Required env vars:
  *   RUN                1 | 2
- *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real)
+ *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real), serving
+ *                      eth_getLogs from old blocks
  *   DEPLOYER_KEY       run 1: hex private key (0x...) of the deploy key
  *   MAX_BASE_FEE_GWEI  run 1: cap on per-gas price (e.g. "0.078")
  *
@@ -100,6 +101,7 @@ const COMMUNITY_BATCH = 100
 // The labels users can register: simplex-app src/hooks/useValidate.ts ALLOWED_LABEL_REGEX.
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
+const FRESH_RUN_LOG_DEPTH = 50_400n
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
@@ -435,6 +437,27 @@ function readBack(client) {
 const ADDR = [{ type: 'address' }]
 const BYTES32 = [{ type: 'bytes32' }]
 const BOOL = [{ type: 'bool' }]
+
+export async function logsFailures(client, governance, journal) {
+  const registrar = journal.find(({ step }) => step === 'deploy:BaseRegistrarImplementationProxy')
+  const head = await client.getBlockNumber()
+  const needed = [
+    registrar
+      ? { block: BigInt(registrar.blockNumber), address: registrar.address, logs: `the ControllerAdded logs of the registrar proxy` }
+      : { block: head - FRESH_RUN_LOG_DEPTH, logs: `the ControllerAdded logs of the registrar proxy, ${FRESH_RUN_LOG_DEPTH} blocks after its deployment` },
+    ...Object.entries(governance).filter(([, { kind }]) => kind === 'TimelockController')
+      .map(([name, { address, deployBlock }]) => ({ block: BigInt(deployBlock), address, logs: `the RoleGranted logs of ${name}` })),
+  ]
+  const failures = []
+  for (const { block, address, logs } of needed) {
+    try {
+      await client.getLogs({ address, fromBlock: block, toBlock: block })
+    } catch (error) {
+      failures.push(`MAINNET_RPC_URL serves no eth_getLogs at block ${block}, from which run 1 reads ${logs}: ${error.shortMessage ?? error.message}`)
+    }
+  }
+  return failures
+}
 
 async function controllersAdded(client, registrar, fromBlock) {
   const logs = await logsSince(client, { address: registrar, event: CONTROLLER_ADDED }, fromBlock)
@@ -775,6 +798,13 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   console.log(`  Journal:           ${JOURNAL_PATH}`)
   console.log(`  Attempts log:      ${attemptsLogPath}`)
 
+  const publicClient = await mainnetClient(rpcUrl)
+  const unserved = await logsFailures(publicClient, governance, loadJournal(JOURNAL_PATH))
+  if (unserved.length) {
+    console.error(unserved.join('\n'))
+    process.exit(1)
+  }
+
   // ----- 1. Dry run against a forked mainnet -----
   activeFork = await spawnHardhatFork({
     mainnetRpcUrl: rpcUrl,
@@ -799,7 +829,6 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   }
 
   // ----- 2. Preflight + confirm -----
-  const publicClient = await mainnetClient(rpcUrl)
   const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
 
   // A dead or misconfigured feed makes every price quote revert
