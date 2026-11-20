@@ -24,8 +24,8 @@ const BOXES = {
   storesvc: { at: [40, 290], size: [460, 180], kind: 'service', title: 'StoreService — simplex-store-service', tag: 'OFF-CHAIN',
     body: 'holds the registrar key, which pays gas only;\nrent is spent from its sponsor allowance;\nrelays the owners\' signed record edits;\nreads the registrar, registry, controller,\nresolver and sponsor' },
   snrcres: { at: [960, 290], size: [370, 140], kind: 'service', title: 'Resolver service — names role', tag: 'OFF-CHAIN',
-    body: 'answers SimpleX lookups over SMP;\nreads the registry and the resolver\n(snrc-resolve)' },
-  sponsor: { at: [40, 520], size: [330, 150], kind: 'up', title: 'SimplexSponsor', tag: 'UPGRADEABLE',
+    body: 'answers lookups over SMP; reads the\nregistry, registrar, subname registrar,\ncontroller, name policy, oracle and\nresolver (snrc-resolve)' },
+  sponsor: { at: [450, 560], size: [330, 140], kind: 'up', title: 'SimplexSponsor', tag: 'UPGRADEABLE',
     body: 'registrar allowances in attoUSD;\nregisterWithCredit, renewWithCredit,\nwith the owner\'s signature' },
   oracle: { at: [40, 760], size: [330, 140], kind: 'fixed', title: 'SimplexPriceOracle', tag: 'IMMUTABLE · setPriceOracle swaps it',
     body: 'US cents per year; feed settable;\nowner: admin Safe' },
@@ -48,9 +48,9 @@ const BOXES = {
     body: "ENS app v3 fork; the user's wallet\nsigns and pays: register, terms,\nrecords, offer and claim, subnames;\nresolves through UniversalResolver" },
   wallets: { at: [1470, 1420], size: [370, 110], kind: 'client', title: 'Wallets and marketplaces', tag: 'OFF-CHAIN',
     body: 'ERC-721 view of each name' },
-  universal: { at: [1520, 480], size: [320, 130], kind: 'up', title: 'UniversalResolver', tag: 'UPGRADEABLE',
+  universal: { at: [1520, 560], size: [320, 130], kind: 'up', title: 'UniversalResolver', tag: 'UPGRADEABLE',
     body: 'resolve(name, data)' },
-  gateway: { at: [1990, 480], size: [340, 100], kind: 'fixed', title: 'DummyGatewayProvider', tag: 'IMMUTABLE', body: 'gateways()' },
+  gateway: { at: [1990, 500], size: [340, 100], kind: 'fixed', title: 'DummyGatewayProvider', tag: 'IMMUTABLE', body: 'gateways()' },
   root: { at: [1990, 620], size: [340, 130], kind: 'fixed', title: 'Root', tag: 'IMMUTABLE',
     body: 'owns the registry root;\nlock(simplex) at GOV9;\nowner: admin Safe' },
   adminSafe: { at: [1990, 790], size: [340, 150], kind: 'gov', title: 'admin Safe — 2 of 4', tag: 'GOVERNANCE',
@@ -61,19 +61,19 @@ const BOXES = {
     body: 'one per upgradeable contract (blue),\ncreated by its proxy;\nupgradeAndCall upgrades it;\nrenounceOwnership freezes it' },
 }
 
-const ZONE = { at: [420, 710], size: [1450, 670],
-  label: 'CORE · UPGRADEABLE UNTIL FROZEN', labelAt: [868, 712] }
+const ZONE = { at: [420, 510], size: [1450, 870],
+  label: 'UPGRADEABLE UNTIL FROZEN', labelAt: [560, 512] }
 
 const ARROWS = [
   ['webstore', 'storesvc', 'HTTPS /api: search, order,\npay, signed RegisterName,\nlink edits', { from: [220, 200], to: [220, 290] }],
   ['app', 'storesvc', 'SMP: purchases,\nsigned RegisterName', { from: [470, 200], to: [470, 290] }],
   ['app', 'snrcres', 'SMP: name lookup', { from: [760, 200], to: [1000, 290] }],
-  ['storesvc', 'sponsor', 'registerWithCredit', { from: [205, 470], to: [205, 520] }],
+  ['storesvc', 'sponsor', 'registerWithCredit', { from: [470, 470], to: [470, 560], t: 0.25 }],
   ['storesvc', 'policy', 'commitUnderGeneralTermsWithSig,\ncommitUnderCommunityTermsWithSig', { points: [[40, 380], [20, 380], [20, 1225], [450, 1225]], t: 0.834 }],
-  ['storesvc', 'resolver', 'setTextWithSig,\nclearRecordsWithSig,\nmulticall of two', { from: [500, 420], to: [1010, 760], t: 0.5 }],
+  ['storesvc', 'resolver', 'setTextWithSig,\nclearRecordsWithSig,\nmulticall of two', { points: [[500, 450], [1000, 450], [1000, 760]], t: 0.32 }],
   ['snrcres', 'resolver', 'text(simplex.contact,\nsimplex.channel)', { from: [1120, 430], to: [1120, 760], t: 0.62 }],
-  ['snrcres', 'registry', 'resolver(node)', { from: [1290, 430], to: [1560, 760], t: 0.62 }],
-  ['sponsor', 'controller', 'registerSponsored,\nrenewSponsored', { from: [370, 620], to: [470, 790], t: 0.45 }],
+  ['snrcres', 'registry', 'resolver(node)', { from: [1290, 430], to: [1500, 760], t: 0.62 }],
+  ['sponsor', 'controller', 'registerSponsored,\nrenewSponsored', { from: [520, 700], to: [520, 760] }],
   ['controller', 'oracle', 'price,\npriceUSD', { from: [450, 830], to: [370, 830] }],
   ['oracle', 'chainlink', 'latestAnswer', { from: [205, 900], to: [205, 940] }],
   ['controller', 'resolver', 'multicallWith-\nNodeCheck,\nclearRecords', { from: [820, 860], to: [960, 860] }],
@@ -95,26 +95,26 @@ const ARROWS = [
   ['dapp', 'subnames', 'createSubname, deleteSubname\n(after setApprovalForAll\non the registry)', { from: [1310, 1420], to: [1520, 1340], t: 0.82 }],
   ['dapp', 'controller', 'commit, register,\nrenew (payable)', { points: [[960, 1460], [890, 1460], [890, 1040], [770, 990]], t: 0.34 }],
   ['dapp', 'resolver', 'setText', { points: [[1330, 1460], [1400, 1460], [1400, 950], [1330, 950]], t: 0.55 }],
-  ['dapp', 'universal', 'resolve', { points: [[1330, 1570], [1910, 1570], [1910, 545], [1840, 545]], t: 0.38 }],
-  ['universal', 'resolver', 'resolve', { from: [1540, 610], to: [1250, 760], t: 0.4 }],
-  ['universal', 'registry', 'findResolver', { from: [1760, 610], to: [1760, 760] }],
-  ['universal', 'gateway', 'gateways()', { from: [1840, 520], to: [1990, 520] }],
-  ['root', 'registry', 'owner of the\nroot node', { from: [1990, 700], to: [1840, 800], t: 0.4 }],
+  ['dapp', 'universal', 'resolve', { points: [[1330, 1570], [1890, 1570], [1890, 640], [1840, 640]], t: 0.24 }],
+  ['universal', 'resolver', 'resolve', { from: [1540, 690], to: [1250, 760], t: 0.4 }],
+  ['universal', 'registry', 'findResolver', { from: [1760, 690], to: [1760, 760] }],
+  ['universal', 'gateway', 'gateways()', { from: [1840, 580], to: [1990, 580] }],
+  ['root', 'registry', 'owner of the\nroot node', { from: [1990, 700], to: [1840, 800], t: 0.35 }],
   ['adminSafe', 'proxyAdmins', 'owner', { points: [[2330, 865], [2365, 865], [2365, 1230], [2330, 1230]], t: 0.5 }],
-  ['proxyAdmins', 'zone', 'upgradeAndCall,\nrenounceOwnership\n(also sponsor and\nUniversalResolver)', { from: [1990, 1300], to: [1870, 1300], t: 0.5, dy: -50 }],
+  ['proxyAdmins', 'zone', 'upgradeAndCall,\nrenounceOwnership', { points: [[2160, 1310], [2160, 1360], [1870, 1360]], t: 0.62 }],
 ]
 
 const TITLE = '.simplex v2 — goal architecture'
 const LEGEND = [
   ['up', 'upgradeable: own proxy and ProxyAdmin'],
   ['fixed', 'immutable, swappable without downtime'],
-  ['zone', 'dashed: the core whose swap interrupts users'],
+  ['zone', 'dashed: the eight upgradeable contracts'],
   ['client', 'off-chain: users\' clients'],
   ['service', 'off-chain: SimpleX services'],
   ['gov', 'governance'],
   ['external', 'external'],
 ]
-const LEGEND_AT = [1990, 1350]
+const LEGEND_AT = [40, 1270]
 
 const W = 2400
 const H = 1620
@@ -190,13 +190,22 @@ function svg() {
 function excalidraw() {
   let n = 0
   const id = (p) => `${p}-${++n}`
-  const seed = () => Math.floor(Math.random() * 2 ** 31)
-  const base = (over) => ({
-    id: id('el'), angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent', fillStyle: 'solid',
-    strokeWidth: 1, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null,
-    seed: seed(), version: 1, versionNonce: seed(), isDeleted: false, boundElements: null, updated: 1,
-    link: null, locked: false, ...over,
-  })
+  const seed = (text) => {
+    let h = 0x811c9dc5
+    for (const c of text) h = Math.imul(h ^ c.codePointAt(0), 0x01000193) >>> 0
+    return h % 2 ** 31
+  }
+  const base = (over) => {
+    const el = {
+      id: id('el'), angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent', fillStyle: 'solid',
+      strokeWidth: 1, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null,
+      seed: 0, version: 1, versionNonce: 0, isDeleted: false, boundElements: null, updated: 1,
+      link: null, locked: false, ...over,
+    }
+    el.seed = seed(el.id)
+    el.versionNonce = seed(`${el.id}/versionNonce`)
+    return el
+  }
   const els = []
   const rects = {}
   const text = (x, y, str, size, extra = {}) => els.push(base({
