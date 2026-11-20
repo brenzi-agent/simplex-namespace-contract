@@ -87,7 +87,8 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 import {
-  ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, PROXY_ADMIN_ARTIFACT, REPO_ROOT, SOURCE_TAG, TLD,
+  TRANSPARENT_PROXY,
   UPGRADEABLE, V1_ABI, VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource,
   deployBehindProxy, deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, refusal, requireEnv, runtimeCode,
   safeBatch, sortedAddresses, storedValue,
@@ -115,6 +116,11 @@ const ACCEPT_OWNERSHIP_ABI = parseAbi(['function acceptOwnership()'])
 const SPONSOR_ABI = parseAbi([
   'function setRegistrarAllowance(address registrar, uint256 allowanceUSD)',
   'function registrarAllowance(address registrar) view returns (uint256)',
+])
+const LINKS_ABI = parseAbi([
+  'function sponsor() view returns (address)',
+  'function controller() view returns (address)',
+  'function beneficiary() view returns (address)',
 ])
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
@@ -618,6 +624,7 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
       async () => (await proxySlots(client, proxy)).admin)
     await check(`${name} ProxyAdmin owner is the admin Safe`, governance.adminSafe.address,
       () => client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' }))
+    await matchesCode(`${name} ProxyAdmin code`, proxyAdmin, () => runtimeCode(artifact(PROXY_ADMIN_ARTIFACT), {}))
   }
   for (const name of Object.keys(IMMUTABLE).filter((name) => Object.hasOwn(addresses, name))) {
     await matchesCode(`${name} code`, addresses[name], () => runtimeCode(artifact(IMMUTABLE[name].artifact), {}))
@@ -714,6 +721,7 @@ export async function readBackTwo(client, addresses, { governance, v1 }, deploye
   await check('Root ens', registry, () => read(addresses.Root, [], ADDR, 'ens'))
   await owner('Root owner', admin, () => read(addresses.Root, [], ADDR, 'owner'))
   await check('Root controllers(admin Safe)', 'true', () => read(addresses.Root, ADDR, BOOL, 'controllers', [admin]))
+  await check('Root controllers(deploy key)', 'false', () => read(addresses.Root, ADDR, BOOL, 'controllers', [deployer]))
   await check(`Root locked(labelhash("${TLD}"))`, 'false', () => read(addresses.Root, BYTES32, BOOL, 'locked', [labelhash(TLD)]))
   await check('v1 registrar controllers(v1 controller)', 'false', () => client.readContract({
     address: v1.BaseRegistrarImplementation, abi: V1_ABI, functionName: 'controllers', args: [v1.ETHRegistrarController],
@@ -743,6 +751,20 @@ export async function registrarAllowanceBatch(client, { registrarWallet: wallet,
   if (!wallet) return refusal(['governance.mainnet.json has no registrarWallet entry'])
   const failures = await entryFailures(client, wallet)
   if (failures.length) return refusal(failures.map((failure) => `registrarWallet ${wallet.address} ${failure}`))
+  const { SimplexSponsor: sponsor, ETHRegistrarController: controller } = addresses
+  const { admin } = await proxySlots(client, sponsor)
+  const unlinked = admin === proxyAdminOf(sponsor)
+    ? []
+    : [`the sponsor ${sponsor} is not a v2 proxy: its admin slot holds ${admin}, not ${proxyAdminOf(sponsor)}`]
+  for (const [address, functionName, expected] of [
+    [controller, 'sponsor', sponsor],
+    [sponsor, 'controller', controller],
+    [controller, 'beneficiary', guardianSafe.address],
+  ]) {
+    const got = await client.readContract({ address, abi: LINKS_ABI, functionName })
+    if (got.toLowerCase() !== expected.toLowerCase()) unlinked.push(`${functionName}() of ${address} is ${got}, not ${expected}`)
+  }
+  if (unlinked.length) return refusal(unlinked)
   const args = [wallet.address, wallet.allowance]
   return accepted({
     wallet,

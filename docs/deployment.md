@@ -324,9 +324,16 @@ unset DEPLOYER_KEY
 ```
 
 `read -rs` takes the key without echo, so it stays out of the terminal and the shell
-history; the command line carries only its variable name. The Hardhat processes receive
-none of it: the fork's `npx hardhat node` receives only `PATH`, `HOME` and
-`MAINNET_RPC_URL` as its environment, and `npx hardhat compile` only `PATH` and `HOME`.
+history; the command line carries only its variable name. The scripts' child processes
+receive none of it; each receives only the variables `childEnv` of `scripts/stack.mjs`
+names for it:
+
+| Child process | Environment |
+|---|---|
+| `git rev-parse`, `git tag --points-at`, `git ls-tree` and `git status`, from the `git` helper of `scripts/stack.mjs` | `PATH`, `HOME` |
+| `git ls-remote` of `scripts/terms-check.mjs` | `PATH`, `HOME` |
+| `npx hardhat compile` | `PATH`, `HOME` |
+| the fork's `npx hardhat node` | `PATH`, `HOME`, `MAINNET_RPC_URL` |
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -791,7 +798,7 @@ for about 13 minutes, and the whole rehearsal must end within that window.
 CI (`.github/workflows/deployment-scripts.yml`) runs on each push and pull request: the
 script tests (`node --test scripts/governance-check.test.mjs scripts/prepare-upgrade.test.mjs
 scripts/deploy-mainnet.test.mjs scripts/verify-etherscan.test.mjs
-scripts/build-verification.test.mjs`), `scripts/journal-check.mjs`, the governance check
+scripts/build-verification.test.mjs scripts/stack.test.mjs`), `scripts/journal-check.mjs`, the governance check
 of `adminSafe guardianSafe`, both local deployments, the renaming of the v1 files and the
 rehearsal.
 

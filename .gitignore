@@ -4,3 +4,5 @@ playwright-report/
 test-results/
 deployments.local.json
 /out
+/deployments.mainnet.*.attempts.log
+/safe-transaction.*.json

@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { encodeFunctionData, parseAbi } from 'viem'
+import { encodeFunctionData, pad, parseAbi, zeroAddress } from 'viem'
 import { acceptanceBatch, logsFailures, registrarAllowanceBatch, registrarAllowanceReadBack } from './deploy-mainnet.mjs'
-import { batchChecksum } from './stack.mjs'
+import { ERC1967_ADMIN_SLOT, batchChecksum, proxyAdminOf } from './stack.mjs'
 
 const HEAD = 30_000_000n
 const SERVED = 1_000n
@@ -67,13 +67,22 @@ const SAFE_CALLS = parseAbi([
 ])
 const governance = { adminSafe: { kind: 'Safe', address: ADMIN_SAFE }, guardianSafe: { kind: 'Safe', address: GUARDIAN_SAFE } }
 const withWallet = { ...governance, registrarWallet: { kind: 'EOA', address: WALLET, allowance: 7n } }
-const sponsorChain = ({ code, allowance = 7n } = {}) => ({
-  getCode: async () => code,
-  readContract: async ({ address, functionName, args }) => {
-    assert.deepEqual([address, functionName, args], [deployment.SimplexSponsor, 'registrarAllowance', [WALLET]])
-    return allowance
-  },
-})
+const sponsorChain = ({ code, allowance = 7n, proxied = true, links = {} } = {}) => {
+  const reads = {
+    [`${deployment.ETHRegistrarController}.sponsor`]: deployment.SimplexSponsor,
+    [`${deployment.SimplexSponsor}.controller`]: deployment.ETHRegistrarController,
+    [`${deployment.ETHRegistrarController}.beneficiary`]: GUARDIAN_SAFE,
+    ...links,
+  }
+  return {
+    getCode: async () => code,
+    getStorageAt: async ({ address, slot }) =>
+      pad(proxied && address === deployment.SimplexSponsor && slot === ERC1967_ADMIN_SLOT ? proxyAdminOf(address) : zeroAddress),
+    readContract: async ({ address, functionName, args }) => (functionName === 'registrarAllowance'
+      ? (address === deployment.SimplexSponsor && args[0] === WALLET ? allowance : 0n)
+      : reads[`${address}.${functionName}`]),
+  }
+}
 const checksumValid = ({ meta: { checksum, ...meta }, ...batch }) => checksum === batchChecksum({ ...batch, meta })
 
 test("run 1's batch has the admin Safe accept the controller and the oracle", () => {
@@ -109,6 +118,28 @@ test("the registrar step writes the guardian Safe's setRegistrarAllowance to the
     data: encodeFunctionData({ abi: SAFE_CALLS, functionName: 'setRegistrarAllowance', args: [WALLET, 7n] }),
   }])
   assert.ok(checksumValid(prepared.batch))
+})
+
+test('the registrar step refuses a sponsor that is not a v2 proxy, as in the v1 addresses file', async () => {
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ proxied: false }), withWallet, deployment), {
+    refused: true,
+    failures: [`the sponsor ${deployment.SimplexSponsor} is not a v2 proxy: its admin slot holds ${zeroAddress}, ` +
+      `not ${proxyAdminOf(deployment.SimplexSponsor)}`],
+  })
+})
+
+test('the registrar step refuses a sponsor the controller does not name, and a beneficiary other than the guardian Safe', async () => {
+  const links = {
+    [`${deployment.ETHRegistrarController}.sponsor`]: WALLET,
+    [`${deployment.ETHRegistrarController}.beneficiary`]: ADMIN_SAFE,
+  }
+  assert.deepEqual(await registrarAllowanceBatch(sponsorChain({ links }), withWallet, deployment), {
+    refused: true,
+    failures: [
+      `sponsor() of ${deployment.ETHRegistrarController} is ${WALLET}, not ${deployment.SimplexSponsor}`,
+      `beneficiary() of ${deployment.ETHRegistrarController} is ${ADMIN_SAFE}, not ${GUARDIAN_SAFE}`,
+    ],
+  })
 })
 
 test('the registrar read-back passes on the allowance of the entry and fails on another', async () => {
