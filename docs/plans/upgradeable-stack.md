@@ -72,10 +72,14 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `transferOwnership(0x0)` on the v1 oracle, which clears its pending owner
 - D19. simplex-network/ens-contracts#49 lands after v2, as upgrades of the v2 controller, name policy and sponsor. Its storage-slot statements are recomputed for the layout without UUPS. brenzi/simplex-namespace-contract#18 is rewritten for v2.
 - D20. A sponsor replaced by `setSponsor` instead of an upgrade, for instance after its freeze, is replaced in this order: the guardian funds the new sponsor; the names service accepts both sponsors; the owner calls `setSponsor`; the names service drops the old sponsor.
-- D21. The owner provides the registrar wallet after run 1; only then is its entry added to `governance.mainnet.json`. Runs 1 and 2 neither set nor read a registrar allowance. The registrar step, once the entry is committed:
+- D21. The owner provides the registrar wallet after run 1; only then is its entry added to `governance.mainnet.json`. Runs 1 and 2 neither set nor read a registrar allowance. The registrar step runs after the upgrade batch of simplex-network/ens-contracts#51 has executed: #51 replaces `RegisterName` and `registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2 sponsor, and sponsored registrations start with the new form. The re-registration of the two v1 names (D14) follows the registrar step. The registrar step, once the entry is committed:
   - `RUN=registrar`: the entry checked; the guardian Safe's batch of `sponsor.setRegistrarAllowance(wallet, allowance)` written
   - the guardian Safe executes the batch
   - `RUN=registrar-read-back`: `sponsor.registrarAllowance(wallet)` read back
+- D22. Store orders across the switch. The store service keeps, per order, a commitment on the controller of its ini and the owner's `RegisterName` and terms-acceptance signatures, whose EIP-712 domains name the sponsor and the name policy (simplex-chat `apps/simplex-store-service`, `Names/Store.hs`, `Names/Registration.hs`, `Names/Reveal.hs`); after the switch such an order's commitment is absent on the v2 controller, its signatures name v1's addresses, and v1 reverts from step 8 of section 6. Therefore:
+  - before run 1: the store service's name sales are paused, and run 1 starts only when no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1; with sales paused, that state is reached by waiting, since such an order registers or fails (`Names/Worker.hs`)
+  - a failed paid order is closed with `//close`, with a refund recorded for support; a failed code order's code is released after 30 days
+  - after the registrar step (D21): the store service's name sales reopen; an order is not committed or signed again
 
 ## 3. Contracts
 
@@ -88,7 +92,7 @@ The `.simplex` contracts after run 2, and the off-chain components that call the
 - Webstore, simplex.domains: the browser app served by StoreService; orders are paid through BTCPay, Stripe or codes, and the browser signs `RegisterName` with a wallet it generates.
 - SimpleX app: purchases through the App Store and Google Play, and the `RegisterName` signed with the name's wallet key, go to StoreService over SMP; lookups go to the resolver service.
 - StoreService, `simplex-store-service`: holds the registrar key; sends the owner's signed acceptance of the terms for a commitment to the name policy (`commitUnderGeneralTermsWithSig` or `commitUnderCommunityTermsWithSig`), and the commitment is stored on the controller by the policy's call of `commit`, unless an unexpired one is stored there; sends `registerWithCredit` to the sponsor, and the owners' signed record edits to the resolver.
-- Resolver service, the names role: reads `resolver(node)` from the registry and the text records from the resolver.
+- Resolver service, the names role (simplex-chat/simplexmq `scripts/resolver/service/snrc-resolve.py`, configured with `SNRC_REGISTRY_<TLD>`, `SNRC_REGISTRAR_<TLD>` and `SNRC_CONTROLLER_<TLD>`): reads `resolver(node)` and `owner(node)` from the registry; `nameExpires`, `GRACE_PERIOD`, `labelOf` and `subnameHook()` from the registrar; `ownerOf(node)` of a subname from the subname registrar; `namePolicy()`, `prices()` and `minCharLength()` from the controller; `reservedNames` from the name policy; the prices from the oracle; and `text` and `addr(bytes32,uint256)` from the resolver.
 - dApp, `simplex-app`: the user's own wallet calls the controller, the name policy, the registrar, the subname registrar and the resolver, and resolves through `UniversalResolver`.
 
 Source: `docs/architecture-simplex-v2.gen.mjs`, which writes `docs/architecture-simplex-v2.excalidraw` and `docs/architecture-simplex-v2.svg`.
@@ -275,6 +279,19 @@ stateDiagram-v2
   Owned --> Owned: transferOwnership(next)
   Owned --> Renounced: renounceOwnership()
 ```
+
+Calls prepared by `scripts/prepare-upgrade.mjs`, per owner of the `ProxyAdmin`:
+
+| Owner | upgrade | freeze | move upgrade authority |
+|---|---|---|---|
+| admin Safe, before GOV8 | admin Safe batch | none: a freeze waits for GOV8 (launch-to-freeze plan, A7) | admin Safe batch, to a `TimelockController` entry |
+| timelock, from GOV8 | after the GOV8 prerequisites: admin Safe batches of `schedule` and `execute` | after the GOV8 prerequisites: admin Safe batches of `schedule` and `execute` | after the GOV8 prerequisites |
+| any other | none | none | none |
+
+GOV8 prerequisites, before the timelock is deployed (launch-to-freeze plan, A5):
+
+- OpenZeppelin 5.1.0 `TimelockController` in the ens-contracts build; the timelock is deployed from that artifact, and `scripts/governance-check.mjs` compares the timelock's runtime code with the keccak256 of that artifact's `deployedBytecode`, which holds no immutables, in place of the `codeHash` of its entry
+- `scripts/prepare-upgrade.mjs` for a `ProxyAdmin` owned by the timelock: two admin-Safe batches, the timelock's `schedule` and `execute` of the call, with `hashOperation` printed and the call simulated from the timelock
 
 ### Owners of each contract's own calls
 
@@ -509,18 +526,20 @@ Unchanged:
 |---|---|---|
 | 1 | maintainers | the conditions version of D13 merged, tagged and mirrored to git.simplex.chat |
 | 2 | operator | `terms.simplex.json` set to its links and committed to the task branch; v1 files renamed on the operator's checkout (section 9) |
-| 3 | deploy key, run 1 | governance checks (section 7) |
-| 4 | deploy key, run 1 | implementations and proxies deployed and wired; beneficiary set |
-| 5 | deploy key, run 1 | read-back |
-| 6 | deploy key, run 1 | single-step transfers (D16); controller and oracle proposed (D17) |
-| 7 | deploy key, run 1 | v1 retirement (D18) |
-| 8 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch |
-| 9 | operator, run 2 | handover read-back, without transactions |
-| 10 | names service | switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal and `verification.mainnet.simplex.json` |
-| 11 | operator, guardian Safe, registrar step | once the owner provides the registrar wallet: its entry committed and checked; the guardian Safe sets its allowance; the allowance read back (D21) |
-| 12 | holders, names service | the two v1 names registered again (D14) |
-| 13 | operator | other consumers switched, Etherscan verification |
-| 14 | operator | deploy key destroyed |
+| 3 | names service | the store service's name sales paused; run 1 waits until no order is in the phase queued, committing, committed or registering (D22) |
+| 4 | deploy key, run 1 | governance checks (section 7) |
+| 5 | deploy key, run 1 | implementations and proxies deployed and wired; beneficiary set |
+| 6 | deploy key, run 1 | read-back |
+| 7 | deploy key, run 1 | single-step transfers (D16); controller and oracle proposed (D17) |
+| 8 | deploy key, run 1 | v1 retirement (D18) |
+| 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch |
+| 10 | operator, run 2 | handover read-back, without transactions |
+| 11 | names service | switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer (section 9) |
+| 12 | operator, guardian Safe, registrar step | after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet: its entry committed and checked; the guardian Safe sets its allowance; the allowance read back (D21) |
+| 13 | names service | the store service's name sales reopened (D22) |
+| 14 | holders, names service | the two v1 names registered again (D14) |
+| 15 | operator | other consumers switched, Etherscan verification |
+| 16 | operator | deploy key destroyed |
 
 ```mermaid
 sequenceDiagram
@@ -533,14 +552,17 @@ sequenceDiagram
   participant H as holders
   M->>M: tag and mirror the conditions version
   O->>O: terms.simplex.json, rename v1 files
+  N->>N: pause name sales; wait until no order is in flight
   D->>D: run 1: checks, deploy, wire, read-back
   D->>D: run 1: single-step transfers, proposals, v1 retirement
   A->>A: acceptOwnership x2
   O->>O: run 2: read-back
-  N->>N: switch to v2, commit files
+  N->>N: switch to v2, commit files and the simplex-app pointer
+  A->>A: the upgrade batch of ens-contracts#51
   O->>O: registrar step: entry committed and checked
   G->>G: v2 sponsor setRegistrarAllowance
   O->>O: registrar step: allowance read back
+  N->>N: reopen name sales
   H->>N: register the two names again
   O->>O: other consumers, verify, destroy deploy key
 ```
@@ -549,11 +571,11 @@ sequenceDiagram
 
 Each run of `deploy-mainnet.mjs` is one invocation with a `RUN` of 1, 2, `registrar` or `registrar-read-back`. The inputs of runs 1 and 2 are the ens-contracts commit tagged `simplex-mainnet-v2`, the committed files of D10, D12 and D13, and, on the operator's checkout, the renamed v1 files `deployments.mainnet.simplex-v1.json`, `deployments.mainnet.simplex-v1.journal.jsonl` and `verification.mainnet.simplex-v1.json`, the v2 journal and the attempts log. A resumed run re-sends no journalled step and evaluates only its own read-back.
 
-After step 7, registration and renewal on v1 revert: both v1 registrar controllers are removed by D18.
+After step 8, registration and renewal on v1 revert: both v1 registrar controllers are removed by D18.
 
-Step 12 follows step 11: a sponsored registration reverts while the registrar wallet's allowance is zero.
+Steps 13 and 14 follow step 12: a sponsored registration reverts while the registrar wallet's allowance is zero.
 
-Until step 10, v1 is restored by the deploy key: `addController` for the v1 controller and the v1 name policy on the v1 registrar, and `transferOwnership(admin Safe)` on the v1 controller and the v1 oracle.
+Until step 11, v1 is restored by the deploy key: `addController` for the v1 controller and the v1 name policy on the v1 registrar, and `transferOwnership(admin Safe)` on the v1 controller and the v1 oracle.
 
 ## 7. Deployment
 
@@ -613,6 +635,7 @@ The read-back of run 1 checks, before section 8:
 - the ERC-1967 implementation slot of each of the eight proxies: its implementation
 - the ERC-1967 admin slot of each of the eight proxies: the CREATE address of the proxy at nonce 1
 - `owner()` of each of the eight `ProxyAdmin`s: admin Safe
+- the runtime code of each of the eight `ProxyAdmin`s: the compiled `ProxyAdmin` artifact
 - `registrar.ens()`: the registry proxy
 - `registrar.baseNode()`: `namehash("simplex")`
 - `controller.ens()`: the registry proxy
@@ -626,7 +649,7 @@ The read-back of run 1 checks, before section 8:
 
 ### Addresses file
 
-Addresses file `deployments.mainnet.simplex.json`, committed at step 10:
+Addresses file `deployments.mainnet.simplex.json`, committed at step 11:
 
 | Key | Value |
 |---|---|
@@ -654,7 +677,7 @@ Run 1, deploy key, after its read-back passes:
 
 ### Read-back of run 2
 
-The read-back of run 2 checks, after step 8 of section 6:
+The read-back of run 2 checks, after step 9 of section 6:
 
 | Read | Value |
 |---|---|
@@ -672,6 +695,7 @@ The read-back of run 2 checks, after step 8 of section 6:
 | `root.ens()` | the registry proxy |
 | `root.owner()` | admin Safe |
 | `root.controllers(admin Safe)` | `true` |
+| `root.controllers(deploy key)` | `false` |
 | `root.locked(labelhash("simplex"))` | `false` |
 | v1 registrar `controllers(v1 controller)` | `false` |
 | v1 registrar `controllers(v1 name policy)` | `false` |
@@ -693,7 +717,7 @@ sequenceDiagram
 
 ### Registrar step
 
-After step 10 of section 6, once the owner provides the registrar wallet (D21):
+After step 11 of section 6, after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet (D21):
 
 | Call or read | Caller | Value |
 |---|---|---|
@@ -718,7 +742,7 @@ sequenceDiagram
 
 ### v1 files
 
-Renamed to `*.simplex-v1.*` at step 2 on the operator's checkout, committed to main at step 10:
+Renamed to `*.simplex-v1.*` at step 2 on the operator's checkout, committed to main at step 11:
 
 - `deployments.mainnet.simplex.json`
 - `deployments.mainnet.simplex.journal.jsonl`
@@ -730,27 +754,46 @@ The two v1 NFTs remain with their holders on the retired v1 registrar.
 
 ### Names service
 
-Names service, at step 10:
+Names service, at step 11: the four address keys of the `[chain]` section of the store service's ini (simplex-chat `apps/simplex-store-service`, `Config.hs`), then a restart of the service:
 
-- registry proxy
-- registrar proxy
-- controller proxy
-- name policy proxy
-- sponsor
-- resolver proxy
-- subname registrar proxy
-- announcement scan: the v2 registrar from its deploy block
+| Key | Value |
+|---|---|
+| `controller` | controller proxy |
+| `sponsor` | sponsor proxy |
+| `base_registrar` | registrar proxy |
+| `resolver` | resolver proxy |
+
+The service reads three further addresses from these:
+
+| Address | Read from | Kept |
+|---|---|---|
+| name policy | `controller.namePolicy()` (`Names/Contracts.hs`) | until a restart, or until a registration reverts `TermsNotAccepted` |
+| registry | `baseRegistrar.ens()`, in `registrarConstants` (`Names/Contracts.hs`) | until a restart |
+| registry and subname registrar | `baseRegistrar.ens()` and `baseRegistrar.subnameHook()`, in `nameCensus` (`Names/Census.hs`) | read again on each census |
+
+The restart is required because of the two kept addresses.
 
 ### Other consumers
 
-Other consumers, at step 13 (names-v2-contracts plan, section 8):
+Other consumers, at step 15 (names-v2-contracts plan, section 8):
 
-- `SNRC_REGISTRY_SIMPLEX` of `snrc-resolve.py`
+- `SNRC_REGISTRY_SIMPLEX` of `snrc-resolve.py` (simplex-chat/simplexmq `scripts/resolver/service/snrc-resolve.py`): the registry proxy
+- `SNRC_REGISTRAR_SIMPLEX` of `snrc-resolve.py`: the registrar proxy
+- `SNRC_CONTROLLER_SIMPLEX` of `snrc-resolve.py`: the controller proxy
 - `ens-metadata-service`: `ADDRESS_ETH_REGISTRAR`
 - `ens-metadata-service`: `ADDRESS_ETH_REGISTRY`
 - simplex-app: `deployments.mainnet.simplex.json`, read by `.github/workflows/deploy-pages.yml:65`
 
-`scripts/cloudflare-build-simplex.sh` reads `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 10.
+At step 11, the parent's `simplex-app` submodule pointer moves, together with the v2 addresses file, to the merge commit of the dApp change (simplex-chat/simplex-domains-app-v3, branch `ab/v2-storage-slots`) that sets the storage slots of its gas estimate (`src/hooks/gasEstimation/calculateTransactions.ts`) to v2's, so the deployed dApp is built with both:
+
+| Variable | v1 slot | v2 slot |
+|---|---|---|
+| `SimplexNamePolicy.acceptedTerms` | 103 | 2 |
+| `SimplexController.commitments` | 260 | 160 |
+
+Without the change, the estimate of `registerName` reverts and a fixed 700,000 gas is used (`src/hooks/chain/useEstimateGasWithStateOverride.ts`).
+
+`scripts/cloudflare-build-simplex.sh` reads `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 11.
 
 `ens-subgraph` indexes `.testing` (`src/utils.ts:12-17`); a `.simplex` subgraph is outside this plan.
 
@@ -841,7 +884,7 @@ brenzi/simplex-namespace-contract:
   - run 1 stopped after each step of section 8 and resumed sends each remaining step once and passes both read-backs
   - run 1 resumed while a step's transaction is pending waits for it and sends nothing new
   - run 2 passes without a registrar wallet; the registrar step's read-back fails before the guardian Safe executes its batch and passes after it
-  - the restore path of section 6 returns v1 to its state before step 7
+  - the restore path of section 6 returns v1 to its state before step 8
 - `scripts/governance-check.test.mjs`, run with `node --test`; a Safe is refused for each of:
   - a different threshold
   - different owners
@@ -863,14 +906,15 @@ brenzi/simplex-namespace-contract:
   - accepted: upgrade `data` encoded for a function of the candidate; refused: a function the candidate lacks
   - refused: a `_proxyAdmin` immutable that differs from the proxy's `ProxyAdmin`, also when named as an intended change
   - refused: an upgrade whose simulation from the `ProxyAdmin`'s owner reverts
-- fork rehearsal of upgrade `data` on `SimplexController`: a missing function refused; `data` for a candidate without a `_proxyAdmin` immutable refused before any deployment
-- refused: a non-empty `data` for a candidate without a `_proxyAdmin` immutable; a new variable placed before an existing one
-- the first upgrade whose `data` writes state carries the reference test of the guard: the `data` writes the state, a direct call from any other address reverts, and in the three contracts with `Initializable` a second `upgradeAndCall` with the same `data` reverts
+  - refused: a non-empty `data` for a candidate without a `_proxyAdmin` immutable
+  - refused: a new variable placed before an existing one
   - refused: an `upgradeToAndCall` function
   - refused: a `fallback` or `receive` function
   - refused: bytecode that contains the ERC-1967 implementation or admin slot
   - accepted: an identical rebuild
   - accepted: a variable appended in place of the first slot of the trailing `__gap`, as in #49
+- fork rehearsal of upgrade `data` on `SimplexController`: a missing function refused; `data` for a candidate without a `_proxyAdmin` immutable refused before any deployment
+- the reference test of the guard is added with the first upgrade whose `data` writes state: the `data` writes the state, a direct call from any other address reverts, and in the three contracts with `Initializable` a second `upgradeAndCall` with the same `data` reverts
 
 ## 11. Scripts and documentation
 
@@ -899,13 +943,14 @@ brenzi/simplex-namespace-contract:
   - deploys a candidate implementation
   - compares its runtime code with the artifact, with the current immutables placed at its `immutableReferences`, except `SimplexNamePolicy._self`, `SubnameRegistrar._deployer` and each immutable that the operator names as an intended change; each intended change is printed with its current and new value
   - compares the storage layouts with type names freed of AST ids: every variable except a trailing `__gap` keeps its slot, offset and type, and a trailing `__gap` ends at the same slot
-  - rejects a candidate with the selectors `0x3659cfe6`, `0x4f1ef286` or `0x52d1902d`, a `fallback` or a `receive`
-  - rejects a candidate whose bytecode contains the ERC-1967 implementation or admin slot
+  - a candidate with the selectors `0x3659cfe6`, `0x4f1ef286` or `0x52d1902d`, a `fallback` or a `receive` is rejected
+  - a candidate whose bytecode contains the ERC-1967 implementation or admin slot is rejected
   - prints the calldata of `ProxyAdmin.upgradeAndCall`, with the `data` it encodes from a named function and its arguments, after simulating the call from the `ProxyAdmin`'s owner
   - deploys the candidate with the proxy's `ProxyAdmin` as a constructor argument where the candidate declares a `_proxyAdmin` immutable, and checks that immutable against the proxy's `ProxyAdmin`
   - compares the members of every stored struct, and of every stored enum from the build output's AST, as well
-  - rejects a candidate that drops a function selector or an event topic of the current implementation, unless `INTENDED` names it; the other contracts of the stack call these functions through fixed addresses
-  - prints the Safe transaction of a freeze (`renounceOwnership()`) or of an upgrade-authority transfer (`transferOwnership(next)`, after `scripts/governance-check.mjs` passes for `next`, a `TimelockController` entry), for one contract named by `CONTRACT`, with its target read from that proxy's ERC-1967 admin slot and checked to be the proxy's CREATE address at nonce 1; each action prints the proxy's implementation slot
+  - a candidate without a function selector or an event topic of the current implementation, or with another shape for one (a function's state mutability or outputs, an event's indexing or anonymity), is rejected, unless `INTENDED` names its signature; the other contracts of the stack call these functions through fixed addresses
+  - prepares a call only through a `ProxyAdmin` the admin Safe owns, until the GOV8 prerequisites (section 4); a freeze waits for GOV8 and is prepared on no path today
+  - prints the Safe transaction of a freeze (`renounceOwnership()`, from the GOV8 prerequisites on) or of an upgrade-authority transfer (`transferOwnership(next)`, after `scripts/governance-check.mjs` passes for `next`, a `TimelockController` entry), for one contract named by `CONTRACT`, with its target read from that proxy's ERC-1967 admin slot and checked to be the proxy's CREATE address at nonce 1; each action prints the proxy's implementation slot
 - `scripts/build-verification.mjs`
 - `scripts/verify-etherscan.mjs`
 - `docs/deployment.md`, with the sponsor replacement of D20
@@ -955,7 +1000,7 @@ simplex-network/ens-contracts:
 
 ## 12. Why transparent proxies in place of UUPS
 
-The owner requires that each upgradeable contract can be frozen, and its upgrade authority moved, on its own and at its own time. With a UUPS proxy, the upgrade code is part of each implementation: each contract then contains `upgradeToAndCall` and an owner that authorizes it, and a contract is frozen by a last upgrade to an implementation whose `_authorizeUpgrade` reverts. With a transparent proxy, the upgrade code is part of the proxy and of a `ProxyAdmin` created with it; the contracts contain none of it. A freeze state kept in `SimplexController` for all contracts would sit behind the controller's own upgrade authority, so one controller upgrade could undo every freeze; in v1, `controller.owner()` and `controller.frozen()` are read by the name policy in that way (`SimplexNamePolicy.sol:115-118`, `513-520`).
+The owner requires that each upgradeable contract can be frozen, and its upgrade authority moved, on its own and at its own time. With a UUPS proxy, the upgrade code is part of each implementation: each contract then contains `upgradeToAndCall` and an owner that authorizes it, and a contract is frozen by a last upgrade to an implementation whose `_authorizeUpgrade` reverts. With a transparent proxy, the upgrade code is part of the proxy and of a `ProxyAdmin` created with it; the contracts contain none of it. A freeze state kept in `SimplexController` for all contracts would be subject to the controller's own upgrade authority, so one controller upgrade could undo every freeze; in v1, `controller.owner()` and `controller.frozen()` are read by the name policy in that way (`SimplexNamePolicy.sol:115-118`, `513-520`).
 
 ### Comparison of the three models
 
@@ -1002,7 +1047,7 @@ The all-transparent model is chosen, by the owner's answer: "I think the pros of
 | Cost | Measure |
 |---|---|
 | single-step transfer of upgrade authority | each `ProxyAdmin` is owned by the admin Safe from creation; a later transfer is sent only after `scripts/governance-check.mjs` passes for the next owner |
-| policy implementation check off-chain | `scripts/prepare-upgrade.mjs` compares runtime code with immutables and storage layout and rejects a candidate with UUPS selectors, tested in section 10 |
+| policy implementation check off-chain | `scripts/prepare-upgrade.mjs` compares runtime code with immutables and storage layout, and a candidate with UUPS selectors is rejected, tested in section 10 |
 | a UUPS base left in an implementation would add a second upgrade path | the ABI test of section 10 fails on the selectors `0x3659cfe6`, `0x4f1ef286` and `0x52d1902d` |
 | moved storage layout of the controller and the name policy | #49 recomputes its slot statements (D19) |
 | eight `ProxyAdmin`s to deploy and verify | created by the proxies' constructors; verified with the proxies (section 9) |

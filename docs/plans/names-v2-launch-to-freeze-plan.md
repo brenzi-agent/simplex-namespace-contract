@@ -194,7 +194,7 @@ Three things are worse in the meantime:
   fund a registrar, reserve a name or redirect the revenue.
 - **Rotation is one-shot.** The eight `ProxyAdmin`s, `BaseRegistrar` and `Root` use
   OpenZeppelin's single-step `Ownable`, so a transfer takes effect without the recipient
-  accepting it. OpenZeppelin rejects the zero address, not an address that is valid but wrong;
+  accepting it. The zero address is rejected by OpenZeppelin's `Ownable`, an address that is valid but wrong is not;
   `scripts/governance-check.mjs` runs before each such transfer for that reason.
   `SimplexController` and `SimplexPriceOracle` are `Ownable2Step` and require acceptance.
 
@@ -207,7 +207,7 @@ a `setPriceOracle`. Either way, an oracle that could not be replaced and had a r
 would break registration and renewal permanently, with no key able to fix it. That is why
 `setPriceOracle` outlives GOV9.
 
-The oracle also refuses bad input. A zero or negative answer from the feed reverts with
+Bad input is also refused by the oracle. A zero or negative answer from the feed reverts with
 `InvalidPriceFeed` instead of dividing by zero or wrapping the cast and quoting names at
 nothing, and installing an already-dead feed is refused for the same reason.
 `AggregatorInterface` has no `decimals()` to read, so `setUsdOracle` takes the replacement
@@ -282,6 +282,10 @@ Every on-chain call, in order, with who signs it.
 
 ### A1. Deployment (GOV1)
 
+Before run 1, the store service's name sales are paused, and run 1 starts only when no order
+is in the phase queued, committing, committed or registering, so that every paid order has
+registered on v1 before v1 is retired (D22 of `docs/plans/upgradeable-stack.md`).
+
 Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`. The calls and their order
 are steps 1 to 16 of `docs/deployment.md`, "Deployment and wiring";
 `docs/plans/upgradeable-stack.md`, section 7, lists the constructor arguments and
@@ -304,7 +308,7 @@ initializer calls. Among them, for powers and reserved names:
 A transaction may use at most 16,777,216 gas (EIP-7825), and the gas estimate of
 `addReservedNames` passes that above about 210 names, so the batches stay at 200. The name
 list is final well before GOV1: the deployer commits it as `reserved-names.simplex.csv`, and
-`deploy-mainnet.mjs` refuses to deploy `.simplex` without it.
+a deployment of `.simplex` without it is refused by `deploy-mainnet.mjs`.
 
 No reverse registrar is deployed. That is possible because `PublicResolver` and
 `UniversalResolver` no longer inherit `ReverseClaimer`, whose constructor called `claim` on
@@ -327,8 +331,8 @@ place it is written down, and the post-deploy read-back checks it and the feed s
 before the handover.
 
 Mind the unit: these are US cents **per year**. The older oracle that `.testing` runs takes
-attoUSD **per second**, so the two lists are not interchangeable, and neither contract
-rejects a list in the other's unit.
+attoUSD **per second**, so the two lists are not interchangeable, and a list in the other's
+unit is rejected by neither contract.
 
 Reserving at GOV1 rather than after the handover closes a hole. `publicSalesOpen` gates only
 the payable `register`, so once the guardian funds a registrar (A3) the sponsored path can
@@ -344,26 +348,26 @@ nobody having to accept them, so an address nobody can sign for is unrecoverable
 ### A2. Handover (GOV2)
 
 Order matters. `setBeneficiary` is owner-callable only while the beneficiary is unset. After
-that only the beneficiary can move it, so the guardian is chosen here or not at all. Steps 1
-to 12 run in run 1 of `deploy-mainnet.mjs`, after its read-back passes, except step 1, which
-is the last call of the wiring (A1). The governance addresses are read from
-`governance.mainnet.json` only.
+that only the beneficiary can move it, so the guardian is chosen here or not at all:
+`controller.setBeneficiary(guardianSafe)` is sent by the deploy key as the last call of the
+wiring (A1), before the read-back. Steps 1 to 11 run in run 1 of `deploy-mainnet.mjs`, after
+its read-back passes; steps 1 to 10 are numbered as in `docs/deployment.md`, "Handover".
+The governance addresses are read from `governance.mainnet.json` only.
 
 | # | Caller | Call |
 |---|---|---|
-| 1 | deploy key | `controller.setBeneficiary(guardianSafe)` |
-| 2 | deploy key | `baseRegistrar.transferOwnership(adminSafe)` |
-| 3 | deploy key | `ens.setOwner(namehash("eth-usd.data.eth"), 0x0)` |
-| 4 | deploy key | `ens.setSubnodeOwner(namehash("eth"), labelhash("data"), adminSafe)` |
-| 5 | deploy key | `ens.setSubnodeOwner(0x0, labelhash("eth"), adminSafe)` |
-| 6 | deploy key | Deploy `Root(ens)`, the upstream contract |
-| 7 | deploy key | `root.setController(adminSafe, true)` |
-| 8 | deploy key | `root.transferOwnership(adminSafe)` |
-| 9 | deploy key | `ens.setOwner(0x0, root)`; the registry root cannot be moved out of `Root` again |
-| 10 | deploy key | `controller.transferOwnership(adminSafe)` |
-| 11 | deploy key | `priceOracle.transferOwnership(adminSafe)` |
-| 12 | deploy key | v1 retired: `removeController` of the v1 controller and the v1 name policy on the v1 registrar; `transferOwnership(0x0)` on the v1 controller and the v1 oracle |
-| 13 | admin Safe | `controller.acceptOwnership()` and `priceOracle.acceptOwnership()`, one batch, required by `Ownable2Step`, from the Transaction Builder file run 1 writes; at GOV3 |
+| 1 | deploy key | `baseRegistrar.transferOwnership(adminSafe)` |
+| 2 | deploy key | `ens.setOwner(namehash("eth-usd.data.eth"), 0x0)` |
+| 3 | deploy key | `ens.setSubnodeOwner(namehash("eth"), labelhash("data"), adminSafe)` |
+| 4 | deploy key | `ens.setSubnodeOwner(0x0, labelhash("eth"), adminSafe)` |
+| 5 | deploy key | Deploy `Root(ens)`, the upstream contract |
+| 6 | deploy key | `root.setController(adminSafe, true)` |
+| 7 | deploy key | `root.transferOwnership(adminSafe)` |
+| 8 | deploy key | `ens.setOwner(0x0, root)`; the registry root cannot be moved out of `Root` again |
+| 9 | deploy key | `controller.transferOwnership(adminSafe)` |
+| 10 | deploy key | `priceOracle.transferOwnership(adminSafe)` |
+| 11 | deploy key | v1 retired: `removeController` of the v1 controller and the v1 name policy on the v1 registrar; `transferOwnership(0x0)` on the v1 controller and the v1 oracle |
+| 12 | admin Safe | `controller.acceptOwnership()` and `priceOracle.acceptOwnership()`, one batch, required by `Ownable2Step`, from the Transaction Builder file run 1 writes; at GOV3 |
 
 ```mermaid
 sequenceDiagram
@@ -386,28 +390,33 @@ sequenceDiagram
 The registrar allowance is not part of the handover: runs 1 and 2 neither set nor read it,
 and it is set in a step of its own (A3).
 
-The `ProxyAdmin`s need no step: the admin Safe owns them from their creation. Steps 2 to 5
-and 7 to 9 take effect immediately, nobody has to accept, and the transaction gives no sign
+The `ProxyAdmin`s need no step: the admin Safe owns them from their creation. Steps 1 to 4
+and 6 to 8 take effect immediately, nobody has to accept, and the transaction gives no sign
 of whether anyone holds the key. `scripts/governance-check.mjs` passes for the admin Safe before
 run 1 sends its first transaction.
 
 Verify, in run 2 of `deploy-mainnet.mjs`: `owner()` is the admin Safe on the eight
 `ProxyAdmin`s, the controller, the registrar, the price oracle and `Root`; `ens.owner(0x0)` is
-`Root`, `root.controllers(adminSafe)` is true and `root.locked(labelhash("simplex"))` is
-false; `beneficiary()` is the guardian Safe; `pendingOwner()` is empty on both the controller
+`Root`, `root.controllers(adminSafe)` is true, `root.controllers(deploy key)` is false and
+`root.locked(labelhash("simplex"))` is false; `beneficiary()` is the guardian Safe; `pendingOwner()` is empty on both the controller
 and the price oracle; the deploy key holds none of the roles read. Run 1's read-back has
 already checked the wiring, `sponsor()` among it. The oracle is the one most
 easily missed, because it is not reachable from the controller. A handover that checks only
 the controller looks complete while the price curve is still held by a key that is about to be
 destroyed.
 
-Until step 13 the deploy key can still redirect the controller and the oracle elsewhere, so it
-is destroyed only once all thirteen calls have landed and those checks pass. That is GOV5.
+Until step 12 the deploy key can still redirect the controller and the oracle elsewhere, so it
+is destroyed only once `setBeneficiary` and all twelve calls have landed and those checks
+pass. That is GOV5.
 
 ### A3. Registrar step: the guardian's first use (GOV3)
 
 The owner provides the registrar hot wallet after run 1; only then is its `registrarWallet`
-entry added to `governance.mainnet.json`.
+entry added to `governance.mainnet.json`. The step runs after the upgrade batch of
+simplex-network/ens-contracts#51 has executed, which replaces `RegisterName` and
+`registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2
+sponsor. After the step, the store service's name sales reopen, and the two v1 names are
+registered again (D21 and D22 of `docs/plans/upgradeable-stack.md`).
 
 | # | Caller | Call |
 |---|---|---|
@@ -415,16 +424,21 @@ entry added to `governance.mainnet.json`.
 | 2 | operator | `RUN=registrar` of `deploy-mainnet.mjs`, without a key: the entry checked (no code at the address); the Transaction Builder file of the guardian Safe written |
 | 3 | guardian Safe | `sponsor.setRegistrarAllowance(registrarHotWallet, N)`, from that file, with `N` in **attoUSD**, sized to expected sales plus headroom |
 | 4 | operator | `RUN=registrar-read-back`: `sponsor.registrarAllowance(registrarHotWallet)` is `N` |
+| 5 | names service | the store service's name sales reopen |
 
 ```mermaid
 sequenceDiagram
+  participant A as admin Safe
   participant W as owner
   participant O as operator
   participant G as guardian Safe
+  participant N as names service
+  A->>A: the upgrade batch of ens-contracts#51, executed
   W->>O: registrar hot wallet and N
   O->>O: entry committed; RUN=registrar
   G->>G: setRegistrarAllowance(registrarHotWallet, N)
   O->>O: RUN=registrar-read-back
+  N->>N: reopen name sales
 ```
 
 Not before the post-deploy read-back has reported every reserved name: a funded registrar
@@ -451,6 +465,17 @@ Caller: **guardian Safe**.
 ### A5. Hardening (GOV8)
 
 Puts a timelock in front of the admin Safe, for its own calls and for the eight `ProxyAdmin`s.
+
+Prerequisites, before step 1:
+
+- OpenZeppelin 5.1.0 `TimelockController` in the ens-contracts build. The timelock of step 1
+  is deployed from that artifact, and `scripts/governance-check.mjs` compares its runtime
+  code with the keccak256 of that artifact's `deployedBytecode`, which holds no immutables,
+  in place of the `codeHash` of its entry.
+- `scripts/prepare-upgrade.mjs` for a `ProxyAdmin` owned by the timelock: two admin-Safe
+  batches, the timelock's `schedule` and `execute` of the call, with `hashOperation` printed
+  and the call simulated from the timelock. Until then an upgrade is prepared only while
+  the admin Safe owns the `ProxyAdmin`, and a freeze on no path (A7).
 
 | # | Caller | Call |
 |---|---|---|
@@ -497,8 +522,8 @@ brackets. The guardian Safe needs one signature until GOV7 and two from GOV7.
 
 | Action | Caller | Call |
 |---|---|---|
-| Upgrade one contract | admin Safe *(timelock, 7 days)* | `scripts/prepare-upgrade.mjs` deploys and checks the candidate implementation and prints the call; then `upgradeAndCall(proxy, implementation, data)` on that contract's `ProxyAdmin` |
-| Move one contract's upgrade authority | admin Safe *(timelock, 7 days)* | the transaction `scripts/prepare-upgrade.mjs` prints: `transferOwnership(next)` on that contract's `ProxyAdmin`, after `scripts/governance-check.mjs` passes for `next` |
+| Upgrade one contract | admin Safe *(timelock, 7 days)* | `scripts/prepare-upgrade.mjs` deploys and checks the candidate implementation and writes the call as an admin Safe batch *(after GOV8: batches of `schedule` and `execute`, a GOV8 prerequisite, A5)*; then `upgradeAndCall(proxy, implementation, data)` on that contract's `ProxyAdmin` |
+| Move one contract's upgrade authority | admin Safe *(timelock, 7 days)* | the transaction `scripts/prepare-upgrade.mjs` writes as an admin Safe batch *(after GOV8: batches of `schedule` and `execute`, a GOV8 prerequisite, A5)*: `transferOwnership(next)` on that contract's `ProxyAdmin`, after `scripts/governance-check.mjs` passes for `next` |
 | Reserve a brand name under threat | guardian Safe | `namePolicy.addReservedNames([name], reason)`, sent privately (see below) |
 | Give a brand its name | admin Safe *(timelock, 7 days)* | `namePolicy.registerReserved(label, brandAddr, duration)`; releases the reservation, so the brand renews like any holder |
 | List community names | guardian Safe | `namePolicy.addCommunityNames([names])`, sent privately; names that are registered or in grace are skipped (`CommunityNameSkipped`) |
@@ -508,7 +533,7 @@ brackets. The guardian Safe needs one signature until GOV7 and two from GOV7.
 | Refill a registrar's allowance | guardian Safe | `sponsor.setRegistrarAllowance(registrar, N)`, in attoUSD; replaces the old value rather than adding to it |
 | Cut off a compromised registrar | guardian Safe | `sponsor.setRegistrarAllowance(registrar, 0)` |
 | Pause payable sales | guardian Safe | `controller.setPublicSalesOpen(false)` |
-| Change prices | admin Safe *(timelock, 7 days)* | `priceOracle.setPrices(baseCentsPerYear, exceptions)`; replaces the base and every exception together, and rejects a length outside 1 to 64, a zero exception price and a duplicate length |
+| Change prices | admin Safe *(timelock, 7 days)* | `priceOracle.setPrices(baseCentsPerYear, exceptions)`; replaces the base and every exception together; a length outside 1 to 64, a zero exception price and a duplicate length are rejected |
 | Replace a retired ETH/USD feed | admin Safe *(timelock, 7 days)* | `priceOracle.setUsdOracle(feed, decimals)`; the scale is explicit, since the interface has no `decimals()` to read |
 | Replace the price oracle wholesale | admin Safe *(timelock, 7 days)* | `controller.setPriceOracle(newOracle)`; the escape hatch if the oracle itself is defective |
 | Replace the sponsor by `setSponsor` instead of an upgrade, for instance after its freeze | guardian Safe, then admin Safe *(timelock, 7 days)* | the guardian funds the new sponsor; the names service accepts both sponsors; `controller.setSponsor(newSponsor)`; the names service drops the old sponsor |
@@ -567,11 +592,13 @@ of sealing the payable path shut forever.
 
 1. Read the proxy's ERC-1967 implementation slot and confirm that it holds the audited
    implementation of that contract.
-2. Schedule the transaction that `scripts/prepare-upgrade.mjs` prints for the freeze of that
-   contract: `renounceOwnership()` on its `ProxyAdmin`, the target read from the proxy's ERC-1967
+2. Schedule the freeze of that contract from the admin Safe batch of `schedule` that
+   `scripts/prepare-upgrade.mjs` writes once the GOV8 prerequisites exist (A5):
+   `renounceOwnership()` on its `ProxyAdmin`, the target read from the proxy's ERC-1967
    admin slot. The registrar and the controller have a `renounceOwnership()` of their own, with
    the same selector, so their owner is removed by a transaction sent to the proxy by mistake.
-3. Seven days later, read the implementation slot again, then execute.
+3. Seven days later, read the implementation slot again, then execute, from the admin Safe
+   batch of `execute`.
 
 **Locking `.simplex`.** Caller: **admin Safe**, through the timelock. Schedule
 `root.lock(labelhash("simplex"))`; execute it seven days later.
