@@ -750,6 +750,13 @@ async function runOneOnMainnet(rpcUrl, inputs) {
     )
     process.exit(1)
   }
+  if (existsSync(VERIFICATION_PATH)) {
+    console.error(
+      `${VERIFICATION_PATH} exists. Run 1 writes it last, so run 1 is complete, and the file may record\n` +
+        `  upgrade candidates since; run 1 does not rewrite it. RUN=2 reads the handover back.`,
+    )
+    process.exit(1)
+  }
 
   for (const [role, kind] of [['general', 'generalTerms'], ['community', 'communityTerms']]) {
     await checkTermsLink(role, inputs.terms[kind].link).catch((err) => {
