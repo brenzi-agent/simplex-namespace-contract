@@ -84,11 +84,18 @@ async function dismissOverlay(page: any) {
 }
 
 async function confirmTransaction(page: any, wallet: any) {
-  const confirmBtn = page.getByTestId('transaction-modal-confirm-button')
-  await confirmBtn.waitFor({ timeout: 10_000 })
-  await confirmBtn.click()
-  await wallet.authorize(Web3RequestKind.SendTransaction)
+  await openWalletAndApprove(page, wallet)
   await page.waitForTimeout(2000)
+}
+
+async function openWalletAndApprove(page: any, wallet: any) {
+  const confirmBtn = page.getByTestId('transaction-modal-confirm-button')
+  const requested = () => wallet.getPendingRequestCount(Web3RequestKind.SendTransaction) > 0
+  await expect(async () => {
+    if (!requested()) await confirmBtn.click({ timeout: 10_000 })
+    await expect.poll(requested, { timeout: 1_000 }).toBe(true)
+  }).toPass({ timeout: 30_000 })
+  await wallet.authorize(Web3RequestKind.SendTransaction)
 }
 
 // Steps through a transaction dialog of one or more transactions until it closes.
@@ -100,10 +107,7 @@ async function completeTransactions(page: any, wallet: any) {
     const confirm = page.getByTestId('transaction-modal-confirm-button')
     const complete = page.getByTestId('transaction-modal-complete-button')
     if (await intro.isVisible()) await intro.click()
-    if (await confirm.isVisible()) {
-      await confirm.click()
-      await wallet.authorize(Web3RequestKind.SendTransaction)
-    }
+    if (await confirm.isVisible()) await openWalletAndApprove(page, wallet)
     if (await complete.isVisible()) await complete.click()
     await page.waitForTimeout(750)
   }
