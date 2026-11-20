@@ -363,14 +363,15 @@ stops on a failure:
 The webstore accepts a link only with its `#sha256=`; the dApp accepts git.simplex.chat
 links only, so its terms parser is extended to this form before its switch at step 17.
 
-Run 1 links the files of v1, simplex-chat 72fcd358 (the owner, 20 Nov); the conditions of
-the plan's D13 replace them before launch, through the admin Safe's `setGeneralTerms` and
+Run 1 links the conditions that v1's name policy links, `docs/NAMES-CONDITIONS.md` at
+simplex-chat d9498122, a commit of master (the owner, 20 Nov); the conditions of the plan's
+D13 replace them before launch, through the admin Safe's `setGeneralTerms` and
 `setCommunityTerms`:
 
 ```json
 {
-  "generalTerms": "https://raw.githubusercontent.com/simplex-chat/simplex-chat/72fcd35893ec8ea20531757a455699f41fbaf84e/docs/NAMES-TERMS-GENERAL.md#sha256=43d5198814c6dc846bed6e539e6f0c1df0bd3b50077a816f1e6a083d58ed6969",
-  "communityTerms": "https://raw.githubusercontent.com/simplex-chat/simplex-chat/72fcd35893ec8ea20531757a455699f41fbaf84e/docs/NAMES-TERMS-COMMUNITY.md#sha256=864d07ee1cfa6a897ba8cdcccb27106c8a6da7c6f7bfc0270d8e41c0baa044c9"
+  "generalTerms": "https://raw.githubusercontent.com/simplex-chat/simplex-chat/d94981224a366a433f2d42388effff720419f9fd/docs/NAMES-CONDITIONS.md#sha256=620f9e9bec347a23263c38a0171041580e33240e64b8d66aa6381a2e4da25f18",
+  "communityTerms": "https://raw.githubusercontent.com/simplex-chat/simplex-chat/d94981224a366a433f2d42388effff720419f9fd/docs/NAMES-CONDITIONS.md#sha256=620f9e9bec347a23263c38a0171041580e33240e64b8d66aa6381a2e4da25f18"
 }
 ```
 
