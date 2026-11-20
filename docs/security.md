@@ -67,7 +67,7 @@ On `.testing` it also holds `_authorizeUpgrade` (UUPS); the `.simplex` upgrade
 authority belongs to the admin Safe, which owns the eight `ProxyAdmin`s from their
 creation.
 (The registrar is 1-step `Ownable` and transfers immediately; only the controller
-and, on `.simplex`, the price oracle have this window. There is no reverse registrar — removed in names-v2.)
+and, on `.simplex`, the price oracle have this window. The reverse registrar was removed in names-v2.)
 
 Two names-v2 changes narrow this window. `withdraw()` now pays `beneficiary`,
 not `owner()`, and the beneficiary is set *before* the ownership transfer and can

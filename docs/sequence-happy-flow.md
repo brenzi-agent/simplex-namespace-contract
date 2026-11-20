@@ -121,7 +121,7 @@ sequenceDiagram
     note over U,R: the subnode is owned by the registrar#59; its EFFECTIVE owner is<br/>the live 2LD NFT holder (ownerOf) — soulbound to the token
 ```
 
-Note: subname creation/indexing lives in a dedicated **`SubnameRegistrar`** (`.testing`:
+Note: subnames are created and indexed by a dedicated **`SubnameRegistrar`** (`.testing`:
 immutable; `.simplex`: behind a transparent proxy, upgradeable until its `ProxyAdmin` is
 renounced), not
 the controller — clean separation (the controller does only 2LD registration policy) and a

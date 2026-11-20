@@ -193,8 +193,9 @@ index is reconstructible by re-creating subnames if it is ever redeployed.
 
 ## Pricing
 
-USD-denominated, paid in ETH via a Chainlink-style oracle. Lapsed names carry
-ENS's exponential Dutch-auction premium on `.testing` and none on `.simplex`.
+USD-denominated, paid in ETH via a Chainlink-style oracle. A lapsed name is priced
+with ENS's exponential Dutch-auction premium on `.testing`, and without a premium on
+`.simplex`.
 
 `.simplex` uses `SimplexPriceOracle` (SNRC), where the whole price list is
 configurable by call rather than fixed at construction. It holds a **base price

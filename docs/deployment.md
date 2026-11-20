@@ -597,8 +597,8 @@ their calldata and writes them as a Transaction Builder batch,
 
 ### Gas strategy at a glance
 
-The script optimises for cost, not speed — it will happily take days when
-mainnet stays expensive. For each transaction:
+The script is built for cost, not speed: a run may take days while mainnet stays
+expensive. For each transaction:
 
 1. **Priority fee is always 0.**
 2. **Cap**: `maxFeePerGas = MAX_BASE_FEE_GWEI` (e.g. `0.078`, picked from a
@@ -1152,7 +1152,8 @@ That is `setPrices(5000, [])`: names shorter than six characters cannot be regis
 the launch list has no exceptions. The setter reverts for an exception length outside 1
 to 64, a zero exception price and a duplicate length. A free TLD is `setPrices(0, [])`.
 `setUsdOracle(feed, decimals)` moves the Chainlink feed; the scale is explicit, since the
-interface has no `decimals()` to read. Lapsed names carry no premium. The oracle has its
+interface has no `decimals()` to read. The premium is zero, so a lapsed name costs the
+same as any other. The oracle has its
 own `Ownable2Step` owner, handed over separately from the controller's.
 
 `.testing` predates this and runs the vendored `ExponentialPremiumPriceOracle`, a

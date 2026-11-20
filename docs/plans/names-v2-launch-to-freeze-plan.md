@@ -318,7 +318,8 @@ which a subclass could not work around.
 
 `SimplexPriceOracle` takes a **base price per year** plus a list of **exceptions**, each
 `(labelLength, priceCentsPerYear)`, in US cents. An exception applies to labels of exactly
-that length; every other length pays the base price. Lapsed names carry no premium. The
+that length; every other length pays the base price. The premium is zero, so a lapsed name
+costs the same as any other. The
 launch list is $50 a year ($100 for the two-year minimum) with no exceptions, since names
 shorter than six characters cannot be registered:
 
