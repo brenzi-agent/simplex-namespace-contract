@@ -284,7 +284,10 @@ async function main() {
     const runTwo = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes', runTwo.length === 0, runTwo.join(', '))
 
-    console.log(`\n=== prepare-upgrade and a resolver that trusts another controller ===`)
+    const upgradeKey = privateKeyToAccount(generatePrivateKey())
+    await fund(upgradeKey.address)
+    const upgrades = createDryRunRunner({ forkUrl: fork.url, forkChainId: fork.chainId, account: upgradeKey })
+    console.log(`\n=== prepare-upgrade with the key ${upgradeKey.address}, and a resolver that trusts another controller ===`)
     const verification = await assembleVerification({ client, addresses, deployer: account.address, adminSafe: admin })
     const creations = new Map(loadJournal(journalPath).filter(({ address }) => address)
       .map(({ address, txHash }) => [address.toLowerCase(), txHash]))
@@ -297,10 +300,10 @@ async function main() {
     expect(`the constructor arguments of the verification file equal the creation inputs of ${journalled.length} journalled deployments`,
       journalled.length === creations.size && unmatched.length === 0, unmatched.join(', '))
     const elsewhere = { ...addresses, ETHRegistrarController: STRANGER }
-    const unnamed = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address)
+    const unnamed = await prepareUpgrade(upgrades, client, 'SimplexResolver', elsewhere, verification, upgradeKey.address)
     expect('the change of trustedETHController is refused when it is not named',
       unnamed.refused && unnamed.failures.some((failure) => failure.includes('trustedETHController')), outcome(unnamed))
-    const named = await prepareUpgrade(dry, client, 'SimplexResolver', elsewhere, verification, account.address,
+    const named = await prepareUpgrade(upgrades, client, 'SimplexResolver', elsewhere, verification, upgradeKey.address,
       { intended: ['trustedETHController'] })
     expect('the change of trustedETHController is accepted when it is named, with both values',
       !named.refused && named.changes.length === 1, outcome(named, () => JSON.stringify(named.changes)))
@@ -316,9 +319,13 @@ async function main() {
 
     console.log(`\n=== prepare-upgrade accepts an identical rebuild, and the admin Safe upgrades ===`)
     for (const name of Object.keys(UPGRADEABLE)) {
-      const prepared = await prepareUpgrade(dry, client, name, addresses, verification, account.address)
+      const prepared = await prepareUpgrade(upgrades, client, name, addresses, verification, upgradeKey.address)
       expect(`${name} candidate accepted`, !prepared.refused, outcome(prepared, () => prepared.candidate))
       if (!prepared.refused) await upgrade(prepared)
+      if (name === 'SubnameRegistrar' && !prepared.refused) {
+        expect('the SubnameRegistrar candidate holds the key that deployed it as _deployer',
+          BigInt(prepared.entry.immutables._deployer) === BigInt(upgradeKey.address), prepared.entry.immutables._deployer)
+      }
     }
     const afterUpgrades = await readBackTwo(client, addresses, inputs, account.address)
     expect('run 2 read-back passes after the upgrades', afterUpgrades.length === 0, afterUpgrades.join(', '))
@@ -328,20 +335,20 @@ async function main() {
       .find(({ label }) => label === '_initialized')
     const opened = await prepareUpgrade({
       deploy: async (...args) => {
-        const contract = await dry.deploy(...args)
+        const contract = await upgrades.deploy(...args)
         await client.request({
           method: 'hardhat_setStorageAt', params: [contract.address, toHex(BigInt(initializedSlot)), toHex(1n, { size: 32 })],
         })
         return contract
       },
-      write: dry.write,
-    }, client, 'SimplexController', addresses, verification, account.address)
+      write: upgrades.write,
+    }, client, 'SimplexController', addresses, verification, upgradeKey.address)
     expect('a candidate whose _initialized is 1 is refused',
       opened.refused && opened.failures.includes('its _initialized is 1, not 255'), outcome(opened))
 
     console.log(`\n=== prepare-upgrade with upgrade data ===`)
-    const withData = (signature, args = []) => prepareUpgrade(dry, client, 'SimplexController', addresses, verification,
-      account.address, { call: { signature, args } })
+    const withData = (signature, args = []) => prepareUpgrade(upgrades, client, 'SimplexController', addresses, verification,
+      upgradeKey.address, { call: { signature, args } })
     const missing = await withData('migrate(uint256)', [1])
     expect('data naming a function the candidate lacks is refused',
       missing.refused && missing.failures.includes('it has no function migrate(uint256)'), outcome(missing))
