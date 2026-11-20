@@ -263,8 +263,10 @@ export function assertTaggedSource(tag) {
 
 export const parentHead = () => git(REPO_ROOT, 'rev-parse', 'HEAD')
 
+export const uncommitted = (paths) => git(REPO_ROOT, 'status', '--porcelain', '--', ...paths)
+
 export function assertCommitted(paths) {
-  const changes = git(REPO_ROOT, 'status', '--porcelain', '--', ...paths)
+  const changes = uncommitted(paths)
   if (changes) {
     console.error(`the parent repository has changes outside the commit ${parentHead()} in ${paths.join(', ')}:\n${changes}`)
     process.exit(1)
