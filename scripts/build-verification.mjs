@@ -30,7 +30,7 @@ import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, SOURCE_TAG, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, causes, constructorArgs,
   ensContractsHead, immutableNames, immutablesIn, initializerData, interfaceOf, mainnetClient, parentHead,
   placeImmutables, proxySlots, refusal, requireEnv, storageLayout,
 } from './stack.mjs'
@@ -134,5 +134,5 @@ async function cli() {
 
 // Run as CLI when invoked directly.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  cli().catch((e) => { console.error(e); process.exit(1) })
+  cli().catch((e) => { console.error(causes(e).join('\n  ← ')); process.exit(1) })
 }

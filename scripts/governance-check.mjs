@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import {
-  REPO_ROOT, VERIFICATION_PATH, addressAt, logsSince, mainnetClient, requireEnv, sortedAddresses,
+  REPO_ROOT, VERIFICATION_PATH, addressAt, causes, logsSince, mainnetClient, requireEnv, sortedAddresses,
 } from './stack.mjs'
 
 const GOVERNANCE_PATH = join(REPO_ROOT, 'governance.mainnet.json')
@@ -201,7 +201,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   mainnetClient(rpcUrl).then((client) => checkGovernance(client, entries, deployKey)).then(
     (passed) => process.exit(passed ? 0 : 1),
     (err) => {
-      console.error(err)
+      console.error(causes(err).join('\n  ← '))
       process.exit(1)
     },
   )

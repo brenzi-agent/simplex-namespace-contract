@@ -15,7 +15,7 @@ import {
 } from './deploy-mainnet.mjs'
 import { checkedProxyAdmin, prepareUpgrade } from './prepare-upgrade.mjs'
 import {
-  ENS_CONTRACTS_DIR, PROXY_ADMIN_ABI, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, proxyAdminOf,
+  ENS_CONTRACTS_DIR, PROXY_ADMIN_ABI, UPGRADEABLE, V1_ABI, artifact, assertBuildFresh, causes, proxyAdminOf,
   proxySlots, requireEnv, storageLayout,
 } from './stack.mjs'
 
@@ -45,12 +45,6 @@ const SAFE_ABI = parseAbi(['function changeThreshold(uint256 threshold)'])
 const FORK_TAIL = 6000
 
 class Stopped extends Error {}
-
-function causes(error) {
-  if (!(error instanceof Error)) return []
-  const code = error.code === undefined ? '' : ` ${error.code}`
-  return [`${error.name}${code}: ${error.shortMessage ?? error.message}`, ...causes(error.cause)]
-}
 
 const transportFailure = (error) => error instanceof BaseError && Boolean(error.walk(
   (cause) => cause instanceof TimeoutError || (cause instanceof HttpRequestError && cause.status === undefined)))
@@ -422,7 +416,6 @@ async function main() {
 main().then(
   () => process.exit(0),
   (err) => {
-    console.error(err)
     console.error(`\nCauses:\n  ${causes(err).join('\n  ')}`)
     process.exit(1)
   },

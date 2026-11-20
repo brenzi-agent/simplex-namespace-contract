@@ -12,7 +12,7 @@ import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, PROXY_ADMIN_ABI, REPO_ROOT, TLD, UPGRADEABLE,
-  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, causes, constructorArgs,
   immutableNames, immutablesIn, interfaceOf, mainnetClient, parentHead, placeImmutables, proxyAdminOf, proxySlots,
   refusal, requireEnv, safeBatch, storageLayout, storedValue,
 } from './stack.mjs'
@@ -417,7 +417,7 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
-    console.error(err)
+    console.error(causes(err).join('\n  ← '))
     process.exit(1)
   })
 }

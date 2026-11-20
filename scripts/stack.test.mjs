@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { REPO_ROOT, childEnv, git, uncommitted } from './stack.mjs'
+import { HttpRequestError } from 'viem'
+import { REPO_ROOT, causes, childEnv, git, uncommitted } from './stack.mjs'
 
 const withDeployerKey = (check) => {
   process.env.DEPLOYER_KEY = '0x01'
@@ -32,4 +33,12 @@ test('the committed-inputs guard names an untracked input and passes a committed
   } finally {
     rmSync(join(REPO_ROOT, name))
   }
+})
+
+test('a top-level error prints its short message and its causes, without the URL of the request', () => {
+  const error = new HttpRequestError({
+    url: 'https://rpc.example/v2/secret-token', status: 403, body: { method: 'eth_getLogs' }, cause: new TypeError('fetch failed'),
+  })
+  assert.ok(error.message.includes('secret-token'))
+  assert.deepEqual(causes(error), ['HttpRequestError: HTTP request failed.', 'TypeError: fetch failed'])
 })
