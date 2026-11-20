@@ -324,6 +324,16 @@ test('a proxy whose implementation the verification file records for another con
   })
 })
 
+test('a ProxyAdmin that another account owns is refused where the ProxyAdmin is read', async () => {
+  const target = await checkedProxyAdmin(chain({ owner: OTHER }), deployment, verification, 'SimplexResolver', ADMIN_SAFE)
+  assert.deepEqual(target, {
+    refused: true,
+    failures: [`the ProxyAdmin ${proxyAdminOf(deployment.PublicResolver)} of SimplexResolver is owned by ${OTHER}, not the admin Safe ` +
+      `${ADMIN_SAFE}: a call through it needs the schedule and execute batches of a TimelockController for the admin Safe, ` +
+      'which this script does not write yet'],
+  })
+})
+
 test('a renounced ProxyAdmin is refused', async () => {
   const target = await checkedProxyAdmin(chain({ owner: zeroAddress }), deployment, verification, 'SimplexResolver')
   assert.equal(target.refused, true)

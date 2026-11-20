@@ -192,7 +192,7 @@ export async function upgradeCallFailures(client, { proxy, proxyAdmin, owner }, 
   }
 }
 
-export async function checkedProxyAdmin(client, addresses, verification, name) {
+export async function checkedProxyAdmin(client, addresses, verification, name, adminSafe = loadGovernance().adminSafe.address) {
   if (!Object.hasOwn(UPGRADEABLE, name)) {
     return refusal([`CONTRACT must be one of ${Object.keys(UPGRADEABLE).join(', ')}, not ${name}`])
   }
@@ -208,9 +208,9 @@ export async function checkedProxyAdmin(client, addresses, verification, name) {
     return refusal([`${VERIFICATION_PATH} records no ${path} at ${implementation}, the implementation of the ${name} proxy ${proxy}`])
   }
   const owner = await client.readContract({ address: admin, abi: PROXY_ADMIN_ABI, functionName: 'owner' })
-  return owner === zeroAddress
-    ? refusal([`the ProxyAdmin ${admin} of ${name} is renounced`])
-    : accepted({ name, proxy, implementation, proxyAdmin: admin, owner, current })
+  if (owner === zeroAddress) return refusal([`the ProxyAdmin ${admin} of ${name} is renounced`])
+  const unowned = ownerFailures({ name, proxyAdmin: admin, owner }, adminSafe)
+  return unowned.length ? refusal(unowned) : accepted({ name, proxy, implementation, proxyAdmin: admin, owner, current })
 }
 
 export function ownerFailures({ name, proxyAdmin, owner }, adminSafe) {
@@ -235,10 +235,8 @@ export async function transferCall(client, addresses, verification, governance, 
   }
   const failures = await entryFailures(client, next, verification.deployer)
   if (failures.length) return refusal(failures.map((failure) => `${nextName} ${next.address} ${failure}`))
-  const target = await checkedProxyAdmin(client, addresses, verification, name)
-  if (target.refused) return target
-  const unowned = ownerFailures(target, governance.adminSafe.address)
-  return unowned.length ? refusal(unowned) : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
+  const target = await checkedProxyAdmin(client, addresses, verification, name, governance.adminSafe.address)
+  return target.refused ? target : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
 }
 
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, request = {}) {
@@ -324,10 +322,6 @@ function jsonArrayEnv(name) {
 
 const ACTIONS = {
   upgrade: async (client, addresses, verification, name) => {
-    const target = await checkedProxyAdmin(client, addresses, verification, name)
-    if (target.refused) return target
-    const unowned = ownerFailures(target, loadGovernance().adminSafe.address)
-    if (unowned.length) return refusal(unowned)
     const deployerKey = requireEnv('DEPLOYER_KEY')
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
     const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
