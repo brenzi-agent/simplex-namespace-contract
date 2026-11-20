@@ -417,12 +417,12 @@ pass. That is GOV5.
 ### A3. Registrar step: the guardian's first use (GOV3)
 
 The owner provides the registrar hot wallet after run 1; only then is its `registrarWallet`
-entry added to `governance.mainnet.json`. The step runs after the upgrade batch of
-simplex-network/ens-contracts#51 has executed, which replaces `RegisterName` and
-`registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2
-sponsor. After the step, the names service registers the two v1 names again while purchase
-entry is still closed, and only then does purchase entry open (D14, D21 and D22 of
-`docs/plans/upgradeable-stack.md`).
+entry added to `governance.mainnet.json`. The step follows run 2 and the switch, without a
+wait for an upgrade: the sponsor of run 1 already takes #51's `RegisterName`, with
+`disputeDays`, and the store service is changed to sign that form before its first
+sponsored registration. After the step, the names service registers the two v1 names again while
+purchase entry is still closed, and only then does purchase entry open (D14, D21 and D22
+of `docs/plans/upgradeable-stack.md`).
 
 | # | Caller | Call |
 |---|---|---|
@@ -435,12 +435,10 @@ entry is still closed, and only then does purchase entry open (D14, D21 and D22 
 
 ```mermaid
 sequenceDiagram
-  participant A as admin Safe
   participant W as owner
   participant O as operator
   participant G as guardian Safe
   participant N as names service
-  A->>A: the upgrade batch of ens-contracts#51, executed
   W->>O: registrar hot wallet and N
   O->>O: entry committed; RUN=registrar
   G->>G: setRegistrarAllowance(registrarHotWallet, N)

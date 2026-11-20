@@ -159,17 +159,19 @@ own output may still name the URL: it is printed when the fork of a dry run fail
 | 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch | Safe, the batch of run 1 |
 | 10 | operator | handover read-back, without transactions | run 2 |
 | 11 | operator, names service | the switch: the store service, the resolver service and the production dApp switched to v2 (The switch); the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer committed to main together (Commit the files at the switch) | ini, env, dApp pull request, git |
-| 12 | operator, guardian Safe | registrar step, after the upgrade batch of simplex-network/ens-contracts#51 has executed and once the owner provides the names service's registrar wallet: its `registrarWallet` entry committed, checked and written as the guardian Safe's batch; the guardian Safe sets the allowance; the allowance read back | git, `RUN=registrar`, Safe, `RUN=registrar-read-back` |
-| 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed | names service |
+| 12 | operator, guardian Safe | registrar step, after step 11, once the owner provides the names service's registrar wallet: its `registrarWallet` entry committed, checked and written as the guardian Safe's batch; the guardian Safe sets the allowance; the allowance read back | git, `RUN=registrar`, Safe, `RUN=registrar-read-back` |
+| 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed, by the store service in #51's form of `RegisterName` | names service |
 | 14 | operator | purchase entry opened in the webstore and the SimpleX app | store |
 | 15 | operator | Etherscan verification | `verify-etherscan.mjs` |
 | 16 | operator | deploy key destroyed | — |
 
 Step 3 precedes run 1: an order still in flight holds a commitment on the v1 controller
 and signatures whose EIP-712 domains name the v1 sponsor and name policy, and v1 reverts
-from step 8. Step 12 follows #51's batch, which replaces `RegisterName` and
-`registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2
-sponsor. Steps 13 and 14 follow step 12: a sponsored registration reverts
+from step 8. Step 12 follows step 11, whose commit of the v2 addresses file the registrar
+step reads. Run 1 deploys simplex-network/ens-contracts `ebf76989`, which holds the dispute
+period of #51, so the v2 sponsor takes `RegisterName` with `disputeDays` from the first
+registration; the store service is changed to sign that form before step 13 (the plan's
+D21). Steps 13 and 14 follow step 12: a sponsored registration reverts
 `InsufficientAllowance` while the registrar wallet's allowance is zero. Step 14 follows
 step 13, so the two v1 names are registered for their holders before any buyer can order
 them.
@@ -192,7 +194,6 @@ sequenceDiagram
   O->>O: run 2: read-back
   N->>N: switch: store and resolver services, production dApp
   O->>O: commit files and the simplex-app pointer
-  A->>A: the upgrade batch of ens-contracts#51
   O->>O: registrarWallet entry committed; RUN=registrar
   G->>G: setRegistrarAllowance, the batch of the registrar step
   O->>O: RUN=registrar-read-back
@@ -344,7 +345,7 @@ changed paths:
 | Script | Paths |
 |---|---|
 | run 1 | `scripts/`, `governance.mainnet.json`, `reserved-names.simplex.csv`, `terms.simplex.json`, `community-names.simplex.csv` |
-| `RUN=registrar`, `RUN=registrar-read-back` | `scripts/`, `governance.mainnet.json`, `deployments.mainnet.simplex.json`, `deployments.mainnet.simplex.journal.jsonl` |
+| `RUN=registrar`, `RUN=registrar-read-back` | `scripts/`, `governance.mainnet.json`, `deployments.mainnet.simplex.json` |
 | `build-verification.mjs` | `scripts/`, `governance.mainnet.json` |
 | `prepare-upgrade.mjs`, every action | `scripts/`, `governance.mainnet.json`, `deployments.mainnet.simplex.json`, `verification.mainnet.simplex.json` |
 
@@ -797,12 +798,14 @@ refused.
 
 ### The registrar step
 
-Runs 1 and 2 leave the registrar allowance at zero. The step runs after the upgrade batch
-of simplex-network/ens-contracts#51 has executed: #51 replaces `RegisterName` and
-`registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2
-sponsor, and sponsored registrations start with the new form. Once the owner provides the
-names service's registrar wallet and its allowance, the operator adds its entry to
-`governance.mainnet.json` and commits it:
+Runs 1 and 2 leave the registrar allowance at zero. The step follows run 2 and step 11,
+without a wait for an upgrade: the sponsor of run 1 already takes #51's `RegisterName`,
+with `disputeDays`, and `registerWithCredit(registration, disputeDays, nonce, deadline,
+sig)`. The store service on simplex-chat `names` at 0410929 still signs `RegisterName`
+without `disputeDays` and calls the four-argument `registerWithCredit`
+(`Names/Registration.hs`), so its change to #51's form precedes step 13. Once the owner
+provides the names service's registrar wallet and its allowance, the operator adds its
+entry to `governance.mainnet.json` and commits it:
 
 ```json
 "registrarWallet": { "kind": "EOA", "address": "0x…", "allowance": "<attoUSD, a decimal string>" }
@@ -812,19 +815,14 @@ names service's registrar wallet and its allowance, the operator adds its entry 
 RUN=registrar node scripts/deploy-mainnet.mjs
 ```
 
-The step uses no key. It requires `scripts/`, `governance.mainnet.json`,
-`deployments.mainnet.simplex.json` and `deployments.mainnet.simplex.journal.jsonl`
-committed and chain id 1, and is refused for:
+The step uses no key. It requires `scripts/`, `governance.mainnet.json` and
+`deployments.mainnet.simplex.json` committed and chain id 1, and is refused for:
 
 - a `governance.mainnet.json` without a `registrarWallet` entry
 - a registrar wallet with code at its address
 - a `SimplexSponsor` of the addresses file whose admin slot is not the CREATE address of
   that proxy at nonce 1, so not a v2 proxy: until step 11 the committed addresses file
   is the v1 one
-- a journal without a `deploy:SimplexSponsor` entry
-- a sponsor proxy with the implementation of `deploy:SimplexSponsor`, the one run 1
-  deployed, in its implementation slot: the allowance is set only after #51's upgrade of
-  the sponsor
 - `controller.sponsor()` other than that sponsor, `sponsor.controller()` other than the
   controller, or `controller.beneficiary()` other than the guardian Safe
 
@@ -845,12 +843,10 @@ reads `sponsor.registrarAllowance(wallet)` and exits with 1 unless it equals the
 ```mermaid
 sequenceDiagram
   participant W as owner
-  participant A as admin Safe
   participant O as operator
   participant G as guardian Safe
   participant S as sponsor proxy
   participant N as names service
-  A->>A: the upgrade batch of ens-contracts#51, executed
   W->>O: registrar wallet and allowance
   O->>O: registrarWallet entry committed
   O->>O: RUN=registrar: entry checked, batch written
@@ -955,12 +951,11 @@ flowchart TD
   D[run 1 stopped after each of the 10 handover steps: each step sent once] --> D2
   D2[run 1 without automining: stops at the fee ceiling with the first v1 retirement step pending] --> D3
   D3[run 1 resumed while that step is pending: it waits for it, sends it once, and ends; the journal holds the handover and the v1 retirement in their order] --> E
-  E[the admin Safe executes the batch of run 1; run 2 passes without a registrar wallet] --> R0
-  R0[the registrar step with a generated wallet, before the sponsor's upgrade: refused, the sponsor proxy still at run 1's implementation] --> V
+  E[the admin Safe executes the batch of run 1; run 2 passes without a registrar wallet] --> R
+  R[the registrar step with a generated wallet: the read-back fails before the guardian Safe executes the batch, which goes to the sponsor proxy, and passes after it] --> V
   V[verification file built: its constructor arguments equal the creation inputs of the journalled deployments] --> F
   F[prepare-upgrade with a key other than run 1's: a changed trustedETHController refused unless named in INTENDED] --> G
-  G[an identical rebuild of each of the eight accepted and upgraded; the SubnameRegistrar candidate holds that key as _deployer; run 2 passes again] --> R
-  R[the registrar step after the sponsor's upgrade: the read-back fails before the guardian Safe executes the batch, which goes to the sponsor proxy, and passes after it] --> G2
+  G[an identical rebuild of each of the eight accepted and upgraded; the SubnameRegistrar candidate holds that key as _deployer; run 2 passes again] --> G2
   G2[a controller candidate with _initialized 1 refused] --> H
   H[upgrade data: a missing function and an unguarded candidate refused] --> I
   I[the ProxyAdmin of each contract found by its name; a proxy address as CONTRACT refused; the resolver through an addresses file with swapped keys refused] --> J

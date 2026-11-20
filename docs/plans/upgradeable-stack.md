@@ -72,8 +72,8 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `transferOwnership(0x0)` on the v1 oracle, which clears its pending owner
 - D19. simplex-network/ens-contracts#49 is merged after the deployment and ships as the first upgrade of v2: one admin Safe batch of the controller, the name policy and the sponsor (the owner, 20 Nov: "#49 might be merged after deploy and run a contract update"). Its storage-slot statements are recomputed for the layout without UUPS. brenzi/simplex-namespace-contract#18 is rewritten for v2 and carries the batch extension of `scripts/prepare-upgrade.mjs`, with which that batch is prepared; the extension exists before the batch. With the extension, each candidate is prepared, the Safe MultiSend is assembled and simulated on a mainnet fork with the admin Safe impersonated, and each implementation slot is compared with its candidate (ens-contracts `docs/upgrades.md`).
 - D20. A sponsor replaced by `setSponsor` instead of an upgrade, for instance after its freeze, is replaced in this order: the guardian funds the new sponsor; the names service accepts both sponsors; the owner calls `setSponsor`; the names service drops the old sponsor.
-- D21. The owner provides the registrar wallet after run 1; only then is its entry added to `governance.mainnet.json`. Runs 1 and 2 neither set nor read a registrar allowance. The registrar step runs after the upgrade batch of simplex-network/ens-contracts#51 has executed, a batch prepared with the batch extension of `scripts/prepare-upgrade.mjs` (D19): #51 replaces `RegisterName` and `registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2 sponsor, and sponsored registrations start with the new form. The re-registration of the two v1 names (D14) follows the registrar step. The registrar step, once the entry is committed:
-  - `RUN=registrar`: refused while the implementation run 1 deployed (`deploy:SimplexSponsor` of the journal) is in the sponsor proxy's implementation slot; the entry checked; the guardian Safe's batch of `sponsor.setRegistrarAllowance(wallet, allowance)` written
+- D21. The owner provides the registrar wallet after run 1; only then is its entry added to `governance.mainnet.json`. Runs 1 and 2 neither set nor read a registrar allowance. The registrar step follows run 2 and the commit of the v2 addresses file at the switch, without a wait for an upgrade: the sponsor of run 1 already holds #51's `RegisterName`, with `disputeDays`, and `registerWithCredit(registration, disputeDays, nonce, deadline, sig)` (D9). The store service on simplex-chat `names` at 0410929 still signs `RegisterName` without `disputeDays` and calls the four-argument `registerWithCredit` (`Names/Registration.hs`), so its change to #51's form precedes the first sponsored registration, the re-registration of D14. The re-registration of the two v1 names (D14) follows the registrar step. The registrar step, once the entry is committed:
+  - `RUN=registrar`: the entry checked; the guardian Safe's batch of `sponsor.setRegistrarAllowance(wallet, allowance)` written
   - the guardian Safe executes the batch
   - `RUN=registrar-read-back`: `sponsor.registrarAllowance(wallet)` read back
 - D22. Store orders across the switch. The store service keeps, per order, a commitment on the controller of its ini and the owner's `RegisterName` and terms-acceptance signatures, whose EIP-712 domains name the sponsor and the name policy (simplex-chat `apps/simplex-store-service`, `Names/Store.hs`, `Names/Registration.hs`, `Names/Reveal.hs`); after the switch such an order's commitment is absent on the v2 controller, its signatures name v1's addresses, and v1 reverts from step 8 of section 6. Therefore:
@@ -559,8 +559,8 @@ Unchanged:
 | 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch |
 | 10 | operator, run 2 | handover read-back, without transactions |
 | 11 | operator, names service | the switch (section 9): the store service, the resolver service and the production dApp switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer |
-| 12 | operator, guardian Safe, registrar step | after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet: its entry committed and checked; the guardian Safe sets its allowance; the allowance read back (D21) |
-| 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed (D14) |
+| 12 | operator, guardian Safe, registrar step | after step 11, once the owner provides the registrar wallet: its entry committed and checked; the guardian Safe sets its allowance; the allowance read back (D21) |
+| 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed, by the store service in #51's form of `RegisterName` (D14, D21) |
 | 14 | operator | purchase entry opened in the webstore and the SimpleX app (D22) |
 | 15 | operator | Etherscan verification |
 | 16 | operator | deploy key destroyed |
@@ -582,7 +582,6 @@ sequenceDiagram
   O->>O: run 2: read-back
   N->>N: switch: store and resolver services, production dApp
   O->>O: commit files and the simplex-app pointer
-  A->>A: the upgrade batch of ens-contracts#51
   O->>O: registrar step: entry committed and checked
   G->>G: v2 sponsor setRegistrarAllowance
   O->>O: registrar step: allowance read back
@@ -741,14 +740,13 @@ sequenceDiagram
 
 ### Registrar step
 
-After step 11 of section 6, after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet (D21); `RUN=registrar` writes the batch only when each of its reads below has the value shown:
+After step 11 of section 6, without a wait for an upgrade, once the owner provides the registrar wallet (D21); `RUN=registrar` writes the batch only when each of its reads below has the value shown:
 
 | Call or read | Caller | Value |
 |---|---|---|
 | `governance.mainnet.json` entry `registrarWallet` | operator, committed | kind `EOA`, `address`, allowance N in attoUSD |
 | governance check of the entry | `RUN=registrar` | no code at the address |
 | sponsor proxy's admin slot | `RUN=registrar` | the CREATE address of the proxy at nonce 1 |
-| sponsor proxy's implementation slot | `RUN=registrar` | not the implementation of `deploy:SimplexSponsor` in the committed journal, the one run 1 deployed |
 | `controller.sponsor()` | `RUN=registrar` | the sponsor proxy |
 | `sponsor.controller()` | `RUN=registrar` | the controller proxy |
 | `controller.beneficiary()` | `RUN=registrar` | the guardian Safe |
@@ -914,7 +912,7 @@ brenzi/simplex-namespace-contract:
   - a `ProxyAdmin` owner other than the admin Safe stops run 1 before section 8
   - run 1 stopped after each step of section 8 and resumed sends each remaining step once and passes both read-backs
   - run 1 resumed while a step's transaction is pending waits for it and sends nothing new
-  - run 2 passes without a registrar wallet; the registrar step is refused while the sponsor proxy is at the implementation run 1 deployed; after the upgrades, its read-back fails before the guardian Safe executes its batch and passes after it
+  - run 2 passes without a registrar wallet; then the registrar step's read-back fails before the guardian Safe executes its batch and passes after it
   - the restore path of section 6 returns v1 to its state before step 8
 - `scripts/governance-check.test.mjs`, run with `node --test`; a Safe is refused for each of:
   - a different threshold
