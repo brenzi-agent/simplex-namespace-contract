@@ -845,8 +845,8 @@ async function runOneOnMainnet(rpcUrl, inputs) {
     process.exit(1)
   }
 
-  for (const [role, kind] of [['general', 'generalTerms'], ['community', 'communityTerms']]) {
-    await checkTermsLink(role, inputs.terms[kind].link).catch((err) => {
+  for (const kind of ['generalTerms', 'communityTerms']) {
+    await checkTermsLink(inputs.terms[kind].link).catch((err) => {
       console.error(`terms.${TLD}.json ${kind}: ${err.message}`)
       process.exit(1)
     })
