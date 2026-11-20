@@ -453,6 +453,14 @@ test('upgrade data for a candidate with a _proxyAdmin immutable is accepted', ()
   assert.deepEqual(dataGuardFailures(guarded, guardedNames, migration), [])
 })
 
+for (const signature of ['multicall(bytes[])', 'multicallWithNodeCheck(bytes32,bytes[])']) {
+  test(`upgrade data naming ${signature} is refused, also for a candidate with a _proxyAdmin immutable`, () => {
+    assert.deepEqual(dataGuardFailures(guarded, guardedNames, { signature, args: [] }), [
+      `DATA ${signature} is a multicall, whose entries run for the ProxyAdmin: one with the selector of upgradeToAndCall would install another implementation`,
+    ])
+  })
+}
+
 const GUARDED_ABI = parseAbi(['constructor(address registry, address proxyAdmin)'])
 const PROXY_ADMIN = proxyAdminOf(deployment.SimplexNamePolicy)
 

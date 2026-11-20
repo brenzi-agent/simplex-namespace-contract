@@ -142,11 +142,25 @@ export function ownImmutables(name, addresses, deployer, candidate, proxyAdmin) 
   }
 }
 
+const MULTICALLS = new Set(['multicall(bytes[])', 'multicallWithNodeCheck(bytes32,bytes[])'].map((signature) => toFunctionSelector(signature)))
+
+const selectorOf = (signature) => {
+  try {
+    return toFunctionSelector(signature)
+  } catch {
+    return undefined
+  }
+}
+
 export function dataGuardFailures({ immutableReferences }, names, call) {
+  if (!call) return []
   const guarded = Object.keys(immutableReferences).some((id) => names.get(Number(id)) === PROXY_ADMIN_IMMUTABLE)
-  return call && !guarded
-    ? [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_IMMUTABLE}, which the candidate lacks: its data function would stay callable by anyone`]
-    : []
+  return [
+    ...(guarded ? [] : [`DATA ${call.signature} requires an immutable ${PROXY_ADMIN_IMMUTABLE}, which the candidate lacks: its data function would stay callable by anyone`]),
+    ...(MULTICALLS.has(selectorOf(call.signature))
+      ? [`DATA ${call.signature} is a multicall, whose entries run for the ProxyAdmin: one with the selector of upgradeToAndCall would install another implementation`]
+      : []),
+  ]
 }
 
 export function upgradeData(abi, call) {
