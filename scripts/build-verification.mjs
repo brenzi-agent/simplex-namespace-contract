@@ -26,6 +26,7 @@
  *   MAINNET_RPC_URL=… DEPLOYER=0x… node scripts/build-verification.mjs
  */
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { pathToFileURL } from 'url'
 import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
@@ -133,6 +134,6 @@ async function cli() {
 }
 
 // Run as CLI when invoked directly.
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   cli().catch((e) => { console.error(causes(e).join('\n  ← ')); process.exit(1) })
 }
