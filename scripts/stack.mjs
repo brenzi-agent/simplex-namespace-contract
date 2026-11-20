@@ -83,6 +83,8 @@ export async function mainnetClient(rpcUrl) {
   return client
 }
 
+const UNSAFE_CALL_GAS = 50_000n
+
 const controllerConfig = (tld, smpxNft) => ({
   tldNode: namehash(tld),
   tldSuffix: `.${tld}`,
@@ -156,6 +158,22 @@ export const UPGRADEABLE = {
       trustedReverseRegistrar: zeroAddress,
     }),
   },
+  SimplexSponsor: {
+    key: 'SimplexSponsor',
+    artifact: 'contracts/simplex/SimplexSponsor.sol/SimplexSponsor.json',
+    args: (a) => [a.ETHRegistrarController],
+    immutables: (a) => ({ controller: a.ETHRegistrarController }),
+  },
+  UniversalResolver: {
+    key: 'UniversalResolver',
+    artifact: 'contracts/universalResolver/UniversalResolver.sol/UniversalResolver.json',
+    args: (a, { deployer }) => [deployer, a.ENSRegistry, a.DummyGatewayProvider],
+    immutables: (a) => ({
+      registry: a.ENSRegistry,
+      batchGatewayProvider: a.DummyGatewayProvider,
+      unsafeCallGas: toHex(UNSAFE_CALL_GAS),
+    }),
+  },
 }
 
 export const IMMUTABLE = {
@@ -163,17 +181,9 @@ export const IMMUTABLE = {
     artifact: `contracts/${SIMPLEX_PRICE_ORACLE_ARTIFACT}`,
     args: (a, { chainlinkEthUsd }) => [chainlinkEthUsd, USD_FEED_DECIMALS, SIMPLEX_PRICE_BASE, SIMPLEX_PRICE_RUNGS],
   },
-  SimplexSponsor: {
-    artifact: 'contracts/simplex/SimplexSponsor.sol/SimplexSponsor.json',
-    args: (a) => [a.ETHRegistrarController],
-  },
   DummyGatewayProvider: {
     artifact: 'contracts/mocks/DummyGatewayProvider.sol/DummyGatewayProvider.json',
     args: () => [],
-  },
-  UniversalResolver: {
-    artifact: 'contracts/universalResolver/UniversalResolver.sol/UniversalResolver.json',
-    args: (a, { deployer }) => [deployer, a.ENSRegistry, a.DummyGatewayProvider],
   },
   MetadataRenderer: {
     artifact: 'contracts/simplex/MetadataRenderer.sol/MetadataRenderer.json',

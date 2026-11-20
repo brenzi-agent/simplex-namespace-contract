@@ -2,8 +2,9 @@
 /**
  * Deploy the `.simplex` v2 contracts to Ethereum mainnet — wait-for-cheap-base
  * strategy. The registry, the registrar, the resolver, the subname registrar,
- * the controller and the name policy sit behind TransparentUpgradeableProxy
- * instances whose ProxyAdmins the admin Safe owns from creation. See
+ * the controller, the name policy, the sponsor and the universal resolver sit
+ * behind TransparentUpgradeableProxy instances whose ProxyAdmins the admin Safe
+ * owns from creation. See
  * docs/plans/upgradeable-stack.md, sections 6 to 9.
  *
  * Run 1, with the deploy key:
@@ -294,7 +295,7 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
   // and the owner's signature check. Only this contract may call the controller's
   // sponsored entry points. The guardian funds registrars here.
-  const sponsor = await immutable('SimplexSponsor')
+  const sponsor = await proxied('SimplexSponsor')
   await write(controller, 'setSponsor', [sponsor.address])
 
   await write(namePolicy, 'setGeneralTerms', [terms.generalTerms.link])
@@ -305,7 +306,7 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   await write(baseRegistrar, 'setNamePolicy', [namePolicy.address])
 
   await immutable('DummyGatewayProvider')
-  await immutable('UniversalResolver')
+  await proxied('UniversalResolver')
 
   await write(ensRegistry, 'setResolver', [TLD_NODE, publicResolver.address])
   // The registry assigns a node to someone other than the caller only under the

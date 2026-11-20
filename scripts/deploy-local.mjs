@@ -134,7 +134,7 @@ async function main() {
   // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
   // and the owner's signature check. Only this contract may call the controller's
   // sponsored entry points. The guardian funds registrars here.
-  const sponsor = await immutable('SimplexSponsor')
+  const sponsor = await proxied('SimplexSponsor')
   await write(controller, 'setSponsor', [sponsor.address])
 
   // local dev: one key plays both roles, and sales are open so the payable path works
@@ -179,7 +179,7 @@ async function main() {
   // UniversalResolver (needed by the frontend for name lookups)
   await immutable('DummyGatewayProvider')
 
-  const universalResolver = await immutable('UniversalResolver')
+  const universalResolver = await proxied('UniversalResolver')
 
   const multicall3 = await deploy('Multicall3',
     'mocks/Multicall3.sol/Multicall3.json')

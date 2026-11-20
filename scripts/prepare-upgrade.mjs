@@ -234,7 +234,8 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   const compiled = artifact(definition.artifact)
   const names = immutableNames(compiled)
   const layout = storageLayout(compiled)
-  const constructed = candidateArgs(compiled.abi, requestedArgs ?? definition.args(addresses, { tld: TLD }), admin.proxyAdmin)
+  const constructed = candidateArgs(compiled.abi, requestedArgs ?? definition.args(addresses, { tld: TLD, deployer }),
+    admin.proxyAdmin)
   const encoded = upgradeData(compiled.abi, call)
   const refused = [
     ...artifactFailures(compiled, names, layout, current, intended),
