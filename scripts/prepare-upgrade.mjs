@@ -210,6 +210,21 @@ export async function checkedProxyAdmin(client, addresses, verification, name) {
     : accepted({ name, proxy, implementation, proxyAdmin: admin, owner, current })
 }
 
+export function ownerFailures({ name, proxyAdmin, owner }, adminSafe) {
+  return owner.toLowerCase() === adminSafe.toLowerCase()
+    ? []
+    : [`the ProxyAdmin ${proxyAdmin} of ${name} is owned by ${owner}, not the admin Safe ${adminSafe}: a call through it ` +
+      'needs the schedule and execute batches of a TimelockController for the admin Safe, which this script does not write yet']
+}
+
+export function freezeFailures(target, adminSafe) {
+  const unowned = ownerFailures(target, adminSafe)
+  return unowned.length
+    ? unowned
+    : [`the ProxyAdmin ${target.proxyAdmin} of ${target.name} is owned by the admin Safe: a freeze waits until GOV8 has ` +
+      'moved it to the timelock (launch-to-freeze plan, A7)']
+}
+
 export async function transferCall(client, addresses, verification, governance, name, nextName) {
   const next = governance[nextName]
   if (next?.kind !== 'TimelockController') {
@@ -218,7 +233,9 @@ export async function transferCall(client, addresses, verification, governance, 
   const failures = await entryFailures(client, next, verification.deployer)
   if (failures.length) return refusal(failures.map((failure) => `${nextName} ${next.address} ${failure}`))
   const target = await checkedProxyAdmin(client, addresses, verification, name)
-  return target.refused ? target : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
+  if (target.refused) return target
+  const unowned = ownerFailures(target, governance.adminSafe.address)
+  return unowned.length ? refusal(unowned) : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
 }
 
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, request = {}) {
@@ -304,6 +321,10 @@ function jsonArrayEnv(name) {
 
 const ACTIONS = {
   upgrade: async (client, addresses, verification, name) => {
+    const target = await checkedProxyAdmin(client, addresses, verification, name)
+    if (target.refused) return target
+    const unowned = ownerFailures(target, loadGovernance().adminSafe.address)
+    if (unowned.length) return refusal(unowned)
     const deployerKey = requireEnv('DEPLOYER_KEY')
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
     const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
@@ -352,7 +373,7 @@ const ACTIONS = {
   },
   freeze: async (client, addresses, verification, name) => {
     const target = await checkedProxyAdmin(client, addresses, verification, name)
-    return target.refused ? target : accepted({ target, functionName: 'renounceOwnership', args: [] })
+    return target.refused ? target : refusal(freezeFailures(target, loadGovernance().adminSafe.address))
   },
   transfer: (client, addresses, verification, name) =>
     transferCall(client, addresses, verification, loadGovernance(), name, requireEnv('NEXT')),

@@ -2,8 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ContractFunctionRevertedError, encodeFunctionData, keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
 import {
-  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, intendedNames,
-  interfaceFailures, layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
+  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, freezeFailures, immutableReview, intendedNames,
+  interfaceFailures, layoutFailures, ownerFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures,
+  upgradeData,
 } from './prepare-upgrade.mjs'
 import { assembleVerification } from './build-verification.mjs'
 import {
@@ -352,6 +353,34 @@ test('a transfer to a timelock that fails its check is refused', async () => {
   const call = await transferCall(timelockChain('0x6002'), deployment, verification, governance, 'SimplexController', 'timelock')
   assert.equal(call.refused, true)
   assert.match(call.failures.join('; '), /^timelock 0x0+7777 code hash is 0x[0-9a-f]{64}, expected /)
+})
+
+const timelockOwned = (client) => ({
+  ...client,
+  readContract: async (call) => (call.functionName === 'owner' ? TIMELOCK : client.readContract(call)),
+})
+const timelockBatches = 'needs the schedule and execute batches of a TimelockController for the admin Safe, which this script does not write yet'
+
+test('a transfer through a ProxyAdmin the admin Safe does not own is refused', async () => {
+  const call = await transferCall(timelockOwned(timelockChain(TIMELOCK_CODE)), deployment, verification, governance, 'SimplexController', 'timelock')
+  assert.deepEqual(call, {
+    refused: true,
+    failures: [`the ProxyAdmin ${proxyAdminOf(deployment.ETHRegistrarController)} of SimplexController is owned by ${TIMELOCK}, ` +
+      `not the admin Safe ${ADMIN_SAFE}: a call through it ${timelockBatches}`],
+  })
+})
+
+test('an upgrade through a ProxyAdmin the admin Safe owns passes the owner check', () => {
+  assert.deepEqual(ownerFailures({ name: 'SimplexController', proxyAdmin: OTHER, owner: ADMIN_SAFE.toLowerCase() }, ADMIN_SAFE), [])
+})
+
+test('a freeze is refused while the admin Safe owns the ProxyAdmin, and through a timelock', () => {
+  assert.deepEqual(freezeFailures({ name: 'SubnameRegistrar', proxyAdmin: OTHER, owner: ADMIN_SAFE }, ADMIN_SAFE), [
+    `the ProxyAdmin ${OTHER} of SubnameRegistrar is owned by the admin Safe: a freeze waits until GOV8 has moved it to the timelock (launch-to-freeze plan, A7)`,
+  ])
+  assert.deepEqual(freezeFailures({ name: 'SubnameRegistrar', proxyAdmin: OTHER, owner: TIMELOCK }, ADMIN_SAFE), [
+    `the ProxyAdmin ${OTHER} of SubnameRegistrar is owned by ${TIMELOCK}, not the admin Safe ${ADMIN_SAFE}: a call through it ${timelockBatches}`,
+  ])
 })
 
 test('a transfer to a timelock that passes its check addresses the ProxyAdmin of the named contract', async () => {
