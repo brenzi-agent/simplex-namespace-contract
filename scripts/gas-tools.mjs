@@ -2,7 +2,7 @@
  * Live-network deploy helpers — "wait for cheap base fee" strategy.
  *
  * Strategy:
- *   - Submit every tx with `maxPriorityFeePerGas = 1 wei` and
+ *   - Submit every tx with `maxPriorityFeePerGas = 1 wei` plus 1 wei per bump and
  *     `maxFeePerGas = MAX_BASE_FEE_GWEI`.
  *   - Before each submission, poll `eth_getBlockByNumber('latest')` every
  *     ~12s until `baseFeePerGas <= maxFeePerGas`. Then send.
@@ -582,7 +582,7 @@ export function createWaitForBaseRunner({
         gasEstimate ??= await estimate()
         const signed = await walletClient.signTransaction({
           to, data, value, nonce, gas: gasEstimate,
-          maxFeePerGas: cap, maxPriorityFeePerGas: PRIORITY_FEE_WEI,
+          maxFeePerGas: cap, maxPriorityFeePerGas: PRIORITY_FEE_WEI + BigInt(bumps),
         })
         hash = keccak256(signed)
         hashes.push(hash)
@@ -661,7 +661,7 @@ export async function analyzeAndConfirm({
   const baseNow = block.baseFeePerGas
 
   console.log(`  Strategy:`)
-  console.log(`    priority fee:         ${PRIORITY_FEE_WEI} wei always`)
+  console.log(`    priority fee:         ${PRIORITY_FEE_WEI} wei, plus 1 wei per bump`)
   console.log(`    maxFeePerGas:         ${fmtGwei(maxBaseFeeWei)} gwei  (your MAX_BASE_FEE_GWEI)`)
   console.log(`    submit policy:        wait for baseFee ≤ cap, then send (no escalation by default)`)
   console.log(`    bump rule:            after ${bumpAfterMs / 3600000}h of stall, cap × ${Number(100n + bumpPct) / 100} and resubmit at same nonce`)
