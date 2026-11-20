@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   scripts:
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -96,6 +97,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        shard: [1, 2, 3]
+        trace: ['off', 'retain-on-failure']
         include:
           - tld: simplex
             app: simplex-app
@@ -151,7 +154,7 @@ jobs:
       - name: Start the terms server and a local Hardhat node
         run: |
           nohup node scripts/serve-terms.mjs > terms.log 2>&1 &
-          (cd ens-contracts && nohup ./node_modules/.bin/hardhat --network hardhat node > "$GITHUB_WORKSPACE/hardhat-node.log" 2>&1 &)
+          (cd ens-contracts && nohup ./node_modules/.bin/hardhat --network hardhat node 2>&1 | nohup perl -MTime::HiRes=time -MPOSIX=strftime -ne 'BEGIN { $| = 1 } $t = time; printf "%s.%03d %s", strftime("%H:%M:%S", gmtime $t), ($t - int $t) * 1000, $_' > "$GITHUB_WORKSPACE/hardhat-node.log" 2>&1 &)
           for i in $(seq 1 120); do
             if curl -sf -X POST -H 'content-type: application/json' \
               --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' http://127.0.0.1:8545 > /dev/null; then
@@ -195,14 +198,15 @@ jobs:
 
       - run: pnpm exec playwright install --with-deps chromium
 
-      - run: pnpm exec playwright test --project=${{ matrix.project }}
+      - run: pnpm exec playwright test --project=${{ matrix.project }} --grep "listed after its commit" --repeat-each=16 --trace=${{ matrix.trace }} --reporter=list,html
 
-      - if: failure()
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-${{ matrix.tld }}
+          name: e2e-${{ matrix.tld }}-${{ matrix.shard }}-${{ matrix.trace }}
           path: |
             playwright-report
+            test-results
             dapp.log
             hardhat-node.log
           retention-days: 7

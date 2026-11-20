@@ -83,11 +83,41 @@ async function dismissOverlay(page: any) {
   }
 }
 
+const now = () => new Date().toISOString().slice(11, 23)
+
+async function probe(page: any) {
+  page.on('console', (m: any) => console.log(now(), 'console', m.type(), m.text().slice(0, 400)))
+  page.on('pageerror', (e: any) => console.log(now(), 'pageerror', e.message))
+  await page.addInitScript(() => {
+    const describe = (el: any) => {
+      const button = el?.closest?.('button')
+      const id = el?.closest?.('[data-testid]')?.getAttribute('data-testid')
+      return `${id} button=${!!button} disabled=${button ? button.disabled : '-'} text=${(button?.textContent || '').slice(0, 30)}`
+    }
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
+      window.addEventListener(type, (e) => console.log(`[probe] ${type} ${describe(e.target)}`), true)
+    let last = ''
+    const check = () => {
+      const b = document.querySelector('[data-testid="transaction-modal-confirm-button"]') as HTMLButtonElement | null
+      const heading = document.querySelector('[data-testid="transaction-modal-inner"]')?.parentElement?.textContent?.slice(0, 60)
+      const s = b ? `present disabled=${b.disabled} text=${b.textContent} dialog=${heading}` : 'absent'
+      if (s !== last) {
+        last = s
+        console.log(`[probe] confirm ${s}`)
+      }
+    }
+    new MutationObserver(check).observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
+  })
+}
+
 async function confirmTransaction(page: any, wallet: any) {
   const confirmBtn = page.getByTestId('transaction-modal-confirm-button')
   await confirmBtn.waitFor({ timeout: 10_000 })
+  console.log(now(), 'test click confirm')
   await confirmBtn.click()
+  console.log(now(), 'test clicked, authorize')
   await wallet.authorize(Web3RequestKind.SendTransaction)
+  console.log(now(), 'test authorized')
   await page.waitForTimeout(2000)
 }
 
@@ -818,8 +848,10 @@ test.describe('SimpleX Namespace (.simplex)', () => {
 
   test('a name listed after its commit requires accepting the terms before registration', async ({ page }) => {
     const label = `late${Date.now().toString(36)}`
+    console.log(now(), 'test start', label)
+    await probe(page)
     await syncBrowserClockToChain(page)
-    const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain] })
+    const wallet = await injectHeadlessWeb3Provider({ page, privateKeys: [DEPLOYER_KEY], chains: [hardhatChain], debug: true, logger: (...a: unknown[]) => console.log(now(), 'wallet', ...a) })
     await page.goto('/')
     await page.waitForTimeout(2000)
     await connectWallet(page, wallet)
