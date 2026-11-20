@@ -29,7 +29,7 @@ plain-language summary of how SNRC differs from ENS, see
                      ▼
       ┌────────────────────────────┐   records    ┌────────────────────────────┐
       │ SimplexController          │─────────────▶│ PublicResolver (verbatim)  │
-      │ (UUPS proxy)               │              │ text: simplex.contact,     │
+      │ (behind a proxy)           │              │ text: simplex.contact,     │
       └──────────────┬─────────────┘              │ simplex.channel            │
                      │ price()                    └────────────────────────────┘
                      ▼
@@ -42,8 +42,9 @@ plain-language summary of how SNRC differs from ENS, see
   admin:  setMinCharLength · disableNftGate · SimplexNamePolicy.addReservedNames ·
           SimplexNamePolicy.registerReserved
 
-  SubnameRegistrar (immutable) — owns + indexes registry subnodes, soulbound to the
-  2LD NFT; it is also the PublicResolver's nameWrapper slot (subname auth via ownerOf).
+  SubnameRegistrar (.testing: immutable; .simplex: behind a proxy) — owns + indexes
+  registry subnodes, soulbound to the 2LD NFT; it is also the PublicResolver's
+  nameWrapper slot (subname auth via ownerOf).
 ```
 
 `Root`, `PublicResolver`, `StringUtils`,
@@ -53,10 +54,10 @@ interfaces are vendored verbatim from ENS. `ENSRegistry` is modified: it adds
 except under the root or a TLD. `StablePriceOracle` is vendored but
 modified (SNRC added `price6Letter`, `priceUSD` and `InvalidPriceFeed`); it is what
 `.testing` runs, while `.simplex` uses the new `SimplexPriceOracle`.
-`SimplexController` is custom (UUPS); `BaseRegistrarImplementation` is modified (v3 — ERC721Enumerable + `labelOf`
+`SimplexController` is custom; `BaseRegistrarImplementation` is modified (v3 — ERC721Enumerable + `labelOf`
 label index + `tokenURI` + consented transfer + community name transfer check); `SimplexSponsor`,
-`MetadataRenderer` (swappable), `SubnameRegistrar` (immutable) and `SimplexNamePolicy`
-(UUPS) are new SNRC contracts. **There is no NameWrapper** — only the
+`MetadataRenderer` (swappable), `SubnameRegistrar` and `SimplexNamePolicy`
+are new SNRC contracts; which contracts are upgradeable is listed under "Upgrade story" below. **There is no NameWrapper** — only the
 `INameWrapper` interface is kept, because verbatim `PublicResolver` imports it
 (deployed with `nameWrapper = SubnameRegistrar`, so subname records authorise via
 `SubnameRegistrar.ownerOf`). **There is no reverse registrar either** — removed in
@@ -153,9 +154,9 @@ There is no NameWrapper. Instead:
   `labelOf` index (`registerWithLabel`), and `tokenURI` that delegates to the
   swappable **`MetadataRenderer`**, which builds the JSON + SVG (with the domain
   name) fully on-chain — no off-chain metadata service.
-- **Subnames** are created + indexed by the immutable **`SubnameRegistrar`**,
-  which *owns* the subname registry nodes and makes them **soulbound to the 2LD
-  NFT**: a subname's effective owner is derived on read by `ownerOf` (it walks
+- **Subnames** are created + indexed by the **`SubnameRegistrar`** (`.testing`:
+  immutable; `.simplex`: behind a transparent proxy), which *owns* the subname
+  registry nodes and makes them **soulbound to the 2LD NFT**: a subname's effective owner is derived on read by `ownerOf` (it walks
   the `parentOf` chain up to the 2LD node, whose registry owner the BaseRegistrar
   **auto-reclaim** hook keeps equal to the token holder). So subnames follow the
   NFT automatically and are never independently transferable; enumerable via
@@ -167,40 +168,46 @@ There is no NameWrapper. Instead:
 
 ## Upgrade story
 
-Only `SimplexController` and `SimplexNamePolicy` are upgradeable — each sits
-behind an ERC-1967 proxy and uses UUPS (`_authorizeUpgrade` gated on the
-controller's owner). Every other contract is **immutable**: `ENSRegistry`,
-`BaseRegistrar` (v3), `MetadataRenderer`, `SubnameRegistrar`, resolver, oracles.
+On `.simplex`, eight contracts are upgradeable: `ENSRegistry`, `BaseRegistrar`
+(v3), the resolver, `SubnameRegistrar`, `SimplexController`, `SimplexNamePolicy`,
+`SimplexSponsor` and `UniversalResolver`. Each sits behind an OpenZeppelin 5.1.0
+`TransparentUpgradeableProxy` with a `ProxyAdmin` of its own, owned by the admin
+Safe from its creation. Through `ProxyAdmin.upgradeAndCall` the code is
+replaced, and the address and the state are kept. A contract is frozen on its own, at a
+time of its own, when its `ProxyAdmin` is renounced
+([`plans/upgradeable-stack.md`](./plans/upgradeable-stack.md)). Every other
+`.simplex` contract is **immutable**: `SimplexPriceOracle`, `MetadataRenderer`,
+`DummyGatewayProvider` and `Root`. Of
+the `.testing` contracts, only `SimplexController` is upgradeable (UUPS,
+`_authorizeUpgrade` gated on its owner).
 The two seams that avoid needing a registrar redeploy: `MetadataRenderer` is
 swapped via `baseRegistrar.setMetadataRenderer(...)`, and the `SubnameRegistrar`
 index is reconstructible by re-creating subnames if it is ever redeployed.
 
 ## Pricing
 
-USD-denominated, paid in ETH via a Chainlink-style oracle, with ENS's exponential
-Dutch auction on names that have lapsed.
+USD-denominated, paid in ETH via a Chainlink-style oracle. Lapsed names carry
+ENS's exponential Dutch-auction premium on `.testing` and none on `.simplex`.
 
-`.simplex` uses `SimplexPriceOracle` (SNRC), where the whole curve is configurable
-by call rather than fixed at construction. It holds a **base price per year** in
-attoUSD plus a sparse list of **rungs** `(maxLength, priceUSDPerYear)`: a rung at
-`K` means "names of at most `K` characters cost this". Every length between two
-rungs inherits the rung above it, and everything above the tallest rung pays the
-base price, so a curve needs only as many entries as it has price steps. The setter
-replaces base and rungs together and refuses a curve in which any length is cheaper
-than a longer one.
+`.simplex` uses `SimplexPriceOracle` (SNRC), where the whole price list is
+configurable by call rather than fixed at construction. It holds a **base price
+per year** in US cents plus a list of **exceptions** `(labelLength,
+priceCentsPerYear)`: an exception applies to labels of exactly that length, and
+every other length pays the base price. The setter replaces the base and every
+exception together, and rejects a length outside 1 to 64, a zero exception price
+and a duplicate length.
 
 | Length | Annual price | Source |
 |--------|-------------|--------|
 | 6+     | $50         | base price |
 
-That is `setPrices(50e18, [])`, which is what
+That is `setPrices(5000, [])`, which is what
 [`scripts/simplex-price-curve.mjs`](../scripts/simplex-price-curve.mjs) holds and
 all three deploy scripts read. Names shorter than six characters cannot be
 registered; the base price covers every length, so lowering `minCharLength`
 never hands out free names. A free TLD is
-`setPrices(0, [])`. The Chainlink feed (`setUsdOracle`) and the auction parameters
-(`setPremium`) are settable too, so the oracle never has to be redeployed to change
-what a name costs.
+`setPrices(0, [])`. The Chainlink feed is settable too (`setUsdOracle`), so the
+oracle never has to be redeployed to change what a name costs.
 
 `.testing` predates this and still runs the vendored `StablePriceOracle`, whose six
 prices are `immutable` and denominated per second; its curve is all zeros, so
@@ -215,7 +222,7 @@ ETH/USD). On mainnet the oracle points at the live Chainlink ETH/USD feed.
 |----------------------------------|---------------------------------------------|
 | `setMinCharLength(uint8)`        | monotonic decrease only (6 → 5 → 4 → 3)     |
 | `disableNftGate()`               | one-way (true → false)                      |
-| `setPriceOracle(IPriceOracleUSD)` | survives `freeze()`                        |
+| `setPriceOracle(IPriceOracleUSD)` | survives every freeze                       |
 
 `SimplexNamePolicy` reads its keys from the controller and holds the reserved names:
 
@@ -230,14 +237,15 @@ and handed over separately:
 
 | Function                         | Bounds                                      |
 |----------------------------------|---------------------------------------------|
-| `setPrices(uint256,Rung[])`      | atomic; rejects a non-monotonic curve       |
-| `setUsdOracle(AggregatorInterface)` | rejects a zero address or a dead feed    |
-| `setPremium(uint256,uint256)`    | `totalDays = 0` disables the auction        |
+| `setPrices(uint256,LabelPrice[])` | atomic; rejects a length outside 1 to 64, a zero exception price, a duplicate length |
+| `setUsdOracle(AggregatorInterface,uint8)` | rejects a zero address, a scale outside 1 to 36 decimals, a feed answering zero or less |
 
-All three are strictly weaker than `setPriceOracle`, which can install an arbitrary
+Both are strictly weaker than `setPriceOracle`, which can install an arbitrary
 oracle, so they add no authority the admin key did not already hold.
 
-The owner can renounce admin authority once the TLD is stable.
+On `.simplex` the owner is not renounced, so that brand reservation continues for
+the life of the namespace. A freeze there is the renouncement of a contract's
+`ProxyAdmin`: that contract's code is fixed, and its owner stays.
 
 ## Frontend
 
@@ -268,12 +276,12 @@ See [`deployment.md`](./deployment.md) for the per-network checklist.
 simplex-namespace-contract/      ← parent repo (this)
   ens-contracts/                 ← submodule (Solidity)
     contracts/
-      simplex/SimplexController.sol      ← new (UUPS)
+      simplex/SimplexController.sol      ← new (behind a transparent proxy)
       simplex/SimplexControllerProxy.sol ← new (ERC1967 proxy)
       simplex/SimplexSponsor.sol         ← new (sponsored path, owner signature)
       simplex/MetadataRenderer.sol       ← new (on-chain NFT JSON+SVG)
       simplex/SubnameRegistrar.sol       ← new (subname create + index)
-      simplex/SimplexNamePolicy.sol      ← new (UUPS: reserved and community names)
+      simplex/SimplexNamePolicy.sol      ← new (reserved and community names)
       simplex/SimplexNamePolicyProxy.sol ← new (ERC1967 proxy)
       simplex/INamePolicy.sol            ← new (hook interface)
       ethregistrar/BaseRegistrarImplementation.sol ← modified (v3: enumerable,
