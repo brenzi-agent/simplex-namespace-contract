@@ -147,20 +147,22 @@ Each TLD is an independent deployment. `ENSRegistry`, `BaseRegistrarImplementati
 `SimplexSponsor` and `UniversalResolver` are
 each an implementation behind a `TransparentUpgradeableProxy` whose `initialOwner` is
 the admin (on mainnet, the admin Safe); every other contract is non-upgradeable. The `.testing` stack predates
-this: only its controller sits behind a proxy, UUPS.
+this: only its controller sits behind a proxy, UUPS. The list gives the dependencies; the
+order of calls on mainnet is steps 1 to 16 of `docs/deployment.md`, "Deployment and wiring",
+and the local order is that of `scripts/deploy-local.mjs`.
 
 1. MockSMPXNFT (local/testnet only, shared)
 2. ENSRegistry = impl + proxy (`initialize(deploy key)`)
 3. Registry root: held by the deploy key, which assigns the TLD from it; it moves into `Root` at the handover (step 12)
 4. BaseRegistrarImplementation v3 = impl + proxy (`initialize(registry, namehash(tld), deploy key)`) (own the TLD node)
 5. Price oracle (DummyOracle local / Chainlink mainnet) + SimplexPriceOracle for `.simplex` (ExponentialPremiumPriceOracle on the legacy `.testing` stack); transfer its `Ownable2Step` ownership to the admin key separately from the controller's
-6. SimplexController = impl + proxy (NFT gate on for .testing, off for .simplex); add as controller on the base registrar → SimplexNamePolicy = impl(controller, baseRegistrar) + proxy → add as controller on the base registrar → `controller.setNamePolicy(policy)`
+6. SimplexController = impl + proxy (NFT gate on for .testing, off for .simplex); add as controller on the base registrar → SimplexNamePolicy = impl(controller, baseRegistrar) + proxy → add as controller on the base registrar → `controller.setNamePolicy(policy)` → reserve the a-priori names on the policy
 7. SubnameRegistrar = impl(registry, baseRegistrar) + proxy
 8. SimplexResolver = impl(`nameWrapper = SubnameRegistrar`, `trustedETHController = controller`, `trustedReverseRegistrar = address(0)`) + proxy → `subnameRegistrar.setResolver(resolver)` → `controller.setDefaultResolver(resolver)` → SimplexSponsor = impl(controller) + proxy → `controller.setSponsor(sponsor)` → `policy.setGeneralTerms` → `policy.setCommunityTerms` (the links of `terms.<tld>.json`) → `policy.addCommunityNames` → `baseRegistrar.setNamePolicy(policy)`
 9. MetadataRenderer(`.<tld>`) → `baseRegistrar.setMetadataRenderer(renderer)`
 10. UniversalResolver = impl(deploy key, registry, gateway provider) + proxy; Multicall3
 11. `baseRegistrar.setMaxLabelLength(63)` — not optional: the label is written to `labelOf` permanently
-12. Reserve the a-priori names on the policy; `setBeneficiary(guardian)` comes **first**, in the wiring (owner-callable only while unset). After the read-back, hand over: BaseRegistrar, `eth` and `data.eth` to the admin in single steps, the registry root into a `Root` that the admin owns and controls, and the controller and the oracle as `Ownable2Step` proposals, which the admin accepts in one batch (launch-to-freeze plan A2)
+12. `setBeneficiary(guardian)` is the last call of the wiring, before any handover (owner-callable only while unset). After the read-back, hand over: BaseRegistrar, `eth` and `data.eth` to the admin in single steps, the registry root into a `Root` that the admin owns and controls, and the controller and the oracle as `Ownable2Step` proposals, which the admin accepts in one batch (launch-to-freeze plan A2). The registrar allowance is set later, in a step of its own, once the owner provides the registrar wallet (launch-to-freeze plan A3)
 13. Output addresses to `deployments/<network>-<tld>.json`
 
 No reverse registrar is deployed. `Root` comes after the deploy and `Root.lock` at GOV9 — while the label is unlocked a redeploy can keep the registry and re-point the TLD, which is the cheap recovery path until real users exist.
