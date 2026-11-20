@@ -1,13 +1,20 @@
 # Deployment
 
-SNRC is **one deployment per TLD**, each an independent ENS-shaped stack. Only
-`SimplexController` and `SimplexNamePolicy` are behind a proxy (ERC-1967 /
-UUPS); every other contract is immutable. There is **no NameWrapper** (v3 is
-wrapper-free); the stack adds `MetadataRenderer` and `SubnameRegistrar`, and
-`PublicResolver` is deployed with its `nameWrapper` slot pointed at the
-`SubnameRegistrar` (subname records authorise via `SubnameRegistrar.ownerOf`).
-For the canonical contract-by-contract deploy order see `CLAUDE.md` →
-"Deployment order" and `scripts/deploy-*.mjs`.
+SNRC is **one deployment per TLD**, each an independent ENS-shaped stack without a
+NameWrapper.
+
+- `.simplex` v2: `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexResolver`,
+  `SubnameRegistrar`, `SimplexController`, `SimplexNamePolicy`, `SimplexSponsor` and
+  `UniversalResolver` sit behind OpenZeppelin 5.1.0 `TransparentUpgradeableProxy`s, each
+  with a `ProxyAdmin` that the admin Safe owns from its creation. `SimplexPriceOracle`,
+  `MetadataRenderer`, `DummyGatewayProvider` and `Root` are immutable. The resolver's
+  `nameWrapper` slot holds the `SubnameRegistrar`, so subname records are authorised
+  through `SubnameRegistrar.ownerOf`. The plan is
+  [`plans/upgradeable-stack.md`](./plans/upgradeable-stack.md); the governance steps are
+  in [`plans/names-v2-launch-to-freeze-plan.md`](./plans/names-v2-launch-to-freeze-plan.md),
+  appendix A.
+- `.testing`: as deployed; of its contracts, only `SimplexController` sits behind a proxy,
+  UUPS.
 
 Active targets: **local Hardhat** and **Ethereum mainnet**. (Sepolia is retired —
 the historical playbook lives in [`legacy/sepolia-deployment.md`](./legacy/sepolia-deployment.md).)
@@ -16,8 +23,8 @@ the historical playbook lives in [`legacy/sepolia-deployment.md`](./legacy/sepol
 
 | TLD        | Contracts | dApp | Notes |
 |------------|-----------|------|-------|
-| `.testing` | **Live on mainnet** — addresses in [`deployments.mainnet.testing.json`](../deployments.mainnet.testing.json) | **Live** on GitHub Pages — [`testing-names.simplex.chat`](https://testing-names.simplex.chat) | NFT gate **disabled** (lifted on-chain 2026-07-09 via `disableNftGate`, one-way); `minCharLength = 6`; registration is **open and free** (all-zero price oracle). Controller ownership handoff to the cold owner is **still pending** — see [below](#completing-the-ownership-handover). |
-| `.simplex` | **Not deployed** | — | Planned: same stack, **no** NFT gate, the real USD price curve. dApp will likely be **self-hosted + IPFS** (see [dApp hosting](#dapp-hosting)). |
+| `.testing` | **Live on mainnet** — addresses in [`deployments.mainnet.testing.json`](../deployments.mainnet.testing.json) | **Live** on GitHub Pages — [`testing-names.simplex.chat`](https://testing-names.simplex.chat) | NFT gate **disabled** (lifted on-chain 2026-07-09 via `disableNftGate`, one-way); `minCharLength = 6`; registration is **open and free** (all-zero price oracle). Controller ownership handoff to the cold owner is **still pending**. |
+| `.simplex` | **v1 live on mainnet**, deployed 2–3 Nov 2026 — addresses in [`deployments.mainnet.simplex.json`](../deployments.mainnet.simplex.json) until the v2 switch. **v2**, the redeploy this document describes, is pending. | — | v1 is retired by run 1 of v2. **No** NFT gate; $50 a year. dApp: see [dApp hosting](#dapp-hosting). |
 
 The live `.testing` controller is the proxy at
 `0xeeb9b6bf5fb68fb726005f7ba549c2f4b32f2dad` (`ETHRegistrarController` in the
@@ -27,11 +34,12 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
 
 - [Quick reference](#quick-reference)
 - [Local Hardhat](#local-hardhat)
-- [Mainnet](#mainnet)
+- [Mainnet: the `.simplex` v2 redeploy](#mainnet-the-simplex-v2-redeploy)
+- [Upgrades, freezes and transfers of upgrade authority](#upgrades-freezes-and-transfers-of-upgrade-authority)
 - [Post-deploy operations](#post-deploy-operations)
 - [dApp hosting](#dapp-hosting)
 - [Frontend env vars](#frontend-env-vars)
-- [Deploy-time env vars](#deploy-time-env-vars)
+- [Script env vars](#script-env-vars)
 - [Verification](#verification)
 - [Gotchas](#gotchas)
 
@@ -42,11 +50,14 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
 | Compile                       | `cd ens-contracts && npx hardhat compile`            |
 | Local one-shot (`.testing`)   | `./scripts/run-local.sh`                             |
 | Local one-shot (`.simplex`)   | `SIMPLEX_TLD=simplex ./scripts/run-local.sh`         |
-| Deploy to mainnet             | `DEPLOYER_KEY=… MAINNET_RPC_URL=… MAX_BASE_FEE_GWEI=… SIMPLEX_TLD=… node scripts/deploy-mainnet.mjs` |
-| Admin owner                   | `OWNER_ADDRESS` env (required; must differ from the deployer) |
-| Verify on Etherscan           | `ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=… node scripts/verify-etherscan.mjs` |
+| Governance check              | `MAINNET_RPC_URL=… node scripts/governance-check.mjs [entry …]` |
+| Rehearsal on a mainnet fork   | `MAINNET_RPC_URL=… node scripts/rehearse-mainnet.mjs` |
+| Run 1 (deploy key)            | `RUN=1 MAINNET_RPC_URL=… DEPLOYER_KEY=… MAX_BASE_FEE_GWEI=… node scripts/deploy-mainnet.mjs` |
+| Run 2 (keyless read-back)     | `RUN=2 MAINNET_RPC_URL=… node scripts/deploy-mainnet.mjs` |
+| Upgrade, freeze, transfer     | `ACTION=upgrade\|freeze\|transfer CONTRACT=… MAINNET_RPC_URL=… node scripts/prepare-upgrade.mjs` |
+| Verify on Etherscan           | `ETHERSCAN_API_KEY=… NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs` |
 | Addresses output (local)      | stdout + `deployments.local.json`                    |
-| Addresses output (mainnet)    | `deployments.mainnet.${tld}.json` + `.journal.jsonl` + `.attempts.log` (**deployer must commit JSON + journal**) |
+| Addresses output (mainnet)    | `deployments.mainnet.simplex.json` + `.journal.jsonl` + `.attempts.log` + `verification.mainnet.simplex.json` |
 | Frontend addresses (local)    | `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES` (JSON)            |
 | Frontend addresses (mainnet)  | `NEXT_PUBLIC_MAINNET_DEPLOYMENT_ADDRESSES` (JSON)    |
 | TLD select                    | `NEXT_PUBLIC_SIMPLEX_TLD` (`testing` or `simplex`)  |
@@ -57,38 +68,48 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
 
 ## Local Hardhat
 
-`./scripts/run-local.sh` runs the following in a single process:
+`./scripts/run-local.sh` refuses to start while port 8545, 3000 or 8097 is in use, then
+runs the following:
 
-1. `npx hardhat --network hardhat node` — starts Hardhat at `127.0.0.1:8545`
-   with chainId **1337**. The `--network hardhat` flag is required; without it,
-   `npx hardhat node` defaults to chainId 31337, which the frontend's
+1. `node scripts/serve-terms.mjs` — serves `test/fixtures/terms/*.md` at
+   `http://127.0.0.1:8097/`.
+2. `./node_modules/.bin/hardhat --network hardhat node`, from `ens-contracts/` — starts
+   Hardhat at `127.0.0.1:8545` with chainId **1337**. The `--network hardhat` flag is
+   required; without it, the node defaults to chainId 31337, which the frontend's
    `localhostWithEns` chain does not recognise.
-2. `node scripts/deploy-local.mjs` — deploys the wrapper-free stack for the TLD
-   selected by `SIMPLEX_TLD` (default `testing`):
-   - `ENSRegistry`, `BaseRegistrarImplementation` (v3)
-   - `DummyOracle` (fixed ETH/USD = $1) + the price oracle
-     (`SimplexPriceOracle` for `.simplex`, `ExponentialPremiumPriceOracle` for
-     `.testing`)
-   - `MockSMPXNFT`, with token #0 minted to the deployer (the NFT gate is on
-     for `.testing`, off for `.simplex`)
-   - `SimplexController` + ERC-1967 proxy (deployed **before** `PublicResolver`
-     so its address can be passed as `trustedETHController`)
-   - `SubnameRegistrar`, then `PublicResolver` (its `nameWrapper` slot =
-     `SubnameRegistrar`, `trustedETHController` = controller)
-   - `SimplexSponsor` → `controller.setSponsor(...)`
-   - `MetadataRenderer` → `baseRegistrar.setMetadataRenderer(...)`
-   - `UniversalResolver`, mock `Multicall3` (implements both `aggregate3` and
-     `tryAggregate`)
+3. `node scripts/deploy-local.mjs` — deploys the stack for the TLD selected by
+   `SIMPLEX_TLD` (default `testing`) from Hardhat account #0, in the v2 shape for both
+   TLDs, from the compiled artifacts:
+   - `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexController`,
+     `SubnameRegistrar`, `SimplexResolver`, `SimplexSponsor`, `SimplexNamePolicy` and
+     `UniversalResolver`, each behind a `TransparentUpgradeableProxy` whose `ProxyAdmin`
+     account #0 owns
+   - `DummyOracle` (fixed ETH/USD = $1) + the price oracle (`SimplexPriceOracle` for
+     `.simplex`, `ExponentialPremiumPriceOracle` with an all-zero curve for `.testing`)
+   - `MockSMPXNFT`, with token #0 minted to the deployer (the NFT gate is on for
+     `.testing`, off for `.simplex`)
+   - `controller.setSponsor(sponsor proxy)`
+   - `controller.setBeneficiary(account #0)` and `controller.setPublicSalesOpen(true)`,
+     so one key plays both roles and the payable path works
+   - `MetadataRenderer` → `baseRegistrar.setMetadataRenderer(...)`, and
+     `setMaxLabelLength(63)`
+   - `DummyGatewayProvider` for `UniversalResolver`, mock `Multicall3` (implements both
+     `aggregate3` and `tryAggregate`)
    - `eth-usd.data.eth` resolver record → `DummyOracle` (the frontend's
      `useEthPrice` resolves this ENS name on chain)
-   - Two reserved labels by default: `simplex`, `simplex-chat`
+   - Two reserved labels: `simplex`, `simplex-chat`
    - On `.simplex`, loopback links to `test/fixtures/terms/general-terms.md` and
-     `community-terms.md`, served on port 8097 by `scripts/serve-terms.mjs`,
-     and the sample community names `communityname`, `communityclaim`
+     `community-terms.md` on port 8097, and the sample community names
+     `communityname`, `communityclaim`
    - Addresses persisted to `deployments.local.json` and printed as a JSON line
      prefixed with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES=`.
-3. Starts the Next.js dev server with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES`,
-   `NEXT_PUBLIC_PROVIDER`, and `NEXT_PUBLIC_SIMPLEX_TLD` exported.
+4. `evm_setIntervalMining` with 5000 ms, so a commitment matures without other
+   transactions.
+5. `pnpm dev` in `testing-app/` or `simplex-app/`, with `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES`,
+   `NEXT_PUBLIC_CHAIN_NAME=localhost`, `NEXT_PUBLIC_PROVIDER` and `NEXT_PUBLIC_SIMPLEX_TLD`.
+
+`deploy-local.mjs` reads `RPC_URL` (default `http://127.0.0.1:8545`); the local stack
+omits `Root`.
 
 ### MetaMask setup
 
@@ -99,281 +120,707 @@ addresses file); its current implementation is `0x281ca41311c2aa808c917c4674639d
 
 ---
 
-## Mainnet
+## Mainnet: the `.simplex` v2 redeploy
 
-Two separate deployments — `.testing` (done) and `.simplex` (pending). Both go
-to Ethereum mainnet, driven by `scripts/deploy-mainnet.mjs`, which uses an
-**ephemeral-deployer / cold-owner** model plus a frugal gas strategy, a
-total-spend cap, and a journal-backed resume mechanism for partial failures.
+`scripts/deploy-mainnet.mjs` deploys `.simplex` only: the TLD is fixed in
+`scripts/stack.mjs`. One invocation is one run, selected by `RUN`.
 
-### Key model: ephemeral deployer, cold owner
+### Sequence
 
-`DEPLOYER_KEY` is **ephemeral** — it holds only gas, signs the deploy
-transactions, briefly owns every `Ownable` contract so the script can wire
-things up, and is handed off in two runs. `OWNER_ADDRESS`, the admin key, is
-required and must differ from the deploy key. The first run proposes it on the
-two `Ownable2Step` contracts, the `SimplexController` and the price oracle, and
-stops. Once the admin has submitted `acceptOwnership()` on both, the same command
-run again hands over the registrar and the registry root, `eth` and `data.eth`,
-which take effect at once. Until then the deployer EOA retains controller admin +
-UUPS-upgrade authority (this is the open item on the live `.testing` deploy).
+| # | Actor | Step | Tool |
+|---|---|---|---|
+| 1 | maintainers | the conditions version of the plan's D13 merged, tagged and mirrored to git.simplex.chat | git |
+| 2 | operator | `terms.simplex.json` set to its links and committed; v1 files renamed on the operator's checkout | git, `mv` |
+| 3 | deploy key | governance check | run 1 |
+| 4 | deploy key | implementations and proxies deployed and wired; governance check of the guardian Safe; beneficiary set | run 1 |
+| 5 | deploy key | read-back | run 1 |
+| 6 | deploy key | single-step transfers; controller and oracle proposed | run 1 |
+| 7 | deploy key | v1 retirement | run 1 |
+| 8 | guardian Safe | registrar allowance on the v2 sponsor | Safe |
+| 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch | Safe |
+| 10 | operator | handover read-back, without transactions | run 2 |
+| 11 | names service | switched to v2; the renamed v1 files, the v2 addresses file, the v2 journal and `verification.mainnet.simplex.json` committed to main together | git |
+| 12 | holders, names service | the two v1 names registered again | names service |
+| 13 | operator | other consumers switched; Etherscan verification | `verify-etherscan.mjs` |
+| 14 | operator | deploy key destroyed | — |
 
-### Pre-flight
+Steps 8 and 9 are independent and are taken in either order; both precede step 10.
 
-- **Chainlink ETH/USD feed**: `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`
-  (override with `ETHUSD_FEED`).
-- **SMPXNFT contract**: `0x3AF6D9Ee862376A8DFC0a78847Eb20A153557291`
-  (override with `SMPXNFT_ADDR`). The real contract is used directly (no mock).
-- **Ephemeral deployer**: a fresh EOA. The script tells you exactly how much ETH
-  to top it up with before sending any tx (see the preflight below).
-- The `simplex` branch on both the `ens-contracts` and `simplex-domains-app-v3` forks must
-  be audit-finalised — the `main...simplex` GitHub diff is the audit surface.
+```mermaid
+sequenceDiagram
+  participant M as maintainers
+  participant O as operator
+  participant D as deploy key
+  participant G as guardian Safe
+  participant A as admin Safe
+  participant N as names service
+  participant H as holders
+  M->>M: tag and mirror the conditions version
+  O->>O: terms.simplex.json, rename v1 files
+  D->>D: run 1: governance check, deploy, wire
+  D->>D: run 1: guardian Safe check, beneficiary, read-back
+  D->>D: run 1: transfers, proposals, v1 retirement
+  G->>G: setRegistrarAllowance on the v2 sponsor
+  A->>A: acceptOwnership x2, one batch
+  O->>O: run 2: read-back
+  N->>N: switch to v2, commit files
+  H->>N: register the two v1 names again
+  O->>O: other consumers, Etherscan, destroy deploy key
+```
+
+### Inputs
+
+Both runs read and validate the files below before any network access, and a failed
+input stops the run; the tag and the terms links are checked by run 1 only.
+
+**`governance.mainnet.json`**, the only source of governance addresses. Each entry has a
+`kind`; addresses must be EIP-55 checksummed. Required entries:
+
+| Entry | Kind | Fields |
+|---|---|---|
+| `adminSafe` | `Safe` | `address`, `threshold`, `owners` |
+| `guardianSafe` | `Safe` | `address`, `threshold`, `owners` |
+| `registrarWallet` | `EOA` | `address`, `allowance` (attoUSD, a decimal string), `placeholder` (optional) |
+
+A `TimelockController` entry, added at GOV8, has `address`, `codeHash`, `deployBlock`,
+`minDelay`, `proposers`, `executors` and `cancellers`.
+
+`scripts/governance-check.mjs` checks each entry against the chain:
+
+| Kind | Check |
+|---|---|
+| `Safe` | runtime code hash of SafeProxy 1.5.0 |
+| `Safe` | storage slot 0: the Safe 1.5.0 singleton `0xFf51A5898e281Db6DfC7855790607438dF2ca44b` |
+| `Safe` | `VERSION()` is `1.5.0` |
+| `Safe` | `getThreshold()` and `getOwners()` equal the entry's |
+| `Safe` | `getModulesPaginated(0x1, 10)` is empty |
+| `Safe` | guard slot is `0x0` |
+| `Safe` | fallback handler slot: `0x3EfCBb83A4A7AfcB4F68D501E2c2203a38be77f4` |
+| `Safe` | `nonce()` is at least 1, the proof that the Safe has executed a transaction |
+| `EOA` | no code at the address |
+| `EOA` | `placeholder` absent |
+| `TimelockController` | runtime code hash equals `codeHash` |
+| `TimelockController` | its `RoleGranted` logs from `deployBlock` include the grant of its admin role to itself |
+| `TimelockController` | `getMinDelay()` equals `minDelay` |
+| `TimelockController` | each listed proposer, executor and canceller holds its role |
+| `TimelockController` | among the accounts read (those of the entry, those its `RoleGranted` logs of the four roles name, the deploy key and `0x0`), the proposer, executor and canceller roles are held only by the accounts the entry lists for each, and the admin role only by the timelock itself |
+
+Run it alone with `MAINNET_RPC_URL=… node scripts/governance-check.mjs`, optionally followed
+by entry names (CI runs `adminSafe guardianSafe`); it requires chain id 1 and exits with 1 on
+any failure. It reads the deploy key from `verification.mainnet.simplex.json` when that file
+exists.
+
+The committed `registrarWallet` is a placeholder: address `0x…dEaD`, allowance
+`100000000000000000000000` ($100,000), and a `placeholder` text. Run 1 refuses it until
+the names service's wallet and allowance replace the entry.
+
+**ens-contracts at the tag `simplex-mainnet-v2`** (run 1 and `build-verification.mjs`).
+`HEAD` of `ens-contracts/` must be the commit the parent repository pins
+(`git ls-tree HEAD ens-contracts`), the tag must point at it, and `git status --porcelain`
+there must print nothing; the script then runs `npx hardhat compile` and stops if it fails:
+
+```sh
+git submodule update --init ens-contracts
+git -C ens-contracts fetch --tags
+git -C ens-contracts tag --points-at HEAD   # lists simplex-mainnet-v2
+```
+
+**`terms.simplex.json`**: `{ "generalTerms": link, "communityTerms": link }`, both
+required. Run 1 checks each link with `scripts/terms-check.mjs` before any transaction and
+stops on a failure:
+
+- the form `https://git.simplex.chat/simplex-chat/simplex-chat/raw/commit/<sha>/<path>.md#sha256=<hex>`
+- the commit is the target of a `general-terms-v*` (general) or `community-terms-v*`
+  (community) tag on both git.simplex.chat and github.com
+- both hosts serve the file as UTF-8 text of at most 256 KiB, with the same bytes, whose
+  sha256 equals the link's
+
+The committed file holds raw GitHub links, which fail this check: step 2 replaces them
+with the links of the tagged conditions version.
+
+**`reserved-names.simplex.csv`**, required: a `name,reason,category` header, then one
+label per row, with `category` one of `Internal`, `Trademark` or `Community` (only the
+category goes on chain) and RFC 4180 quoting where a reason holds a comma. The run stops
+on an empty list, a row without three fields, a dotted label, a label users cannot
+register (the dApp's `ALLOWED_LABEL_REGEX`: a-z, 0-9 and hyphens), an unknown category or
+a duplicate. `simplex` and `simplex-chat` are added as `Internal` when absent.
+
+**`community-names.simplex.csv`**, optional: a `name,community` header (only the name goes
+on chain) and the same label rule.
+
+**The renamed v1 files.** Step 2 renames, on the operator's checkout:
+
+```sh
+mv deployments.mainnet.simplex.json deployments.mainnet.simplex-v1.json
+mv deployments.mainnet.simplex.journal.jsonl deployments.mainnet.simplex-v1.journal.jsonl
+mv verification.mainnet.simplex.json verification.mainnet.simplex-v1.json
+mv deployments.mainnet.simplex.attempts.log deployments.mainnet.simplex-v1.attempts.log
+```
+
+Both runs stop while any of the first three is missing; run 1 retires v1 at the addresses
+of `deployments.mainnet.simplex-v1.json`. The attempts log is renamed on the operator's
+machine only. Run 1 reads `deployments.mainnet.simplex.attempts.log` to recover a step
+submitted but not journalled; a v1 entry under the same step name names a different call,
+and that stops the run.
+
+**The deploy key**: the v1 deploy key `0x38D19404644fe24EE7d638229a732CbE8275E333` (the
+plan's D9),
+the owner of the v1 contracts that run 1 retires. Run 1 takes the key as given; with
+another key, the v1 retirement reverts in the dry run on the fork, before any transaction
+on mainnet. The key needs ETH for the remaining ceiling the preflight prints.
+
+### Run 1
+
+```sh
+RUN=1 \
+MAINNET_RPC_URL=https://… \
+DEPLOYER_KEY=0x… \
+MAX_BASE_FEE_GWEI=0.078 \
+node scripts/deploy-mainnet.mjs
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RUN` | — | `1` |
+| `MAINNET_RPC_URL` | — | JSON-RPC URL, used by the fork and the real run |
+| `DEPLOYER_KEY` | — | the deploy key |
+| `MAX_BASE_FEE_GWEI` | — | per-gas cap; a transaction is sent only when the base fee is at most this |
+| `ABSOLUTE_MAX_BASE_FEE_GWEI` | 4 × `MAX_BASE_FEE_GWEI` | ceiling at which the stall bumps stop |
+| `BUMP_AFTER_HOURS` | `24` | stall time before a bump |
+| `BUMP_PCT` | `20` | bump, in percent of the cap |
+| `FORK_PORT` | `18545` | local port of the dry-run fork |
+| `CONFIRM` | — | `yes` skips the Y/N prompt; without a TTY and without it, the run refuses |
+
+```mermaid
+flowchart TD
+  I[inputs read and validated] --> T[ens-contracts at the pinned commit, tagged simplex-mainnet-v2, clean; compile]
+  T --> P{addresses file without journal?}
+  P -->|yes| S1[stop]
+  P -->|no| L[terms links checked]
+  L --> F[whole run 1 on a mainnet fork: gas per step]
+  F --> C[chain id 1; ETH/USD feed answers above zero]
+  C --> Y[preflight summary, Y/N]
+  Y --> G{governance check, every entry}
+  G -->|fails| S2[stop: nothing sent]
+  G -->|passes| W[deploy and wire: steps 1 to 15]
+  W --> GB{governance check of the guardian Safe}
+  GB -->|fails| S4[stop before setBeneficiary]
+  GB -->|passes| B[step 16: setBeneficiary]
+  B --> R{read-back of run 1}
+  R -->|fails| S3[stop before the handover and the retirement]
+  R -->|passes| H[handover: governance check before each single-step transfer to the admin Safe]
+  H --> V[v1 retirement]
+  V --> O[addresses and verification files written; Safe calls printed]
+```
+
+The preflight summary shows the strategy, the current base fee, the gas of the fork's dry
+run and its ceiling cost at the cap, the journal's state, and the deploy key's balance
+against the ceiling of the steps not yet journalled. The fork is stopped before the
+prompt.
+
+**Deployment and wiring**, in this order:
+
+1. `ENSRegistry` behind its proxy, `initialize(deploy key)`
+2. `BaseRegistrarImplementation(registry, namehash("simplex"))` behind its proxy,
+   `initialize(registry, namehash("simplex"), deploy key)`
+3. `ens.setSubnodeOwner(0x0, labelhash("simplex"), deploy key)`
+4. `SimplexPriceOracle(feed, 8, 5000, [])`
+5. `SimplexController()` behind its proxy,
+   `initialize(registrar, oracle, 60, 86400, registry, config, deploy key)`;
+   `baseRegistrar.addController(controller)`
+6. `SimplexNamePolicy(controller, registrar)` behind its proxy;
+   `baseRegistrar.addController(namePolicy)`; `controller.setNamePolicy(namePolicy)`
+7. `namePolicy.addReservedNames`, per category, 200 names per transaction
+8. `SubnameRegistrar(registry, registrar)` and
+   `SimplexResolver(registry, subnameRegistrar, controller, 0x0)`, each behind its proxy
+9. `subnameRegistrar.setResolver(resolver)`; `baseRegistrar.setSubnameHook(subnameRegistrar)`;
+   `controller.setDefaultResolver(resolver)`
+10. `SimplexSponsor(controller)` behind its proxy; `controller.setSponsor(sponsor)`
+11. `namePolicy.setGeneralTerms(link)`; `namePolicy.setCommunityTerms(link)`;
+    `namePolicy.addCommunityNames`, 100 names per transaction;
+    `baseRegistrar.setNamePolicy(namePolicy)`
+12. `DummyGatewayProvider()`; `UniversalResolver(deploy key, registry, gateway provider)`
+    behind its proxy
+13. `ens.setResolver(namehash("simplex"), resolver)`;
+    `ens.setSubnodeOwner(0x0, labelhash("simplex"), baseRegistrar)`
+14. `eth`, `data.eth` and `eth-usd.data.eth` to the deploy key, each with the resolver;
+    `resolver.setAddr(namehash("eth-usd.data.eth"), feed)`, for the frontend's `useEthPrice`
+15. `MetadataRenderer(".simplex")`; `baseRegistrar.setMetadataRenderer(renderer)`;
+    `baseRegistrar.setMaxLabelLength(63)`
+16. `controller.setBeneficiary(guardian Safe)`, after the governance check of the guardian
+    Safe passes
+
+Each proxy is created with `initialOwner` = the admin Safe, so its `ProxyAdmin`, the
+CREATE address of the proxy at nonce 1, belongs to the admin Safe from its creation. The
+proxies of the registry, the registrar and the controller are created with `initialize`
+calldata, the other five with empty calldata. The feed is the Chainlink
+ETH/USD aggregator `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`.
+
+**Read-back of run 1.** The handover waits for every check to pass:
+
+- the TLD node's owner, the controller and the name policy as registrar controllers,
+  `maxLabelLength`, the subname hook, the metadata renderer, the default resolver, the
+  beneficiary, the sponsor and its controller, both name-policy pointers, both terms links
+  and their hashes, the NFT gate off, `minCharLength` 6, public sales closed, the subname
+  registrar's resolver
+- every reserved label (a label released by `registerReserved` counts as handed out) and
+  every community name
+- a non-zero two-year price for a six-character name; the controller's oracle, the
+  oracle's feed and feed scale, its base price and each exception
+- `eth-usd.data.eth` resolving to the feed
+- for each of the eight proxies: the implementation's runtime code with its expected
+  immutables (table below), `_initialized` 255 on the registry, registrar and controller
+  implementations, the proxy's runtime code with its `ProxyAdmin`, the ERC-1967
+  implementation and admin slots, and the admin Safe as the `ProxyAdmin`'s owner
+- the registrar's `ens` and `baseNode`; the controller's `ens`, `tldNode`, `base`,
+  commitment ages and `tldSuffix`; the subname registrar's `ens` and `baseRegistrar`; the
+  universal resolver's registry; the registry resolver of the TLD node
+- the registrar's `ControllerAdded` events: the controller and the name policy only
+- while the deploy key still owns the registrar: the deploy key as owner of the registrar,
+  of the registry root, `eth`, `data.eth` and `eth-usd.data.eth`, of the controller and of
+  the oracle, with no pending owner; once the admin Safe owns the registrar, the handover
+  began after a passing read-back, and these checks are skipped
+
+The code of the `ENSRegistry`, `BaseRegistrarImplementation` and `SimplexController`
+implementations must equal the artifact's deployed bytecode as compiled. In the other five,
+each immutable must hold its value:
+
+| Implementation | Immutable | Value |
+|---|---|---|
+| `SimplexNamePolicy` | `controller` | the controller proxy |
+| `SimplexNamePolicy` | `registrar` | the registrar proxy |
+| `SimplexNamePolicy` | `_ens` | the registry proxy |
+| `SimplexNamePolicy` | `_tldNode` | `namehash("simplex")` |
+| `SimplexNamePolicy` | `_self` | the implementation's own address |
+| `SubnameRegistrar` | `ens` | the registry proxy |
+| `SubnameRegistrar` | `baseRegistrar` | the registrar proxy |
+| `SubnameRegistrar` | `_deployer` | the deploy key |
+| `SimplexResolver` | `ens` | the registry proxy |
+| `SimplexResolver` | `nameWrapper` | the subname registrar proxy |
+| `SimplexResolver` | `trustedETHController` | the controller proxy |
+| `SimplexResolver` | `trustedReverseRegistrar` | `0x0` |
+| `SimplexSponsor` | `controller` | the controller proxy |
+| `UniversalResolver` | `registry` | the registry proxy |
+| `UniversalResolver` | `batchGatewayProvider` | `DummyGatewayProvider` |
+| `UniversalResolver` | `unsafeCallGas` | `50000`, the `DEFAULT_UNSAFE_CALL_GAS` of `CCIPReader` |
+
+**Handover**, after the read-back passes. Before steps 1, 3, 4, 6 and 7, the single-step
+transfers to the admin Safe, run 1 repeats the governance check of the admin Safe and stops
+on a failure:
+
+1. `baseRegistrar.transferOwnership(admin Safe)`
+2. `ens.setOwner(namehash("eth-usd.data.eth"), 0x0)`
+3. `ens.setSubnodeOwner(namehash("eth"), labelhash("data"), admin Safe)`
+4. `ens.setSubnodeOwner(0x0, labelhash("eth"), admin Safe)`
+5. `Root(registry)` deployed
+6. `root.setController(admin Safe, true)`
+7. `root.transferOwnership(admin Safe)`
+8. `ens.setOwner(0x0, root)`
+9. `controller.transferOwnership(admin Safe)`, a proposal
+10. `oracle.transferOwnership(admin Safe)`, a proposal
+
+**v1 retirement**, with the addresses of `deployments.mainnet.simplex-v1.json`:
+
+1. `removeController(v1 controller)` on the v1 registrar
+2. `removeController(v1 name policy)` on the v1 registrar
+3. `transferOwnership(0x0)` on the v1 controller, which clears its pending owner
+4. `transferOwnership(0x0)` on the v1 oracle, which clears its pending owner
+
+From then on, registration and renewal on v1 revert.
+
+**Outputs.** Run 1 writes `deployments.mainnet.simplex.json` (the proxies, the immutable
+contracts and `Root`) and `verification.mainnet.simplex.json`, which records the deploy
+key, the immutable contracts and, for each upgradeable contract, its implementation with
+storage layout, immutables, functions and events (selector and signature), its proxy and
+its `ProxyAdmin`. Each entry records its constructor arguments, the `buildInfoId` of its
+artifact and the `ens-contracts` commit (`ensContractsCommit`). The file is written only
+when each implementation's code equals its artifact outside the immutables. Run 1 then
+prints the Safes' calls with their calldata.
 
 ### Gas strategy at a glance
 
 The script optimises for cost, not speed — it will happily take days when
-mainnet stays expensive. For each tx:
+mainnet stays expensive. For each transaction:
 
 1. **Priority fee is always 0.**
 2. **Cap**: `maxFeePerGas = MAX_BASE_FEE_GWEI` (e.g. `0.078`, picked from a
    base-fee distribution as a low percentile of recent blocks).
-3. **Submit policy**: poll `latest.baseFeePerGas` every ~12 s; submit only when
+3. **Estimate**: `eth_estimateGas` plus 10 %; a reverting estimate stops the run before
+   anything is sent.
+4. **Submit policy**: poll `latest.baseFeePerGas` every ~12 s; submit only when
    `base ≤ cap`.
-4. **Stall handling**: if a submitted tx hasn't mined within `BUMP_AFTER_HOURS`
-   (default 24 h), the cap multiplies by `BUMP_PCT%` (default +20 %) and the tx
-   is resubmitted at the same nonce. Every bump goes to the attempts log.
-5. **Upfront cost ceiling**: at startup the script spawns
-   `npx hardhat node --fork $MAINNET_RPC_URL` and runs the whole deploy against
-   the fork as a dry run. Captured gas × cap = worst-case spend; real cost is
-   usually lower.
-
-### Run
-
-Choose `MAX_BASE_FEE_GWEI` from a base-fee distribution (~5th percentile is a
-reasonable start), then:
-
-```sh
-DEPLOYER_KEY=0x…                    # fresh ephemeral EOA
-MAINNET_RPC_URL=https://…           # your RPC (used for fork + real)
-MAX_BASE_FEE_GWEI=0.078             # cap; a tx only lands when base ≤ this
-SIMPLEX_TLD=simplex                 # 'testing' is already deployed
-OWNER_ADDRESS=0x…                   # admin key (required, ≠ deployer)
-GUARDIAN_ADDRESS=0x…                # guardian key (required; may equal OWNER_ADDRESS)
-BUMP_AFTER_HOURS=24                 # stall threshold (optional)
-BUMP_PCT=20                         # bump on stall (optional)
-node scripts/deploy-mainnet.mjs
-```
-
-The script prints a preflight summary (strategy, current base fee, forked
-dry-run gas, deployer balance vs the remaining ceiling) and waits for `Y/N`.
-Pass `CONFIRM=yes` to skip the prompt. The dry run is read-only against mainnet
-(it executes on a local fork, torn down before the prompt).
-
-### What the deploy does
-
-1. Deploys the full wrapper-free stack: `ENSRegistry`, `BaseRegistrarImplementation`
-   (v3), the price oracle (`SimplexPriceOracle` for `.simplex`,
-   `ExponentialPremiumPriceOracle` for `.testing`),
-   `SimplexController` + UUPS proxy, `SimplexSponsor`, `SimplexNamePolicy` + UUPS
-   proxy, `SubnameRegistrar`, `PublicResolver`, `MetadataRenderer`,
-   `UniversalResolver`.
-2. Wires the controller and the name policy into the `BaseRegistrar` (both are
-   registrar controllers), points the controller at the policy
-   (`setNamePolicy`), wires the sponsor into the controller (`setSponsor`),
-   reserves every label in `reserved-names.<tld>.csv` plus `simplex` and
-   `simplex-chat` on the policy, in batches of 200, sets the metadata renderer,
-   caps `maxLabelLength` at 63, and registers `eth-usd.data.eth` → the Chainlink feed
-   so the frontend's `useEthPrice` resolves on chain. Sets both terms links
-   from `terms.<tld>.json`, lists the names in `community-names.<tld>.csv`,
-   and points the registrar at the policy (`setNamePolicy`).
-3. Makes the guardian the beneficiary, proposes `OWNER_ADDRESS` as owner of the
-   controller and the price oracle (`Ownable2Step`), reads the stack back, and
-   stops. Nothing irreversible has happened yet: a wrong proposal can be replaced.
-4. Run again after the admin has accepted both proposals (see
-   [Completing the ownership handover](#completing-the-ownership-handover)), it
-   checks both owners and only then hands over the registrar and the registry
-   root, `eth` and `data.eth`, after which the deployer can't reassign any TLD or
-   contract role. `eth-usd.data.eth` is left with owner zero rather than handed
-   over: the registry assigns a node to someone other than the caller only under
-   the root or a TLD, and the owner of `data.eth` can take it back. A second
-   read-back checks that the admin owns everything and nothing is pending.
-
-The deployer commits `reserved-names.simplex.csv`: a `name,reason,category`
-header, then one label per row, with `category` one of `Internal`, `Trademark`
-or `Community` (only the category goes on chain) and RFC 4180 quoting where a
-reason holds a comma. The script refuses to deploy `.simplex` without it, and
-stops on a duplicate, a dotted label, a label users cannot register (the dApp's
-`ALLOWED_LABEL_REGEX`: a-z, 0-9 and hyphens), or an unknown category.
-The read-back after the deploy checks every label.
-
-`terms.<tld>.json` is required: `{ "generalTerms": link, "communityTerms": link }`,
-each a link to one file at one commit on git.simplex.chat with the sha256 of its
-bytes, `https://git.simplex.chat/simplex-chat/simplex-chat/raw/commit/<sha>/<path>#sha256=<hex>`.
-Every registration accepts one of them, so the script exits when either is
-missing. Before any transaction it runs `scripts/terms-check.mjs` on both: the
-link's commit must be the target of a `general-terms-v*` or `community-terms-v*`
-tag on both hosts, and both hosts must serve the same bytes, matching the sha256.
-With `TERMS_UNCHECKED=yes` a failed check is printed and the link is deployed as
-a placeholder. The store service then refuses orders and the dApp shows the
-terms as unavailable, until the admin sets checked links. `terms.simplex.json`
-holds such placeholders.
-Community names are optional. `community-names.<tld>.csv` has a
-`name,community` header (only the name goes on chain) and the same label rule.
-The read-back checks both pointers, both links and their hashes, and every
-listed name.
+5. **Stall handling**: if a submitted transaction has not mined within `BUMP_AFTER_HOURS`
+   (default 24 h), the cap multiplies by `BUMP_PCT%` (default +20 %) and the transaction
+   is resubmitted at the same nonce. Every bump goes to the attempts log. A bump above
+   `ABSOLUTE_MAX_BASE_FEE_GWEI` stops the run; the pending transaction may still be mined,
+   and a resumed run adopts it.
+6. **Depth**: each step waits three confirmations before the next one depends on it, and a
+   receipt that a reorg removes returns the step to waiting.
+7. **Upfront cost ceiling**: at startup the script spawns
+   `npx hardhat node --network mainnetFork --port $FORK_PORT --hostname 127.0.0.1` in
+   `ens-contracts/`, with `MAINNET_RPC_URL` passed through the environment rather than
+   argv, and runs the whole of run 1 against the fork. Captured gas × cap = worst-case
+   spend; real cost is usually lower.
 
 ### Resume on interruption
 
-Re-run with the same env vars. The runner reads
-`deployments.mainnet.${tld}.journal.jsonl`, skips every step already recorded as
-mined, and continues from the next one. Steps are named by operation
-(`deploy:ENSRegistry`, `write:addReservedNames#3`), and each journal entry
-records a digest of the exact call, so a resume that would skip a different call
-stops instead. A step whose transaction was still pending when the run died is
-recovered from `deployments.mainnet.${tld}.attempts.log`, but only if that
-transaction is the same call from the same key. To start over, move the journal
-and the attempts log aside together.
+Re-run with the same environment. The runner reads
+`deployments.mainnet.simplex.journal.jsonl` and skips every step recorded as mined.
+Steps are named by operation (`deploy:ENSRegistry`, `write:addReservedNames#3`), and each
+journal entry records a digest of the exact call, so a resume that would skip a different
+call stops instead. A step whose transaction was still pending when the run died is
+recovered from `deployments.mainnet.simplex.attempts.log`, but only if that transaction is
+the same call from the same key. A journal with positional keys (`step:NNN`) is refused.
 
-### Commit the addresses file AND the journal
+A resumed run repeats the fork dry run of the whole of run 1, every governance check and
+the read-back of run 1, and its preflight shows the ceiling of the steps not yet
+journalled. To start over, move the journal and the attempts log aside together. An addresses file
+beside an empty or missing journal stops run 1: it marks a completed deployment whose
+journal is gone.
 
-When the script finishes it writes `deployments.mainnet.${tld}.json`. Two
-sidecar files travel with it:
+### The Safes' steps
 
-- `deployments.mainnet.${tld}.journal.jsonl` — one line per successful tx (hash,
-  address, gas, effective price, cost). **Commit this** — it's the paper trail
-  and the resume source.
-- `deployments.mainnet.${tld}.attempts.log` — every attempt with the reason it
-  didn't land. Verbose; gitignore unless you want it in the audit trail.
+Run 1 prints both calls with their calldata:
+
+| Safe | Target | Call |
+|---|---|---|
+| guardian Safe | `SimplexSponsor` | `setRegistrarAllowance(registrarWallet.address, registrarWallet.allowance)` |
+| admin Safe | controller proxy (`ETHRegistrarController`) | `acceptOwnership()` |
+| admin Safe | `SimplexPriceOracle` | `acceptOwnership()` |
+
+The admin Safe sends its two calls in one batch. Until it does, the deploy key can still
+redirect the controller and the oracle, so it is treated as hot.
+
+### Run 2
 
 ```sh
-git add deployments.mainnet.testing.json deployments.mainnet.testing.journal.jsonl
-git commit -m "deploy: SNRC .testing mainnet addresses + journal"
+RUN=2 MAINNET_RPC_URL=https://… node scripts/deploy-mainnet.mjs
 ```
 
-Without the addresses file committed, the dApp build, Etherscan verification,
-and upgrade/admin tooling have no way to reference the deployment.
+Run 2 is a read-back only, without a key. It reads `deployments.mainnet.simplex.json`,
+takes the deploy key from `verification.mainnet.simplex.json`, and exits with 1 on any
+failed check:
+
+| Read | Value |
+|---|---|
+| `owner()` of each of the eight `ProxyAdmin`s, at the admin slot of its proxy | admin Safe |
+| `controller.owner()` | admin Safe |
+| `controller.pendingOwner()` | `0x0` |
+| `controller.beneficiary()` | guardian Safe |
+| `sponsor.registrarAllowance(registrarWallet.address)` | `registrarWallet.allowance` |
+| `registrar.owner()` | admin Safe |
+| `oracle.owner()` | admin Safe |
+| `oracle.pendingOwner()` | `0x0` |
+| `ens.owner(0x0)` | `Root` |
+| `ens.owner(namehash("eth"))` | admin Safe |
+| `ens.owner(namehash("data.eth"))` | admin Safe |
+| `ens.owner(namehash("eth-usd.data.eth"))` | `0x0` |
+| `root.ens()` | the registry proxy |
+| `root.owner()` | admin Safe |
+| `root.controllers(admin Safe)` | `true` |
+| `root.locked(labelhash("simplex"))` | `false` |
+| v1 registrar `controllers(v1 controller)` | `false` |
+| v1 registrar `controllers(v1 name policy)` | `false` |
+| v1 controller `pendingOwner()` | `0x0` |
+| v1 oracle `pendingOwner()` | `0x0` |
+| each owner and pending owner above, and `ens.owner` of the root node, `eth` and `data.eth` | not the deploy key |
+
+### Commit the files at the switch
+
+At step 11, commit to main together:
+
+- `deployments.mainnet.simplex-v1.json`
+- `deployments.mainnet.simplex-v1.journal.jsonl`
+- `verification.mainnet.simplex-v1.json`
+- `deployments.mainnet.simplex.json`
+- `deployments.mainnet.simplex.journal.jsonl` — one line per mined transaction (hash,
+  address, gas, effective price, cost); the paper trail and the resume source
+- `verification.mainnet.simplex.json`
+
+The attempts log, every attempt with the reason it did not land, stays on the operator's
+machine. `.testing`'s addresses file and journal, `deployments.mainnet.testing.json` and
+`deployments.mainnet.testing.journal.jsonl`, are committed the same way. Without the
+addresses file committed, the dApp build, Etherscan verification and the upgrade tooling
+have no way to reference the deployment.
 
 Each on-chain deployment also **tags the git commit** it deploys (see
 `CLAUDE.md` → "tracking of deployed versions"; the live `.testing` deploy is
-tag `simplex-mainnet-testing-v3`).
+tag `simplex-mainnet-testing-v3`). For v2 the tag `simplex-mainnet-v2` precedes run 1,
+which refuses any commit other than the one the parent repository pins and the tag names.
+
+### Etherscan verification
+
+```sh
+ETHERSCAN_API_KEY=…   # v2 multi-chain key
+NETWORK=mainnet SIMPLEX_TLD=simplex node scripts/verify-etherscan.mjs
+```
+
+`NETWORK` defaults to `sepolia` and `SIMPLEX_TLD` to `testing`, so `.simplex` needs both.
+The entries of `verification.mainnet.simplex.json` are the eight implementations, the
+eight proxies, the eight `ProxyAdmin`s, `SimplexPriceOracle`, `DummyGatewayProvider`,
+`MetadataRenderer` and `Root`, and each upgrade candidate recorded later. The script reads
+the standard JSON input from `ens-contracts/artifacts/build-info`. It submits an entry
+only when the entry's `buildInfoId` equals that of the local artifact; any other entry is
+skipped, with its `buildInfoId` and `ensContractsCommit` printed, and a skip does not count
+as a failure. Run it once from a compiled checkout of each recorded commit: the tag
+`simplex-mainnet-v2` for run 1, and the `ensContractsCommit` of an upgrade candidate's
+entry.
+
+`scripts/build-verification.mjs` rebuilds the file when run 1 did not write it:
+
+```sh
+MAINNET_RPC_URL=https://… DEPLOYER=0x… node scripts/build-verification.mjs
+```
+
+It requires `ens-contracts/` at the pinned commit with the tag `simplex-mainnet-v2` and
+compiles it, as run 1 does. Without `DEPLOYER`, it takes the sender of the journal's
+first transaction. It refuses:
+
+- while `verification.mainnet.simplex.json` exists
+- when a proxy's implementation slot holds an implementation other than the one the
+  journal records for run 1
+- when an implementation's code differs from its artifact outside the immutables
+
+### Restore v1
+
+Until step 11, the deploy key restores v1 with four calls, at the addresses of
+`deployments.mainnet.simplex-v1.json`:
+
+1. `addController(v1 controller)` on the v1 registrar
+2. `addController(v1 name policy)` on the v1 registrar
+3. `transferOwnership(admin Safe)` on the v1 controller
+4. `transferOwnership(admin Safe)` on the v1 oracle
+
+They are sent by hand; the rehearsal checks that they return v1 to its state before the
+retirement.
+
+```mermaid
+sequenceDiagram
+  participant D as deploy key
+  participant R as v1 registrar
+  participant C as v1 controller
+  participant O as v1 oracle
+  D->>R: addController(v1 controller)
+  D->>R: addController(v1 name policy)
+  D->>C: transferOwnership(admin Safe)
+  D->>O: transferOwnership(admin Safe)
+```
+
+The deploy key is destroyed at step 14, after the switch.
+
+### Rehearsal on a mainnet fork
+
+```sh
+MAINNET_RPC_URL=https://… node scripts/rehearse-mainnet.mjs
+```
+
+The rehearsal needs the inputs of step 2, the renamed v1 files included, and compiles
+`ens-contracts/` at its current commit; it sends its transactions to the fork only. It
+spawns the fork on port 18545, generates a fresh deploy key, gives it the v1 roles the v1
+deploy key holds on mainnet, and impersonates the Safes. It uses the registrar wallet of
+`governance.mainnet.json`, placeholder or not. In order, it checks:
+
+```mermaid
+flowchart TD
+  A[admin Safe entry with threshold 3: run 1 stops on the governance check, nothing sent] --> B
+  B[a ProxyAdmin owner other than the admin Safe: run 1 stops on the read-back, before the handover and the retirement] --> C
+  C[admin Safe threshold changed to 3 on chain after the wiring, then after handover step 2: run 1 stops before handover step 1, then before step 3; nothing sent after the change] --> C2
+  C2[registrar ownership transferred to a third account after the wiring: run 1 stops on the read-back; nothing sent after the change] --> D
+  D[run 1 stopped after each of the 10 handover steps and resumed: each step sent once; the journal holds the handover and the v1 retirement in their order] --> E
+  E[the Safes' steps; run 2 passes] --> V
+  V[verification file built: its constructor arguments equal the creation inputs of the journalled deployments] --> F
+  F[prepare-upgrade: a changed trustedETHController refused unless named in INTENDED] --> G
+  G[an identical rebuild of each of the eight accepted and upgraded; run 2 passes again] --> G2
+  G2[a controller candidate with _initialized 1 refused] --> H
+  H[upgrade data: a missing function and an unguarded candidate refused] --> I
+  I[freeze and transfer target each contract's ProxyAdmin; a proxy address as CONTRACT refused; the resolver through an addresses file with swapped keys refused] --> J
+  J[the restore returns v1 to its state before the retirement]
+```
+
+The fork reads mainnet state at the block it started from. On a public RPC that serves only
+recent state, such as CI's `https://ethereum-rpc.publicnode.com`, that block stays readable
+for about 13 minutes, and the whole rehearsal must end within that window.
+
+CI (`.github/workflows/deployment-scripts.yml`) runs on each push: the script tests
+(`node --test scripts/governance-check.test.mjs scripts/prepare-upgrade.test.mjs`),
+`scripts/journal-check.mjs`, the governance check of `adminSafe guardianSafe`, both local
+deployments, the renaming of the v1 files and the rehearsal.
+
+---
+
+## Upgrades, freezes and transfers of upgrade authority
+
+`scripts/prepare-upgrade.mjs` prepares one Safe transaction for one `.simplex` contract. It
+prints the call and its calldata; the `ProxyAdmin`'s owner submits them to the
+`ProxyAdmin`, not to the proxy.
+
+| Variable | Actions | Meaning |
+|---|---|---|
+| `ACTION` | all | `upgrade`, `freeze` or `transfer` |
+| `MAINNET_RPC_URL` | all | JSON-RPC URL; chain id 1 is required |
+| `CONTRACT` | all | `ENSRegistry`, `BaseRegistrarImplementation`, `SimplexController`, `SimplexNamePolicy`, `SubnameRegistrar`, `SimplexResolver`, `SimplexSponsor` or `UniversalResolver` |
+| `DEPLOYER_KEY` | `upgrade` | the key that deploys the candidate |
+| `MAX_BASE_FEE_GWEI` | `upgrade` | per-gas cap of the candidate's deployment |
+| `INTENDED` | `upgrade` | comma-separated: names of immutables whose change is intended, and signatures of functions and events of the current implementation whose removal is intended, such as `setSponsor(address)` |
+| `CTOR_ARGS` | `upgrade` | JSON array of constructor arguments; default: those of run 1, with the address of `DEPLOYER_KEY` in place of the deploy key |
+| `DATA` | `upgrade` | signature of the candidate's function called with the upgrade, such as `migrate(uint256)` |
+| `DATA_ARGS` | `upgrade` | JSON array of that function's arguments; default `[]` |
+| `CONFIRM` | `upgrade` | `yes` skips the Y/N prompt before the candidate's deployment |
+| `NEXT` | `transfer` | name of a `TimelockController` entry of `governance.mainnet.json` |
+
+Every action reads `deployments.mainnet.simplex.json` and
+`verification.mainnet.simplex.json`, takes the `ProxyAdmin` from the proxy's ERC-1967
+admin slot, prints the proxy's implementation slot, and refuses:
+
+- a `CONTRACT` outside the eight names
+- an admin slot other than the CREATE address of the proxy at nonce 1
+- an implementation slot holding an address that `verification.mainnet.simplex.json`
+  records under another artifact than the `CONTRACT`'s, or leaves unrecorded
+- a renounced `ProxyAdmin`
+
+A freeze or a transfer is thus prepared only for the `ProxyAdmin` of a proxy whose
+implementation is recorded for the named contract.
+
+**`ACTION=upgrade`** deploys a candidate implementation from the compiled artifact and
+prints `upgradeAndCall(proxy, candidate, data)`:
+
+```sh
+ACTION=upgrade CONTRACT=SimplexController \
+MAINNET_RPC_URL=https://… DEPLOYER_KEY=0x… MAX_BASE_FEE_GWEI=… \
+node scripts/prepare-upgrade.mjs
+```
+
+```mermaid
+flowchart TD
+  S[ens-contracts HEAD tagged and clean; compile] --> A{checks of the proxy and of the current implementation's entry}
+  A -->|any fails| X0[refused before deployment]
+  A -->|pass| L{checks of the artifact}
+  L -->|any fails| X1[refused before deployment]
+  L -->|pass| Y[Y/N prompt]
+  Y --> D[candidate deployed; journal and attempts log of upgrades]
+  D --> K{checks of the deployed code}
+  K -->|any fails| X2[refused]
+  K -->|pass| M[simulated upgradeAndCall from the ProxyAdmin owner]
+  M -->|reverts| X3[refused]
+  M -->|succeeds| W[candidate entry added to verification.mainnet.simplex.json; Safe call printed]
+```
+
+Before the deployment it refuses:
+
+- `ens-contracts/` at a commit that no tag names, or with changes outside it
+- an entry of the current implementation that records no storage layout, immutables,
+  functions or events
+- a storage layout in which a variable of the current implementation is gone, moved, or
+  changed in type, struct members or stored enum members (an appended enum member is
+  accepted)
+- a new variable placed inside the current layout
+- a trailing `__gap` that no longer ends at the same slot
+- a `fallback` or `receive` function, or the selectors `0x3659cfe6`, `0x4f1ef286` and
+  `0x52d1902d`
+- bytecode that contains the ERC-1967 implementation or admin slot
+- an immutable of the current implementation that the candidate lacks, unless named in
+  `INTENDED`
+- a function or event of the current implementation whose selector the candidate lacks,
+  unless its signature is named in `INTENDED`
+- a name in `INTENDED` that is neither an immutable of either implementation nor the
+  signature of a function or event of the current implementation
+- constructor arguments that do not encode, or that set the constructor input
+  `proxyAdmin` to an address other than the proxy's `ProxyAdmin`; when the arguments are
+  fewer than the constructor takes, the `ProxyAdmin` is inserted at the position of
+  `proxyAdmin`
+- a `DATA` function the candidate lacks, `DATA_ARGS` that do not encode, and any `DATA`
+  for a candidate without a `_proxyAdmin` immutable
+
+After the deployment it refuses:
+
+- an immutable whose value differs from the expected one:
+  - `_self` of the name policy: the candidate's own address
+  - `_deployer` of the subname registrar: the deploying key
+  - `_proxyAdmin`: the proxy's `ProxyAdmin`, also when named in `INTENDED`
+  - any other name in `INTENDED`: any value, printed with its current and its new value
+  - every other immutable: the current implementation's value
+- runtime code that differs from the artifact outside its immutables
+- `_initialized` other than 255 on the registry, registrar or controller
+- an `upgradeAndCall` whose simulation from the `ProxyAdmin`'s owner reverts
+
+An accepted candidate is printed with each intended change of an immutable and each
+intended removal of a function or event. Its entry records its constructor arguments,
+storage layout, immutables, functions and events, `buildInfoId` and `ensContractsCommit`.
+Commit the verification file and verify the candidate on Etherscan before the upgrade. The
+candidate's deployment is journalled in `deployments.mainnet.simplex.upgrades.journal.jsonl`
+and `deployments.mainnet.simplex.upgrades.attempts.log`, with the default bump rule.
+
+**`ACTION=freeze`** prints `renounceOwnership()` for the contract's `ProxyAdmin`:
+
+```sh
+ACTION=freeze CONTRACT=SubnameRegistrar MAINNET_RPC_URL=https://… node scripts/prepare-upgrade.mjs
+```
+
+**`ACTION=transfer`** prints `transferOwnership(next)` for the contract's `ProxyAdmin`:
+
+```sh
+ACTION=transfer CONTRACT=ENSRegistry NEXT=<timelock entry> MAINNET_RPC_URL=https://… node scripts/prepare-upgrade.mjs
+```
+
+It refuses a `NEXT` that names no `TimelockController` entry, and a timelock that fails
+its governance check, with the deploy key of `verification.mainnet.simplex.json`. The
+check also fails when a proposer, executor, canceller or admin role is held by an account
+the entry does not list for it.
+
+`ProxyAdmin` of each contract, per action:
+
+```mermaid
+stateDiagram-v2
+  [*] --> Owned: proxy created, owner admin Safe
+  Owned --> Owned: ACTION=upgrade, upgradeAndCall
+  Owned --> Owned: ACTION=transfer, transferOwnership(timelock)
+  Owned --> Renounced: ACTION=freeze, renounceOwnership()
+  Renounced --> [*]
+```
+
+### `.testing` controller (UUPS)
+
+The `.testing` controller is upgraded by its owner with `upgradeTo(newImpl)` (or
+`upgradeToAndCall`) on its proxy. A fix is built from the tag
+`simplex-mainnet-testing-v3`, and its implementation is deployed by hand. **Every upgrade
+must preserve storage layout** — see [`../ens-contracts/docs/upgrades.md`](../ens-contracts/docs/upgrades.md)
+for the `__gap` / append-only invariants and the pre-upgrade checklist.
 
 ---
 
 ## Post-deploy operations
 
-All of these are `onlyOwner` calls on the `SimplexController` proxy (the admin
-once the handover is complete; the deployer EOA until then).
-
-### Completing the ownership handover
-
-From a wallet controlling `OWNER_ADDRESS`, submit `acceptOwnership()` at the
-controller proxy (stored as `ETHRegistrarController` in the addresses file) and
-at the price oracle (`SimplexPriceOracle`; `.testing`'s oracle has no owner).
-Then run `deploy-mainnet.mjs` again with the same env vars: it reads both owners
-and makes the single-step handovers only if both are `OWNER_ADDRESS`, so the
-admin has proven it can sign before anything irreversible is sent.
-
-Confirm after the second run:
-
-```sh
-cast call <PROXY> "owner()(address)" --rpc-url $MAINNET_RPC_URL
-# → OWNER_ADDRESS
-cast call <PROXY> "pendingOwner()(address)" --rpc-url $MAINNET_RPC_URL
-# → 0x0000000000000000000000000000000000000000
-```
-
-If the first run proposed the wrong address, nothing irreversible was sent, but
-re-running with a corrected `OWNER_ADDRESS` stops on the journal's call digest.
-Propose the right address by hand (`transferOwnership` from the deploy key on
-both contracts) and, once it has accepted, make the single-step handovers by hand
-in the order the script uses.
-
-Until the admin accepts, the ephemeral deployer EOA still has admin — discard
-the deployer key only after the second run's read-back passes. **On the live `.testing`
-deploy this step has not yet run**, so the deployer EOA still holds admin +
-UUPS-upgrade authority (security review finding H1).
-
-### Moving the registry root into `Root`
-
-After the second run `OWNER_ADDRESS` owns the registry root. On `.simplex` it moves
-into ENS's `Root` (`ens-contracts/contracts/root/Root.sol`, unchanged from
-upstream) on the same day, so that `root.lock(labelhash("simplex"))` can end
-the root's power over `simplex` at GOV9 (launch-to-freeze plan A2 and A7):
-
-1. Any key deploys `Root(<ENSRegistry>)` and calls
-   `transferOwnership(OWNER_ADDRESS)`.
-2. `OWNER_ADDRESS` calls `root.setController(OWNER_ADDRESS, true)`.
-3. `OWNER_ADDRESS` calls `ENSRegistry.setOwner(0x0, root)`. `Root` has no call
-   that moves the registry root out again.
-
-Confirm: `ENSRegistry.owner(0x0)` is `Root`, `root.owner()` is `OWNER_ADDRESS`,
-`root.controllers(OWNER_ADDRESS)` is true and `root.locked(labelhash("simplex"))`
-is false. Until the lock, `root.setSubnodeOwner(labelhash("simplex"), newRegistrar)`
-from `OWNER_ADDRESS` is the redeploy path.
-
-### Source verification on Etherscan
-
-`deploy-mainnet.mjs` writes `verification.mainnet.${tld}.json` at the end of a
-fresh deploy, so no extra build step is needed:
-
-```sh
-ETHERSCAN_API_KEY=…   # v2 multi-chain key
-NETWORK=mainnet SIMPLEX_TLD=testing node scripts/verify-etherscan.mjs
-```
-
-For a deploy that pre-dates the auto-write, run `scripts/build-verification.mjs`
-once to reconstruct the file first.
+Owner calls go to the contract named; on `.simplex` the owner is the admin Safe after
+run 1's handover and the admin Safe's acceptance.
 
 ### Changing prices
 
 On `.simplex` this is a plain owner call. `SimplexPriceOracle.setPrices(base,
-rungs)` replaces the whole curve atomically, with no deployment and no
-`setPriceOracle`. `base` is attoUSD per year for every length above the tallest
-rung; each rung is `(maxLength, priceUSDPerYear)` and covers every length up to
-`maxLength`, so lengths between two rungs need no entry of their own:
+exceptions)` replaces the whole price list atomically, with no deployment and no
+`setPriceOracle`. `base` is US cents per year for every length without an exception;
+each exception is `(labelLength, priceCentsPerYear)` and applies to labels of exactly that
+length:
 
-| length | per year | rung |
+| length | per year | source |
 |---|---|---|
 | 6+ | $50 | base price |
 
-That is `setPrices(50e18, [])`: names shorter than six characters cannot be
-registered, so the launch curve has no rungs. Rungs go in ascending length order with
-non-increasing prices, each `maxLength` in 1..64, and the base must not exceed the
-lowest rung; the setter reverts otherwise, so no length can ever be cheaper than a
-longer one. A free TLD is `setPrices(0, [])`. `setUsdOracle` moves the Chainlink
-feed. The oracle has its own `Ownable2Step` owner, handed over separately from the
-controller's.
+That is `setPrices(5000, [])`: names shorter than six characters cannot be registered, so
+the launch list has no exceptions. The setter reverts for an exception length outside 1
+to 64, a zero exception price and a duplicate length. A free TLD is `setPrices(0, [])`.
+`setUsdOracle(feed, decimals)` moves the Chainlink feed; the scale is explicit, since the
+interface has no `decimals()` to read. Lapsed names carry no premium. The oracle has its
+own `Ownable2Step` owner, handed over separately from the controller's.
 
-`setPremium(startPremium, totalDays)` retunes the Dutch auction on lapsed names.
-It takes the starting premium in attoUSD and the number of days it takes to decay
-to nothing, so $1,024 over 10 days is `setPremium(1024e18, 10)`, giving
-`endValue = 1024e18 >> 10 = 1e18`. The premium is charged on top of the rent from
-the moment the name becomes registrable (its expiry plus the registrar's 90-day
-grace period) and halves every day, with `endValue` subtracted throughout so the
-curve lands exactly on zero at `totalDays` rather than stepping off a cliff:
-
-| days past grace | premium |
-|---|---|
-| 0 | $1,023 |
-| 1 | $511 |
-| 2 | $255 |
-| 5 | $31 |
-| 9 | $1 |
-| 10 and after | $0 |
-
-ENS's mainnet auction is `setPremium(100000000e18, 21)`, which is what `.testing`
-inherited. `setPremium(x, 0)` makes `endValue` equal `startPremium`, zeroing the
-premium at every elapsed time, and is how the auction is switched off.
-
-`.testing` predates this and runs the vendored `StablePriceOracle`, whose prices
-are `immutable`. Changing them there means deploying a fresh oracle pointed at the
-mainnet Chainlink feed (`0x5f4eC3Df…`) with the desired `PRICES` — **six**
-attoUSD/sec rates for label lengths 1/2/3/4/5/6+ — and submitting
-`SimplexController.setPriceOracle(<new oracle>)`. A **five**-entry array is still
-accepted and keeps the old behaviour, where `price5Letter` applies to every name of
-five characters or more, so 5 and 6+ are priced alike; pass six entries to split
-them. Deploying a `SimplexPriceOracle` as the replacement is the better move, since
-every later change is then a call.
+`.testing` predates this and runs the vendored `ExponentialPremiumPriceOracle`, a
+`StablePriceOracle` whose prices, feed and auction parameters are `immutable`. Changing
+them there means deploying a fresh oracle pointed at the mainnet Chainlink feed
+(`0x5f4eC3Df…`) with the desired `PRICES` — **six** attoUSD/sec rates for label lengths
+1/2/3/4/5/6+ — and submitting `SimplexController.setPriceOracle(<new oracle>)`. A
+**five**-entry array is still accepted and keeps the old behaviour, where `price5Letter`
+applies to every name of five characters or more, so 5 and 6+ are priced alike; pass six
+entries to split them. Deploying a `SimplexPriceOracle` as the replacement is the better
+move, since every later change is then a call.
 
 The oracle must implement `IPriceOracleUSD`, i.e. `priceUSD()` alongside
 `price()`. `price()` converts to wei through the Chainlink feed for the payable
@@ -381,10 +828,9 @@ path; `priceUSD()` returns the same quote in attoUSD before conversion, and is
 what the registrar allowance is denominated and deducted in. That is why the
 sponsored path keeps working when the feed does not.
 
-There is **no** `freezePriceOracle`. Pricing must stay changeable: the feed
-address is `immutable` inside the oracle, so a frozen oracle whose feed was
-retired would end registration and renewal permanently, with no recovery on any
-key. `setPriceOracle` deliberately survives `freeze()`.
+`setPriceOracle` survives every freeze: a defective oracle is repaired only by replacing
+it, and on `.testing` a retired feed as well, since the feed is `immutable` inside that
+oracle.
 
 > ⚠ The helper `scripts/deploy-oracle.mjs` is currently **Sepolia-wired** — it
 > reads `SEPOLIA_RPC_URL` and defaults to the Sepolia ETH/USD feed. Generalise it
@@ -437,21 +883,20 @@ key. `setPriceOracle` deliberately survives `freeze()`.
 - `setDefaultResolver(address)` — the resolver `registerReserved` points names at.
 - `setPublicSalesOpen(bool)` — owner **or beneficiary**; gates the payable
   `register()` only. The credited path, `registerReserved` and both renew paths
-  are exempt, so pausing never blocks the app-store flow or a renewal. Two-way
-  until `freeze()`, then sealed in its current position.
+  are exempt, so pausing never blocks the app-store flow or a renewal. Two-way, and
+  it survives every freeze unless the controller's last upgrade adds a seal.
 - `SimplexSponsor.setRegistrarAllowance(address,uint256)` — **the controller's beneficiary only**. The registrar's
   spending limit in attoUSD; a sponsored registration or renewal deducts the
   name's own list price. Replaces rather than adds, so zeroing it is a
   one-transaction kill switch for a compromised registrar.
-- `setBeneficiary(address)` — owner while unset, beneficiary thereafter. Set it
-  **before** transferring ownership, or the deploy key controls revenue.
-- `setSponsor(address)` — owner-only, refused after `freeze()`. Sets the
-  `SimplexSponsor`, the only caller of `registerSponsored` / `renewSponsored`; the
-  deploy scripts set it.
-- `freeze()` — owner-only, one-way. Makes the implementation, the name policy's
-  implementation and the sponsor permanent and seals the sales switch. Refuses
-  while sales are closed or while no sponsor is set. There is no `setTreasury`;
-  `withdraw()` is permissionless and pays `beneficiary`.
+- `setBeneficiary(address)` — owner while unset, beneficiary thereafter. Run 1 sets it
+  **before** any transfer of ownership. `withdraw()` is permissionless and pays
+  `beneficiary`.
+- `setSponsor(address)` — owner-only; it survives every freeze unless the controller's
+  last upgrade adds a seal. Sets the `SimplexSponsor`, the only caller of
+  `registerSponsored` / `renewSponsored`; run 1 sets it. A sponsor is replaced in this
+  order: the guardian funds the new sponsor; the names service accepts both sponsors; the
+  owner calls `setSponsor`; the names service drops the old sponsor.
 - `SimplexNamePolicy` reads its keys from the controller: `owner()` and
   `beneficiary()`.
   - `addCommunityNames(string[])` — owner **or beneficiary**. Skips, with
@@ -466,7 +911,7 @@ key. `setPriceOracle` deliberately survives `freeze()`.
     waiting for the git.simplex.chat mirror, running `scripts/terms-check.mjs`,
     and only then calling the setter through the timelock.
   - `setNamePolicy(address)` on the controller and on the registrar —
-    owner-only, and they survive `freeze()`. Each reverts unless the address is
+    owner-only, and they survive every freeze. Each reverts unless the address is
     a contract whose `controller()` (or `registrar()`) returns the contract
     being set; the registrar's also accepts zero, which turns the transfer check
     off, while the controller's refuses it, so the reserved list always applies.
@@ -476,22 +921,21 @@ key. `setPriceOracle` deliberately survives `freeze()`.
     A new policy contract starts empty: reserve names on it before pointing the
     controller at it. It also cannot list a held name as a community name until
     the name is free again.
-  - `upgradeTo(address)` on the policy proxy (UUPS) — the controller's owner,
-    until the controller is frozen. Keeps both lists, the acceptances and the
-    nonces. The new implementation must be built for the same controller and
-    registrar, or the upgrade reverts `ImplementationMismatch`.
+  - An upgrade of the policy through its `ProxyAdmin` keeps both lists, the acceptances
+    and the nonces. `prepare-upgrade.mjs` refuses a candidate whose `controller` or
+    `registrar` immutable differs, unless named in `INTENDED`.
 
 ### Registering a registrar service
 
-There is no separate registration step: any address with a non-zero allowance is
-a registrar, and zero means it is not one. From the guardian key:
+The allowance itself makes an address a registrar: any address with a non-zero
+allowance is one, and zero means it is not. From the guardian Safe:
 
 ```
 sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 100000000000000000000000)  // $100,000
 ```
 
 The hot wallet also needs its own ETH for gas — the allowance authorises, it does
-not pay. Kill switch, same key, no delay:
+not pay. Kill switch, same Safe, no delay:
 `sponsor.setRegistrarAllowance(0xREGISTRAR_HOT_WALLET, 0)`. The registrar calls
 `sponsor.registerWithCredit(registration, nonce, deadline, sig)`, where `sig` is
 the owner's EIP-712 `RegisterName` signature (domain `SimplexSponsor`) over the
@@ -499,19 +943,6 @@ owner's current `sponsor.nonces(owner)`, unless the registrar registers to itsel
 The registrar refuses a client's registration whose owner is the registrar's own
 address: no signature is checked then, so the client would choose the name and
 records the registrar holds.
-
-### Upgrading the controller (UUPS)
-
-Deploy a fresh implementation, then have the owner submit `upgradeTo(newImpl)`
-(or `upgradeToAndCall`) on the proxy. This is possible only until `freeze()`,
-which makes `_authorizeUpgrade` revert `Frozen` permanently. **Every upgrade must
-preserve storage layout** — see [`../ens-contracts/docs/upgrades.md`](../ens-contracts/docs/upgrades.md)
-for the `__gap` / append-only invariants and the pre-upgrade checklist.
-
-> ⚠ `scripts/deploy-controller-impl.mjs` (which records the new impl in
-> `impls.${network}.json`) is currently **Sepolia-wired** (reads
-> `SEPOLIA_RPC_URL`); generalise it for mainnet or deploy the implementation
-> directly.
 
 ---
 
@@ -579,21 +1010,25 @@ are deployed.
 | `NEXT_PUBLIC_SIMPLEX_TLD`                   | `testing` or `simplex`                           |
 | `NEXT_PUBLIC_IPFS`                          | `1` for static-export-friendly (hash) routing    |
 
-## Deploy-time env vars
+## Script env vars
 
-| Variable            | Meaning                                             |
-|---------------------|-----------------------------------------------------|
-| `DEPLOYER_KEY`      | Ephemeral hot key (gas only)                         |
-| `MAINNET_RPC_URL`   | JSON-RPC URL (used for the fork dry-run + real send) |
-| `MAX_BASE_FEE_GWEI` | Per-gas cap; a tx only lands when base ≤ this        |
-| `SIMPLEX_TLD`       | `testing` (default) or `simplex`                     |
-| `OWNER_ADDRESS`     | Admin key; required, must differ from the deployer   |
-| `GUARDIAN_ADDRESS`  | Guardian key (beneficiary); required, may equal `OWNER_ADDRESS` |
-| `ETHUSD_FEED`       | Override the Chainlink ETH/USD feed                  |
-| `SMPXNFT_ADDR`      | Override the SMPXNFT gate contract                   |
-| `ETHERSCAN_API_KEY` | Etherscan v2 multi-chain key (verify script)         |
-| `BUMP_AFTER_HOURS` / `BUMP_PCT` / `FORK_PORT` / `CONFIRM` | Gas-strategy tuning (see the script header) |
-| `TERMS_UNCHECKED`   | `yes` deploys terms links that fail `terms-check.mjs`, as placeholders |
+| Variable | Read by | Meaning |
+|---|---|---|
+| `RUN` | `deploy-mainnet.mjs` | `1` or `2` |
+| `MAINNET_RPC_URL` | `deploy-mainnet.mjs`, `governance-check.mjs`, `prepare-upgrade.mjs`, `rehearse-mainnet.mjs`, `build-verification.mjs` | JSON-RPC URL; chain id 1 is required by each script but the rehearsal, which forks it |
+| `DEPLOYER_KEY` | `deploy-mainnet.mjs` (run 1), `prepare-upgrade.mjs` (`upgrade`) | key that signs |
+| `MAX_BASE_FEE_GWEI` | `deploy-mainnet.mjs` (run 1), `prepare-upgrade.mjs` (`upgrade`) | per-gas cap |
+| `ABSOLUTE_MAX_BASE_FEE_GWEI` | `deploy-mainnet.mjs` (run 1) | ceiling of the stall bumps; default 4 × cap |
+| `BUMP_AFTER_HOURS` / `BUMP_PCT` | `deploy-mainnet.mjs` (run 1) | stall rule; defaults 24 and 20 |
+| `FORK_PORT` | `deploy-mainnet.mjs` (run 1) | dry-run fork port; default 18545 |
+| `CONFIRM` | `deploy-mainnet.mjs` (run 1), `prepare-upgrade.mjs` (`upgrade`) | `yes` skips the Y/N prompt |
+| `ACTION`, `CONTRACT`, `INTENDED`, `CTOR_ARGS`, `DATA`, `DATA_ARGS`, `NEXT` | `prepare-upgrade.mjs` | see [Upgrades, freezes and transfers](#upgrades-freezes-and-transfers-of-upgrade-authority) |
+| `DEPLOYER` | `build-verification.mjs` | deploy key's address; default: the journal's first sender |
+| `ETHERSCAN_API_KEY` | `verify-etherscan.mjs` | Etherscan v2 multi-chain key |
+| `NETWORK` / `SIMPLEX_TLD` | `verify-etherscan.mjs` | `mainnet` / `simplex`; defaults `sepolia` / `testing` |
+| `ETHERSCAN_CHAIN_ID` | `verify-etherscan.mjs` | override of the chain id derived from `NETWORK` |
+| `RPC_URL` | `deploy-local.mjs` | default `http://127.0.0.1:8545` |
+| `SIMPLEX_TLD` | `deploy-local.mjs`, `run-local.sh` | `testing` (default) or `simplex` |
 
 ---
 
