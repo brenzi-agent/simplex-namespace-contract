@@ -88,7 +88,11 @@ all-zero price oracle it is also free. `.simplex` shares the same
 ## Data flow: register
 
 ```
-User → SimplexController.commit(hash)
+User → SimplexNamePolicy.commitUnderGeneralTerms(hash, termsHash)
+       (commitUnderCommunityTerms for a community name)  ← NEW
+       ├─ require(termsHash == the current terms hash of that kind)
+       ├─ acceptedTerms[hash][user] = termsHash
+       └─ SimplexController.commit(hash)       ← unless an unexpired commitment exists
      → wait 60s (minCommitmentAge)
      → SimplexController.register{value: price}(Registration)
        ├─ require(owner == msg.sender)          ← NEW: recipient consent
@@ -98,7 +102,8 @@ User → SimplexController.commit(hash)
        ├─ priceOracle.price(...)               ← unchanged from ENS
        ├─ require(msg.value ≥ totalPrice)      ← unchanged
        ├─ commit-reveal age check              ← unchanged
-       ├─ namePolicy.consumeRegistration(...)  ← NEW: reserved names, community terms
+       ├─ namePolicy.consumeRegistration(...)  ← NEW: reserved names; the owner's
+       │      acceptance for this commitment, of the current terms of the name's kind
        ├─ base.registerWithLabel(label, this, duration)  ← v3: passes the
        │      plaintext label so the registrar records labelOf (hash→name);
        │      registers to the owner directly when resolver = 0
@@ -114,7 +119,9 @@ User → SimplexController.commit(hash)
     makeCommitment now rejects any non-zero reverseRecord up front)
 ```
 
-New vs ENS's `ETHRegistrarController.register`: the owner-is-caller check, the
+New vs ENS's `ETHRegistrarController.register`: the commitment sent through the name
+policy with the acceptance of the terms (the dApp's
+`src/transaction-flow/transaction/acceptTerms.ts`), the owner-is-caller check, the
 `_checkSimplexGates` line, the name policy call,
 `base.registerWithLabel(label,…)` in place of `base.register(labelhash,…)` so
 the registrar records the on-chain label index, and the controller rather than
