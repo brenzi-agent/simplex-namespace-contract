@@ -89,7 +89,7 @@ import {
 import {
   ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, PROXY_ADMIN_ARTIFACT, REPO_ROOT, SOURCE_TAG, TLD,
   TRANSPARENT_PROXY,
-  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource,
+  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, causes,
   deployBehindProxy, deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, refusal, requireEnv, runtimeCode,
   safeBatch, sortedAddresses, storedValue,
 } from './stack.mjs'
@@ -893,7 +893,7 @@ async function runOneOnMainnet(rpcUrl, inputs) {
       weiHex: '0x56bc75e2d63100000',  // 100 ETH
     })
     const dry = createDryRunRunner({ forkUrl: activeFork.url, forkChainId: activeFork.chainId, account })
-    const forkClient = createPublicClient({ chain: { ...mainnet, id: activeFork.chainId }, transport: http(activeFork.url) })
+    const forkClient = createPublicClient({ chain: { ...mainnet, id: activeFork.chainId }, transport: http(activeFork.url, { timeout: 120_000 }) })
     console.log(`\n--- Dry-run on fork ---`)
     await runOne(dry, forkClient, inputs, account.address)
     dryTotals = dry.totals()
@@ -1037,7 +1037,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.on('exit',    () => { cleanupFork() })
   main().catch((err) => {
     cleanupFork()
-    console.error(err)
+    console.error(causes(err).join('\n  ← '))
     process.exit(1)
   })
 }

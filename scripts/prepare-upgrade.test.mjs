@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ContractFunctionRevertedError, encodeFunctionData, keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
+import { ContractFunctionRevertedError, encodeFunctionData, pad, parseAbi, zeroAddress } from 'viem'
 import {
-  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, freezeFailures, immutableReview, intendedNames,
-  interfaceFailures, layoutFailures, ownerFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures,
+  ACTIONS, artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, intendedNames,
+  interfaceFailures, layoutFailures, ownerFailures, ownImmutables, slotFailures, upgradeCallFailures,
   upgradeData,
 } from './prepare-upgrade.mjs'
 import { assembleVerification } from './build-verification.mjs'
@@ -341,85 +341,24 @@ test('a renounced ProxyAdmin is refused', async () => {
   assert.match(target.failures.join('; '), /is renounced/)
 })
 
-const TIMELOCK = '0x0000000000000000000000000000000000007777'
-const TIMELOCK_CODE = '0x6001'
-const ADMIN_ROLE = pad('0x00', { size: 32 })
-const governance = {
-  adminSafe: { kind: 'Safe', address: ADMIN_SAFE, threshold: 2, owners: [OTHER] },
-  timelock: {
-    kind: 'TimelockController',
-    address: TIMELOCK,
-    codeHash: keccak256(TIMELOCK_CODE),
-    deployBlock: 1,
-    minDelay: 604800,
-    proposers: [ADMIN_SAFE],
-    executors: [ADMIN_SAFE],
-    cancellers: [ADMIN_SAFE],
-  },
-}
-const timelockRoles = new Set(['PROPOSER_ROLE', 'EXECUTOR_ROLE', 'CANCELLER_ROLE'].map((role) => keccak256(toHex(role))))
-const timelockChain = (code) => {
-  const reads = {
-    owner: () => ADMIN_SAFE,
-    getMinDelay: () => 604800n,
-    getRoleAdmin: () => ADMIN_ROLE,
-    hasRole: (role, account) => account === ADMIN_SAFE && timelockRoles.has(role),
-  }
-  return {
-    ...chain(),
-    getCode: async () => code,
-    getBlockNumber: async () => 1n,
-    getLogs: async () => [{ args: { role: ADMIN_ROLE, account: TIMELOCK, sender: TIMELOCK } }],
-    readContract: async ({ functionName, args = [] }) => reads[functionName](...args),
-  }
-}
-
-test('a transfer to a Safe entry is refused', async () => {
-  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, verification, governance, 'SimplexController', 'adminSafe')
-  assert.deepEqual(call, {
-    refused: true,
-    failures: ['NEXT must name a TimelockController entry of governance.mainnet.json, not adminSafe'],
-  })
-})
-
-test('a transfer to a timelock that fails its check is refused', async () => {
-  const call = await transferCall(timelockChain('0x6002'), deployment, verification, governance, 'SimplexController', 'timelock')
-  assert.equal(call.refused, true)
-  assert.match(call.failures.join('; '), /^timelock 0x0+7777 code hash is 0x[0-9a-f]{64}, expected /)
-})
-
-const timelockOwned = (client) => ({
-  ...client,
-  readContract: async (call) => (call.functionName === 'owner' ? TIMELOCK : client.readContract(call)),
-})
-const timelockBatches = 'needs the schedule and execute batches of a TimelockController for the admin Safe, which this script does not write yet'
-
-test('a transfer through a ProxyAdmin the admin Safe does not own is refused', async () => {
-  const call = await transferCall(timelockOwned(timelockChain(TIMELOCK_CODE)), deployment, verification, governance, 'SimplexController', 'timelock')
-  assert.deepEqual(call, {
-    refused: true,
-    failures: [`the ProxyAdmin ${proxyAdminOf(deployment.ETHRegistrarController)} of SimplexController is owned by ${TIMELOCK}, ` +
-      `not the admin Safe ${ADMIN_SAFE}: a call through it ${timelockBatches}`],
-  })
-})
-
 test('an upgrade through a ProxyAdmin the admin Safe owns passes the owner check', () => {
   assert.deepEqual(ownerFailures({ name: 'SimplexController', proxyAdmin: OTHER, owner: ADMIN_SAFE.toLowerCase() }, ADMIN_SAFE), [])
 })
 
-test('a freeze is refused while the admin Safe owns the ProxyAdmin, and through a timelock', () => {
-  assert.deepEqual(freezeFailures({ name: 'SubnameRegistrar', proxyAdmin: OTHER, owner: ADMIN_SAFE }, ADMIN_SAFE), [
-    `the ProxyAdmin ${OTHER} of SubnameRegistrar is owned by the admin Safe: a freeze waits until GOV8 has moved it to the timelock (launch-to-freeze plan, A7)`,
-  ])
-  assert.deepEqual(freezeFailures({ name: 'SubnameRegistrar', proxyAdmin: OTHER, owner: TIMELOCK }, ADMIN_SAFE), [
-    `the ProxyAdmin ${OTHER} of SubnameRegistrar is owned by ${TIMELOCK}, not the admin Safe ${ADMIN_SAFE}: a call through it ${timelockBatches}`,
-  ])
+test('ACTION=freeze is refused for a ProxyAdmin the admin Safe owns', async () => {
+  assert.deepEqual(await ACTIONS.freeze(chain(), deployment, verification, 'SubnameRegistrar'), {
+    refused: true,
+    failures: [`the ProxyAdmin ${proxyAdminOf(deployment.SubnameRegistrar)} of SubnameRegistrar is owned by the admin Safe: ` +
+      'a freeze waits until GOV8 has moved it to the timelock (launch-to-freeze plan, A7)'],
+  })
 })
 
-test('a transfer to a timelock that passes its check addresses the ProxyAdmin of the named contract', async () => {
-  const call = await transferCall(timelockChain(TIMELOCK_CODE), deployment, verification, governance, 'SimplexController', 'timelock')
-  assert.deepEqual([call.refused, call.target.proxyAdmin, call.functionName, call.args],
-    [false, proxyAdminOf(deployment.ETHRegistrarController), 'transferOwnership', [TIMELOCK]])
+test('ACTION=transfer is refused for a ProxyAdmin the admin Safe owns', async () => {
+  assert.deepEqual(await ACTIONS.transfer(chain(), deployment, verification, 'SimplexController'), {
+    refused: true,
+    failures: ['a transfer of a ProxyAdmin waits for the GOV8 prerequisites: the code of the TimelockController compared with the ' +
+      'OpenZeppelin 5.1.0 artifact, and its schedule and execute batches for the admin Safe'],
+  })
 })
 
 const MIGRATION_ABI = parseAbi(['function migrate(uint256 version)', 'function owner() view returns (address)'])

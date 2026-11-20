@@ -58,6 +58,13 @@ export const sortedAddresses = (list) => list.map((address) => getAddress(addres
 
 export const childEnv = (variables = {}) => ({ PATH: process.env.PATH, HOME: process.env.HOME, ...variables })
 
+export function causes(error) {
+  if (error === undefined) return []
+  if (!(error instanceof Error)) return [String(error)]
+  const code = error.code === undefined ? '' : ` ${error.code}`
+  return [`${error.name}${code}: ${error.shortMessage ?? error.message}`, ...causes(error.cause)]
+}
+
 export const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
 export const accepted = (fields) => ({ refused: false, ...fields })
 

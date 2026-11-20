@@ -9,10 +9,10 @@ import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
-import { entryFailures, loadGovernance } from './governance-check.mjs'
+import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, PROXY_ADMIN_ABI, REPO_ROOT, TLD, UPGRADEABLE,
-  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, causes, constructorArgs,
   immutableNames, immutablesIn, interfaceOf, mainnetClient, parentHead, placeImmutables, proxyAdminOf, proxySlots,
   refusal, requireEnv, safeBatch, storageLayout, storedValue,
 } from './stack.mjs'
@@ -238,25 +238,6 @@ export function ownerFailures({ name, proxyAdmin, owner }, adminSafe) {
       'needs the schedule and execute batches of a TimelockController for the admin Safe, which this script does not write yet']
 }
 
-export function freezeFailures(target, adminSafe) {
-  const unowned = ownerFailures(target, adminSafe)
-  return unowned.length
-    ? unowned
-    : [`the ProxyAdmin ${target.proxyAdmin} of ${target.name} is owned by the admin Safe: a freeze waits until GOV8 has ` +
-      'moved it to the timelock (launch-to-freeze plan, A7)']
-}
-
-export async function transferCall(client, addresses, verification, governance, name, nextName) {
-  const next = governance[nextName]
-  if (next?.kind !== 'TimelockController') {
-    return refusal([`NEXT must name a TimelockController entry of governance.mainnet.json, not ${nextName}`])
-  }
-  const failures = await entryFailures(client, next, verification.deployer)
-  if (failures.length) return refusal(failures.map((failure) => `${nextName} ${next.address} ${failure}`))
-  const target = await checkedProxyAdmin(client, addresses, verification, name, governance.adminSafe.address)
-  return target.refused ? target : accepted({ target, functionName: 'transferOwnership', args: [next.address] })
-}
-
 export async function prepareUpgrade({ deploy }, client, name, addresses, verification, deployer, request = {}) {
   const { intended = [], constructorArgs: requestedArgs, call } = request
   const definition = UPGRADEABLE[name]
@@ -338,7 +319,7 @@ function jsonArrayEnv(name) {
   return value
 }
 
-const ACTIONS = {
+export const ACTIONS = {
   upgrade: async (client, addresses, verification, name) => {
     const deployerKey = requireEnv('DEPLOYER_KEY')
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
@@ -391,7 +372,10 @@ const ACTIONS = {
   },
   freeze: async (client, addresses, verification, name) => {
     const target = await checkedProxyAdmin(client, addresses, verification, name)
-    return target.refused ? target : refusal(freezeFailures(target, loadGovernance().adminSafe.address))
+    return target.refused ? target : refusal([
+      `the ProxyAdmin ${target.proxyAdmin} of ${name} is owned by the admin Safe: a freeze waits until GOV8 has ` +
+        'moved it to the timelock (launch-to-freeze plan, A7)',
+    ])
   },
   transfer: async () => refusal([
     'a transfer of a ProxyAdmin waits for the GOV8 prerequisites: the code of the TimelockController compared with the ' +
@@ -433,7 +417,7 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
-    console.error(err)
+    console.error(causes(err).join('\n  ← '))
     process.exit(1)
   })
 }

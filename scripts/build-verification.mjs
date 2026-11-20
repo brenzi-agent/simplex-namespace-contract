@@ -26,11 +26,12 @@
  *   MAINNET_RPC_URL=… DEPLOYER=0x… node scripts/build-verification.mjs
  */
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { pathToFileURL } from 'url'
 import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, SOURCE_TAG, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, causes, constructorArgs,
   ensContractsHead, immutableNames, immutablesIn, initializerData, interfaceOf, mainnetClient, parentHead,
   placeImmutables, proxySlots, refusal, requireEnv, storageLayout,
 } from './stack.mjs'
@@ -133,6 +134,6 @@ async function cli() {
 }
 
 // Run as CLI when invoked directly.
-if (import.meta.url === `file://${process.argv[1]}`) {
-  cli().catch((e) => { console.error(e); process.exit(1) })
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  cli().catch((e) => { console.error(causes(e).join('\n  ← ')); process.exit(1) })
 }
