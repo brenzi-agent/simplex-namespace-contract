@@ -73,6 +73,28 @@ for (const [kind, signature] of [['function', 'setSponsor(address)'], ['event', 
   })
 }
 
+const replacing = (definition) => {
+  const [item] = parseAbi([definition])
+  return CONTROLLER_ABI.map((current) => (current.type === item.type && current.name === item.name ? item : current))
+}
+
+for (const [what, definition, signature, failure] of [
+  ['the return type of a function', 'function sponsor() view returns (uint256)', 'sponsor()',
+    "its function sponsor() is sponsor() view returns (uint256), the current implementation's is sponsor() view returns (address)"],
+  ['the mutability of a function', 'function setSponsor(address) payable', 'setSponsor(address)',
+    "its function setSponsor(address) is setSponsor(address) payable returns (), the current implementation's is setSponsor(address) nonpayable returns ()"],
+  ['the indexed flag of an event parameter', 'event SponsorChanged(address indexed sponsor)', 'SponsorChanged(address)',
+    "its event SponsorChanged(address) is SponsorChanged(address indexed), the current implementation's is SponsorChanged(address)"],
+]) {
+  test(`a candidate that changes ${what} is refused`, () => {
+    assert.deepEqual(artifactFailures(compiledWith(replacing(definition)), new Map(), deployed, currentController, []), [failure])
+  })
+
+  test(`a candidate that changes ${what}, named in INTENDED, is accepted`, () => {
+    assert.deepEqual(artifactFailures(compiledWith(replacing(definition)), new Map(), deployed, currentController, [signature]), [])
+  })
+}
+
 const PRICED_ABI = parseAbi([
   'function rentPrice(string label, uint256 duration) view returns (uint256)',
   'event NameRenewed(string label, bytes32 indexed labelhash, uint256 cost, uint256 expires)',

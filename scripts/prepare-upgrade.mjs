@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   BaseError, ContractFunctionRevertedError, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256,
-  pad, parseGwei, toFunctionSelector, zeroAddress,
+  pad, parseGwei, toEventSignature, toFunctionSelector, toFunctionSignature, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -85,12 +85,14 @@ export function slotFailures(bytecode) {
     .map(([which]) => `its bytecode contains the ERC-1967 ${which} slot`)
 }
 
-export function droppedInterface(current, abi) {
+const INTERFACE = { functions: ['function', toFunctionSignature], events: ['event', toEventSignature] }
+
+export function interfaceChanges(current, abi) {
   const next = interfaceOf(abi)
-  return Object.entries({ functions: 'function', events: 'event' }).flatMap(([field, kind]) =>
+  return Object.entries(INTERFACE).flatMap(([field, [kind, signatureOf]]) =>
     Object.entries(current[field])
-      .filter(([selector]) => !Object.hasOwn(next[field], selector))
-      .map(([, signature]) => ({ kind, signature })))
+      .filter(([selector, shape]) => next[field][selector] !== shape)
+      .map(([selector, shape]) => ({ kind, signature: signatureOf(shape), current: shape, next: next[field][selector] })))
 }
 
 export function artifactFailures({ abi, deployedBytecode, immutableReferences }, names, layout, current, intended) {
@@ -98,8 +100,7 @@ export function artifactFailures({ abi, deployedBytecode, immutableReferences },
   const nameable = new Set([
     ...immutables,
     ...Object.keys(current.immutables),
-    ...Object.values(current.functions),
-    ...Object.values(current.events),
+    ...Object.entries(INTERFACE).flatMap(([field, [, signatureOf]]) => Object.values(current[field]).map(signatureOf)),
   ])
   return [
     ...layoutFailures(current.storageLayout, layout),
@@ -107,8 +108,10 @@ export function artifactFailures({ abi, deployedBytecode, immutableReferences },
     ...slotFailures(deployedBytecode),
     ...Object.keys(current.immutables).filter((name) => !immutables.includes(name) && !intended.includes(name))
       .map((name) => `it has no immutable named ${name}, which the current implementation holds as ${current.immutables[name]}`),
-    ...droppedInterface(current, abi).filter(({ signature }) => !intended.includes(signature))
-      .map(({ kind, signature }) => `it lacks the ${kind} ${signature} of the current implementation`),
+    ...interfaceChanges(current, abi).filter(({ signature }) => !intended.includes(signature))
+      .map(({ kind, signature, current: shape, next }) => (next === undefined
+        ? `it lacks the ${kind} ${signature} of the current implementation`
+        : `its ${kind} ${signature} is ${next}, the current implementation's is ${shape}`)),
     ...intended.filter((name) => !nameable.has(name))
       .map((name) => `INTENDED names ${name}, neither an immutable nor a function or event of the current implementation`),
   ]
@@ -279,7 +282,7 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
     candidate,
     data,
     changes,
-    removed: droppedInterface(current, compiled.abi),
+    changed: interfaceChanges(current, compiled.abi),
     entry: {
       address: candidate,
       artifact: definition.artifact,
@@ -365,7 +368,11 @@ const ACTIONS = {
     for (const { name: immutable, current, next } of prepared.changes) {
       console.log(`  intended change of ${immutable}: ${current ?? 'none'} → ${next ?? 'none'}`)
     }
-    for (const { kind, signature } of prepared.removed) console.log(`  intended removal of the ${kind} ${signature}`)
+    for (const { kind, signature, current, next } of prepared.changed) {
+      console.log(next === undefined
+        ? `  intended removal of the ${kind} ${signature}`
+        : `  intended change of the ${kind} ${signature}: ${current} → ${next}`)
+    }
     console.log(`  upgradeAndCall from the ProxyAdmin owner ${prepared.owner} succeeds in a simulation`)
     console.log(`Wrote ${VERIFICATION_PATH}: commit it and verify the candidate on Etherscan before the upgrade.`)
     return accepted({ target: prepared, functionName: 'upgradeAndCall', args: [prepared.proxy, prepared.candidate, prepared.data] })
