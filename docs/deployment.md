@@ -24,7 +24,7 @@ the historical playbook lives in [`legacy/sepolia-deployment.md`](./legacy/sepol
 | TLD        | Contracts | dApp | Notes |
 |------------|-----------|------|-------|
 | `.testing` | **Live on mainnet** — addresses in [`deployments.mainnet.testing.json`](../deployments.mainnet.testing.json) | **Live** on GitHub Pages — [`testing-names.simplex.chat`](https://testing-names.simplex.chat) | NFT gate **disabled** (lifted on-chain 2026-07-09 via `disableNftGate`, one-way); `minCharLength = 6`; registration is **open and free** (all-zero price oracle). Controller ownership handoff to the cold owner is **still pending**. |
-| `.simplex` | **v1 live on mainnet**, deployed 2–3 Nov 2026 — addresses in [`deployments.mainnet.simplex.json`](../deployments.mainnet.simplex.json) until the v2 switch. **v2**, the redeploy this document describes, is pending. | — | v1 is retired by run 1 of v2. **No** NFT gate; $50 a year. dApp: see [dApp hosting](#dapp-hosting). |
+| `.simplex` | **v1 live on mainnet**, deployed 2–3 Nov 2026 — addresses in [`deployments.mainnet.simplex.json`](../deployments.mainnet.simplex.json) until the v2 switch. **v2**, the redeploy this document describes, is pending. | GitHub Pages — [`app.simplex.domains`](https://app.simplex.domains); the `.simplex` build is deployed once `production` is admitted by the repository's `github-pages` environment ([dApp hosting](#simplex--github-pages-appsimplexdomains)) | v1 is retired by run 1 of v2. **No** NFT gate; $50 a year. dApp: see [dApp hosting](#dapp-hosting). |
 
 The live `.testing` controller is the proxy at
 `0xeeb9b6bf5fb68fb726005f7ba549c2f4b32f2dad` (`ETHRegistrarController` in the
@@ -133,7 +133,7 @@ omits `Root`.
 |---|---|---|---|
 | 1 | maintainers | the conditions version of the plan's D13 (simplex-chat/simplex-chat#8272) merged, tagged and mirrored to git.simplex.chat | git |
 | 2 | operator | `terms.simplex.json` set to its links and committed; v1 files renamed on the operator's checkout | git, `mv` |
-| 3 | names service | the store service's name sales paused; run 1 waits until no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1 | store service |
+| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, and no store order in the phase queued, committing, committed or registering, so that every paid order has registered on v1 (The store check) | store metrics |
 | 4 | deploy key | governance check | run 1 |
 | 5 | deploy key | implementations and proxies deployed and wired; governance check of the guardian Safe; beneficiary set | run 1 |
 | 6 | deploy key | read-back | run 1 |
@@ -141,11 +141,11 @@ omits `Root`.
 | 8 | deploy key | v1 retirement | run 1 |
 | 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch | Safe, the batch of run 1 |
 | 10 | operator | handover read-back, without transactions | run 2 |
-| 11 | names service | switched to v2; the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer (Commit the files at the switch) committed to main together | git |
+| 11 | operator, names service | the switch: the store service, the resolver service and the production dApp switched to v2 (The switch); the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer committed to main together (Commit the files at the switch) | ini, env, dApp pull request, git |
 | 12 | operator, guardian Safe | registrar step, after the upgrade batch of simplex-network/ens-contracts#51 has executed and once the owner provides the names service's registrar wallet: its `registrarWallet` entry committed, checked and written as the guardian Safe's batch; the guardian Safe sets the allowance; the allowance read back | git, `RUN=registrar`, Safe, `RUN=registrar-read-back` |
-| 13 | names service | the store service's name sales reopened | store service |
-| 14 | holders, names service | the two v1 names registered again | names service |
-| 15 | operator | other consumers switched; Etherscan verification | `verify-etherscan.mjs` |
+| 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed | names service |
+| 14 | operator | purchase entry opened in the webstore and the SimpleX app | store |
+| 15 | operator | Etherscan verification | `verify-etherscan.mjs` |
 | 16 | operator | deploy key destroyed | — |
 
 Step 3 precedes run 1: an order still in flight holds a commitment on the v1 controller
@@ -153,7 +153,9 @@ and signatures whose EIP-712 domains name the v1 sponsor and name policy, and v1
 from step 8. Step 12 follows #51's batch, which replaces `RegisterName` and
 `registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2
 sponsor. Steps 13 and 14 follow step 12: a sponsored registration reverts
-`InsufficientAllowance` while the registrar wallet's allowance is zero.
+`InsufficientAllowance` while the registrar wallet's allowance is zero. Step 14 follows
+step 13, so the two v1 names are registered for their holders before any buyer can order
+them.
 
 ```mermaid
 sequenceDiagram
@@ -163,24 +165,84 @@ sequenceDiagram
   participant G as guardian Safe
   participant A as admin Safe
   participant N as names service
-  participant H as holders
   M->>M: tag and mirror the conditions version
   O->>O: terms.simplex.json, rename v1 files
-  N->>N: pause name sales; wait until no order is in flight
+  O->>O: check: purchase entry closed, no store order in flight
   D->>D: run 1: governance check, deploy, wire
   D->>D: run 1: guardian Safe check, beneficiary, read-back
   D->>D: run 1: transfers, proposals, v1 retirement
   A->>A: acceptOwnership x2, the batch of run 1
   O->>O: run 2: read-back
-  N->>N: switch to v2, commit files and the simplex-app pointer
+  N->>N: switch: store and resolver services, production dApp
+  O->>O: commit files and the simplex-app pointer
   A->>A: the upgrade batch of ens-contracts#51
   O->>O: registrarWallet entry committed; RUN=registrar
   G->>G: setRegistrarAllowance, the batch of the registrar step
   O->>O: RUN=registrar-read-back
-  N->>N: reopen name sales
-  H->>N: register the two v1 names again
-  O->>O: other consumers, Etherscan, destroy deploy key
+  N->>N: register the two v1 names again
+  O->>O: open purchase entry
+  O->>O: Etherscan, destroy deploy key
 ```
+
+### The store check
+
+Step 3 is an operator check, made with the store service as it is (the owner, 20 Nov):
+
+1. Purchase entry stays closed in the webstore and the SimpleX app.
+2. The store's metrics endpoint shows 0 orders in each of the phases queued, committing,
+   committed and registering:
+
+   ```sh
+   curl -s http://127.0.0.1:<metrics_port>/metrics | grep simplex_store_names_orders
+   ```
+
+   The endpoint listens on 127.0.0.1 at `listener.metrics_port` of the store's ini, an
+   optional key: where the deployed ini lacks it, it is set first. In the gauge
+   `simplex_store_names_orders{phase="…"}`, orders are counted by their stored phase. A
+   committed order past its `revealBefore` is counted as committed until the store's worker
+   saves it as failed, so the operator waits for that.
+
+A failed paid order is closed with the store's `//close` command, with a refund recorded
+for support; a failed code order's code is released after 30 days. Purchase entry opens
+at step 14.
+
+### The switch
+
+At step 11, in one session:
+
+| Consumer | Setting | Value |
+|---|---|---|
+| store service, `[chain]` of its ini, then a restart | `controller` | controller proxy |
+| store service | `sponsor` | sponsor proxy |
+| store service | `base_registrar` | registrar proxy |
+| store service | `resolver` | resolver proxy |
+| resolver service (simplex-chat/simplexmq `snrc-resolve.py`) | `SNRC_REGISTRY_SIMPLEX` | registry proxy |
+| resolver service | `SNRC_REGISTRAR_SIMPLEX` | registrar proxy |
+| resolver service | `SNRC_CONTROLLER_SIMPLEX` | controller proxy |
+
+The store service reads the name policy, the registry and the subname registrar from these
+contracts; it keeps the registry until it restarts, and the policy until it restarts or a
+registration reverts `TermsNotAccepted`, so the restart is part of the switch.
+
+The production dApp, app.simplex.domains, is built by `.github/workflows/deploy-pages.yml`
+of simplex-chat/simplex-domains-app-v3 on each push to `production`, from that
+repository's own `deployments.mainnet.simplex.json`:
+
+1. A copy of the v2 addresses file and the storage slots of the gas estimate set to v2's
+   are put in one pull request from `ab/v2-storage-slots` into `simplex`, the repository's
+   default branch: `SimplexNamePolicy.acceptedTerms` at slot 2 and
+   `SimplexController.commitments` at slot 160, in place of v1's 103 and 260
+   (`src/hooks/gasEstimation/calculateTransactions.ts`). Without the slot change, the
+   estimate of `registerName` reverts and a fixed 700,000 gas is used.
+2. At step 11 it is merged, `production` is fast-forwarded to that merge commit, and the
+   parent's `simplex-app` submodule pointer moves to the same commit.
+
+The deployment from `production` of 4 Nov was refused by the repository's `github-pages`
+environment, so `production` is admitted there before step 11
+([dApp hosting](#simplex--github-pages-appsimplexdomains)).
+
+The staging dApp (`scripts/cloudflare-build-simplex.sh`) reads the parent's
+`deployments.mainnet.simplex.json`, so it is built against v2 from the commit of step 11.
 
 ### Inputs
 
@@ -659,20 +721,17 @@ At step 11, commit to main together:
 - `deployments.mainnet.simplex.journal.jsonl` — one line per mined transaction (hash,
   address, gas, effective price, cost); the paper trail and the resume source
 - `verification.mainnet.simplex.json`
-- the `simplex-app` submodule pointer, moved to the merge commit of the dApp change
-  (simplex-chat/simplex-domains-app-v3, branch `ab/v2-storage-slots`) that sets the storage
-  slots of its gas estimate to v2's: `SimplexNamePolicy.acceptedTerms` at slot 2 and
-  `SimplexController.commitments` at slot 160, in place of v1's 103 and 260
-  (`src/hooks/gasEstimation/calculateTransactions.ts`); the deployed dApp is built with both
-  the v2 addresses file and that change
+- the `simplex-app` submodule pointer, moved to the merge commit of the dApp pull request
+  ([The switch](#the-switch))
 
-The attempts log, every attempt with the reason it did not land, stays on the operator's
-machine. `.gitignore` lists the attempts logs (`/deployments.mainnet.*.attempts.log`) and the
-Safe batch files (`/safe-transaction.*.json`); a file of these names that is already
-tracked stays tracked. `.testing`'s addresses file and journal, `deployments.mainnet.testing.json` and
-`deployments.mainnet.testing.journal.jsonl`, are committed the same way. Without the
-addresses file committed, the dApp build, Etherscan verification and the upgrade tooling
-have no way to reference the deployment.
+The attempts log, with each attempt and the reason of its failure, is kept on the
+operator's machine. The attempts logs (`/deployments.mainnet.*.attempts.log`) and the Safe
+batch files (`/safe-transaction.*.json`) are listed in `.gitignore`; a file of these names
+that is already tracked stays tracked. `.testing`'s addresses file and journal, `deployments.mainnet.testing.json` and
+`deployments.mainnet.testing.journal.jsonl`, are committed the same way. The committed
+addresses file is read by the staging dApp build, `build-verification.mjs` and
+`prepare-upgrade.mjs`; the committed `verification.mainnet.simplex.json`, by
+`verify-etherscan.mjs` and `prepare-upgrade.mjs`.
 
 Each on-chain deployment also **tags the git commit** it deploys (see
 `CLAUDE.md` → "tracking of deployed versions"; the live `.testing` deploy is
@@ -734,7 +793,8 @@ sequenceDiagram
   O->>O: RUN=registrar: entry checked, batch written
   G->>S: setRegistrarAllowance(wallet, allowance)
   O->>S: RUN=registrar-read-back: registrarAllowance(wallet)
-  N->>N: reopen name sales (step 13)
+  N->>N: the two v1 names registered again (step 13)
+  O->>O: purchase entry opened (step 14)
 ```
 
 ### Etherscan verification
@@ -1229,19 +1289,34 @@ DNS resolves.
 To ship a new deployment, commit the updated `deployments.mainnet.testing.json`
 into the `ens-app-v3` fork and push `simplex`.
 
-### `.simplex` — self-hosted + IPFS (planned)
+### `.simplex` — GitHub Pages, `app.simplex.domains`
 
-`.simplex` will not use a managed Pages host. The intended path is the same
-static export (`NEXT_PUBLIC_IPFS=1` for hash-based asset routing) published to
-**IPFS** and served from **self-hosted** infrastructure, with the `_redirects` /
-`404.html` routing shim carried over. Contract addresses come from
-`NEXT_PUBLIC_MAINNET_DEPLOYMENT_ADDRESSES` (the `.simplex` bundle) baked in at
-build time. Concrete host + pinning setup is TBD until the `.simplex` contracts
-are deployed.
+Built and deployed by `.github/workflows/deploy-pages.yml` of
+simplex-chat/simplex-domains-app-v3 on each push to its `production` branch, and on
+`workflow_dispatch`:
 
-> A Cloudflare Pages setup also exists as a documented alternative mirror — see
-> [`hosting-cloudflare.md`](./hosting-cloudflare.md). It is **not** the canonical
-> host for `.testing`.
+1. `pnpm install --no-frozen-lockfile --prefer-frozen-lockfile`.
+2. The static export, with `NEXT_PUBLIC_CHAIN_NAME=mainnet`,
+   `NEXT_PUBLIC_SIMPLEX_TLD=simplex`, `NEXT_PUBLIC_MAINNET_RPC_URL` (an Alchemy key, inline)
+   and `NEXT_PUBLIC_MAINNET_DEPLOYMENT_ADDRESSES`, the minified
+   `deployments.mainnet.simplex.json` of that repository.
+3. `CNAME` (`app.simplex.domains`), `.nojekyll` and the `404.html` redirect.
+4. `actions/upload-pages-artifact` and `actions/deploy-pages`.
+
+State on 20 Nov 2026:
+
+| Item | State |
+|---|---|
+| `production` and `simplex` | both at `561a12b`, with v1's addresses in its addresses file |
+| run of the workflow for `561a12b` on `production`, 4 Nov | build passed; deploy refused: `Branch "production" is not allowed to deploy to github-pages due to environment protection rules.` |
+| build served at `app.simplex.domains` | `38a90e6` of 3 Nov, deployed from `simplex` by the workflow's earlier version, a `.testing` build |
+
+Before step 11, deployments from `production` are admitted in the repository's
+`github-pages` environment (Settings → Environments). At step 11 the dApp is switched as
+[The switch](#the-switch) describes.
+
+> The `.simplex` staging project on Cloudflare Pages builds `simplex-app` with the
+> parent's addresses file — see [`legacy/hosting-cloudflare.md`](./legacy/hosting-cloudflare.md).
 
 ---
 

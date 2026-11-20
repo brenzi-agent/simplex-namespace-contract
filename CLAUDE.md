@@ -193,7 +193,6 @@ Fork ens-app-v3, minimal diff. Each frontend deployment targets one TLD via `NEX
 - **Pricing display**: show $50/year instead of ENS pricing
 - **Real logo**: replace placeholder SVGs with SimpleX brand assets
 - **End-to-end test**: deploy contracts to Hardhat, point frontend, verify full registration flow
-- **Subgraph**: ENS app relies on The Graph for name queries — local dev without subgraph limits some features
 
 ## Gotchas / time-sinks learned the hard way
 

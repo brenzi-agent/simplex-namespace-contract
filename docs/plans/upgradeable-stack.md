@@ -52,7 +52,7 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `community-names.simplex.csv`
   - `terms.simplex.json`, with the links of the conditions version of D13
 - D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version, simplex-chat/simplex-chat#8272, is tagged `general-terms-vN` and `community-terms-vN` before run 1. Run 1 has no override of the terms check: a failed check stops it. Recommended, pending the owner's answer to the question of #8272: its merge commit is tagged `general-terms-v1` and `community-terms-v1`, and both links of `terms.simplex.json` name `docs/NAMES-CONDITIONS.md` at that commit.
-- D14. The two names registered on v1 are registered again on v2 by their holders through the names service, as the first check of the v2 line.
+- D14. The two names registered on v1 are registered again on v2 for their holders through the names service, as the first check of the v2 line: after the registrar step (D21), while purchase entry is still closed (D22); purchase entry opens only afterwards (the owner, 20 Nov).
 - D15. `.simplex` stays unlocked at deployment. `root.lock(labelhash("simplex"))` is a step of the launch-to-freeze plan, which keeps its freeze naming for the end state.
 - D16. Single-step transfers, by the deploy key in run 1:
   - in the wiring: beneficiary, guardian Safe
@@ -77,9 +77,10 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - the guardian Safe executes the batch
   - `RUN=registrar-read-back`: `sponsor.registrarAllowance(wallet)` read back
 - D22. Store orders across the switch. The store service keeps, per order, a commitment on the controller of its ini and the owner's `RegisterName` and terms-acceptance signatures, whose EIP-712 domains name the sponsor and the name policy (simplex-chat `apps/simplex-store-service`, `Names/Store.hs`, `Names/Registration.hs`, `Names/Reveal.hs`); after the switch such an order's commitment is absent on the v2 controller, its signatures name v1's addresses, and v1 reverts from step 8 of section 6. Therefore:
-  - before run 1: the store service's name sales are paused, and run 1 starts only when no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1; with sales paused, that state is reached by waiting, since such an order registers or fails (`Names/Worker.hs`)
+  - before run 1, an operator check (the owner, 20 Nov): purchase entry stays closed in the webstore and the SimpleX app, and the operator confirms that no order is in the phase queued, committing, committed or registering, so that every paid order has registered on v1; with purchase entry closed, that state is reached by waiting, since such an order registers or fails (`Names/Worker.hs`). The check is made with the store service as it is
+  - for the check, the store's metrics endpoint is read; it listens on 127.0.0.1 at `listener.metrics_port` (optional; set first where the deployed ini lacks it): `curl -s http://127.0.0.1:<metrics_port>/metrics | grep simplex_store_names_orders` prints 0 for the four phases (gauge `simplex_store_names_orders{phase="…"}`, counted from each order's stored phase, `Metrics.hs`, `Names/Store.hs`). A committed order past its `revealBefore` is counted as committed until the worker saves it as failed, so the operator waits for that
   - a failed paid order is closed with `//close`, with a refund recorded for support; a failed code order's code is released after 30 days
-  - after the registrar step (D21): the store service's name sales reopen; an order is not committed or signed again
+  - after the registrar step (D21) and the re-registration of the two v1 names (D14): purchase entry opens; an order is not committed or signed again
 
 ## 3. Contracts
 
@@ -229,7 +230,7 @@ flowchart LR
 | Contract | Its address is held by | State users rely on | Every user interaction continues across a swap | Model |
 |---|---|---|---|---|
 | `ENSRegistry` | immutable in the resolver (`PublicResolver.sol:31`), the subname registrar (`SubnameRegistrar.sol:35`), the name policy (`SimplexNamePolicy.sol:13`) and `UniversalResolver` (`UniversalResolver.sol:8`); set by `initialize` only in the registrar (`BaseRegistrarImplementation.sol:90-98`) and the controller (`SimplexController.sol:211`); `Root`; the names service (`SNRC_REGISTRY_SIMPLEX`) and the dApp | the owner and resolver of every name and subname; operator approvals | no: every node is copied to the new instance, every contract holding its address is redeployed, every client is reconfigured; registration, resolution and record changes stop until all are done | upgradeable |
-| `BaseRegistrarImplementation` | owner of the `simplex` node in the registry, re-pointable through `Root` until the lock; controller `base`, set by `initialize` only (`SimplexController.sol:212`); immutable in the name policy (`SimplexNamePolicy.sol:12`) and the subname registrar (`SubnameRegistrar.sol:37`); the dApp, the metadata service, the names service, wallets | each name's token, holder, expiry and label; offers and approvals; per-signer nonces | no: every name is minted again to its holder; open offers and signed intents are lost; the controller, the name policy and the subname registrar are redeployed; wallets see a new token contract | upgradeable |
+| `BaseRegistrarImplementation` | owner of the `simplex` node in the registry, re-pointable through `Root` until the lock; controller `base`, set by `initialize` only (`SimplexController.sol:212`); immutable in the name policy (`SimplexNamePolicy.sol:12`) and the subname registrar (`SubnameRegistrar.sol:37`); the dApp, the names service, wallets | each name's token, holder, expiry and label; offers and approvals; per-signer nonces | no: every name is minted again to its holder; open offers and signed intents are lost; the controller, the name policy and the subname registrar are redeployed; wallets see a new token contract | upgradeable |
 | `SimplexResolver` | each node's `resolver` in the registry, changed only by the node's owner; controller `defaultResolver` (setter, `SimplexController.sol:261`); subname registrar `resolver`, set once (`SubnameRegistrar.sol:119-123`) | every record of every name and subname; delegates; per-signer nonces | no: new registrations can use a new default resolver, but resolution and record changes of every existing name stay on the old instance until its holder re-points the name and writes its records again; new subnames keep the old instance, since the subname registrar's pointer is set once | upgradeable |
 | `SubnameRegistrar` | owner of every subname node in the registry; the resolver's `nameWrapper`, immutable (`PublicResolver.sol:32`), through which subname record changes are authorised (`PublicResolver.sol:112-127`); registrar `subnameHook` (setter, `BaseRegistrarImplementation.sol:262`) | each subname's parent, generation and index; the expiry mirror of each name; per-signer nonces | no: existing subnames stay owned by the old instance, and their record changes are authorised only through it; a new instance starts without generations and expiries | upgradeable |
 | `SimplexController` | registrar `controllers`, several at once; the resolver's `trustedETHController`, immutable (`PublicResolver.sol:33`); the name policy's and the sponsor's `controller`, immutable (`SimplexNamePolicy.sol:11`, `SimplexSponsor.sol:27`); the dApp and the names service | commitments in flight; beneficiary, sales switch and pointers; the revenue balance | no: a new instance is not the resolver's `trustedETHController`, so it cannot clear a lapsed name's records when the name is registered again (`SimplexController.sol:392-397`, `ResolverBase.sol:20`); the name policy, with its lists, and the sponsor are redeployed for it; commitments in flight are lost | upgradeable |
@@ -526,7 +527,7 @@ Unchanged:
 |---|---|---|
 | 1 | maintainers | the conditions version of D13 merged, tagged and mirrored to git.simplex.chat |
 | 2 | operator | `terms.simplex.json` set to its links and committed to the task branch; v1 files renamed on the operator's checkout (section 9) |
-| 3 | names service | the store service's name sales paused; run 1 waits until no order is in the phase queued, committing, committed or registering (D22) |
+| 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, and no store order in the phase queued, committing, committed or registering (D22) |
 | 4 | deploy key, run 1 | governance checks (section 7) |
 | 5 | deploy key, run 1 | implementations and proxies deployed and wired; beneficiary set |
 | 6 | deploy key, run 1 | read-back |
@@ -534,11 +535,11 @@ Unchanged:
 | 8 | deploy key, run 1 | v1 retirement (D18) |
 | 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch |
 | 10 | operator, run 2 | handover read-back, without transactions |
-| 11 | names service | switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer (section 9) |
+| 11 | operator, names service | the switch (section 9): the store service, the resolver service and the production dApp switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer |
 | 12 | operator, guardian Safe, registrar step | after the upgrade batch of simplex-network/ens-contracts#51 has executed, and once the owner provides the registrar wallet: its entry committed and checked; the guardian Safe sets its allowance; the allowance read back (D21) |
-| 13 | names service | the store service's name sales reopened (D22) |
-| 14 | holders, names service | the two v1 names registered again (D14) |
-| 15 | operator | other consumers switched, Etherscan verification |
+| 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed (D14) |
+| 14 | operator | purchase entry opened in the webstore and the SimpleX app (D22) |
+| 15 | operator | Etherscan verification |
 | 16 | operator | deploy key destroyed |
 
 ```mermaid
@@ -549,22 +550,22 @@ sequenceDiagram
   participant G as guardian Safe
   participant A as admin Safe
   participant N as names service
-  participant H as holders
   M->>M: tag and mirror the conditions version
   O->>O: terms.simplex.json, rename v1 files
-  N->>N: pause name sales; wait until no order is in flight
+  O->>O: check: purchase entry closed, no store order in flight
   D->>D: run 1: checks, deploy, wire, read-back
   D->>D: run 1: single-step transfers, proposals, v1 retirement
   A->>A: acceptOwnership x2
   O->>O: run 2: read-back
-  N->>N: switch to v2, commit files and the simplex-app pointer
+  N->>N: switch: store and resolver services, production dApp
+  O->>O: commit files and the simplex-app pointer
   A->>A: the upgrade batch of ens-contracts#51
   O->>O: registrar step: entry committed and checked
   G->>G: v2 sponsor setRegistrarAllowance
   O->>O: registrar step: allowance read back
-  N->>N: reopen name sales
-  H->>N: register the two names again
-  O->>O: other consumers, verify, destroy deploy key
+  N->>N: register the two v1 names again
+  O->>O: open purchase entry
+  O->>O: Etherscan verification, destroy deploy key
 ```
 
 ### Runs, resume and restore
@@ -573,7 +574,7 @@ Each run of `deploy-mainnet.mjs` is one invocation with a `RUN` of 1, 2, `regist
 
 After step 8, registration and renewal on v1 revert: both v1 registrar controllers are removed by D18.
 
-Steps 13 and 14 follow step 12: a sponsored registration reverts while the registrar wallet's allowance is zero.
+Steps 13 and 14 follow step 12: a sponsored registration reverts while the registrar wallet's allowance is zero. Step 14 follows step 13, so the two v1 names are registered for their holders before any buyer can order them (D14).
 
 Until step 11, v1 is restored by the deploy key: `addController` for the v1 controller and the v1 name policy on the v1 registrar, and `transferOwnership(admin Safe)` on the v1 controller and the v1 oracle.
 
@@ -775,27 +776,29 @@ The restart is required because of the two kept addresses.
 
 ### Other consumers
 
-Other consumers, at step 15 (names-v2-contracts plan, section 8):
+The resolver service, also at step 11, with the store service, so that a name registered on v2 is resolved from its first registration (names-v2-contracts plan, section 8):
 
-- `SNRC_REGISTRY_SIMPLEX` of `snrc-resolve.py` (simplex-chat/simplexmq `scripts/resolver/service/snrc-resolve.py`): the registry proxy
-- `SNRC_REGISTRAR_SIMPLEX` of `snrc-resolve.py`: the registrar proxy
-- `SNRC_CONTROLLER_SIMPLEX` of `snrc-resolve.py`: the controller proxy
-- `ens-metadata-service`: `ADDRESS_ETH_REGISTRAR`
-- `ens-metadata-service`: `ADDRESS_ETH_REGISTRY`
-- simplex-app: `deployments.mainnet.simplex.json`, read by `.github/workflows/deploy-pages.yml:65`
+| Consumer | Setting | Value |
+|---|---|---|
+| resolver service, simplex-chat/simplexmq `scripts/resolver/service/snrc-resolve.py` | `SNRC_REGISTRY_SIMPLEX` | registry proxy |
+| resolver service | `SNRC_REGISTRAR_SIMPLEX` | registrar proxy |
+| resolver service | `SNRC_CONTROLLER_SIMPLEX` | controller proxy |
 
-At step 11, the parent's `simplex-app` submodule pointer moves, together with the v2 addresses file, to the merge commit of the dApp change (simplex-chat/simplex-domains-app-v3, branch `ab/v2-storage-slots`) that sets the storage slots of its gas estimate (`src/hooks/gasEstimation/calculateTransactions.ts`) to v2's, so the deployed dApp is built with both:
+The production dApp, app.simplex.domains, is built by `.github/workflows/deploy-pages.yml` of simplex-chat/simplex-domains-app-v3 on each push to its `production` branch, from that repository's own `deployments.mainnet.simplex.json`. Its switch:
+
+1. A copy of the v2 addresses file and the change of the storage slots of the gas estimate (`src/hooks/gasEstimation/calculateTransactions.ts`) to v2's are put in one pull request from `ab/v2-storage-slots` into `simplex`, the repository's default branch.
+2. At step 11 it is merged, `production` is fast-forwarded to that merge commit, and the parent's `simplex-app` submodule pointer moves to the same commit.
+
+The deployment from `production` of 4 Nov was refused by the repository's `github-pages` environment (`Branch "production" is not allowed to deploy to github-pages due to environment protection rules.`), and the `.testing` build of `38a90e6`, deployed from `simplex` on 3 Nov, is served at app.simplex.domains; `production` is admitted in that environment before step 11.
 
 | Variable | v1 slot | v2 slot |
 |---|---|---|
 | `SimplexNamePolicy.acceptedTerms` | 103 | 2 |
 | `SimplexController.commitments` | 260 | 160 |
 
-Without the change, the estimate of `registerName` reverts and a fixed 700,000 gas is used (`src/hooks/chain/useEstimateGasWithStateOverride.ts`).
+Without the slot change, the estimate of `registerName` reverts and a fixed 700,000 gas is used (`src/hooks/chain/useEstimateGasWithStateOverride.ts`).
 
-`scripts/cloudflare-build-simplex.sh` reads `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 11.
-
-`ens-subgraph` indexes `.testing` (`src/utils.ts:12-17`); a `.simplex` subgraph is outside this plan.
+`scripts/cloudflare-build-simplex.sh`, the staging build, reads the parent's `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 11.
 
 ### Etherscan verification
 

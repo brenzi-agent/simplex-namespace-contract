@@ -294,7 +294,7 @@ target the right contracts.
 
 ## Known limitations
 
-- **No subgraph**: The ENS app uses The Graph for name queries. Without a local subgraph, some features (name list, search suggestions) may not work fully. Direct contract interactions (registration, profile editing) work.
+- **No name history**: both dApps run without a subgraph. The names of an address are read through `ERC721Enumerable` of the registrar, and the subnames of a name through the `SubnameRegistrar` (`src/hooks/ensjs/subgraph/useNamesForAddress.ts`, `useSubnames.ts`); the name history, which upstream reads from The Graph, is unavailable (`useNameHistory.ts`).
 - **Avatar/images disabled**: Avatar upload and display are intentionally hidden.
 - **DNS features disabled**: DNS import page returns blank.
 - **Logo placeholder**: SimpleX logo SVGs are text placeholders — replace with real brand assets.

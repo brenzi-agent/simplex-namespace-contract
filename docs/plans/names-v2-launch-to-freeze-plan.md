@@ -282,9 +282,10 @@ Every on-chain call, in order, with who signs it.
 
 ### A1. Deployment (GOV1)
 
-Before run 1, the store service's name sales are paused, and run 1 starts only when no order
-is in the phase queued, committing, committed or registering, so that every paid order has
-registered on v1 before v1 is retired (D22 of `docs/plans/upgradeable-stack.md`).
+Before run 1, an operator check: purchase entry stays closed in the webstore and the SimpleX
+app, and the store's metrics endpoint shows no order in the phase queued, committing,
+committed or registering, so that every paid order has registered on v1 before v1 is retired
+(D22 of `docs/plans/upgradeable-stack.md`; `docs/deployment.md`, "The store check").
 
 Caller: **deploy key**, alone, in run 1 of `deploy-mainnet.mjs`. The calls and their order
 are steps 1 to 16 of `docs/deployment.md`, "Deployment and wiring";
@@ -415,8 +416,9 @@ The owner provides the registrar hot wallet after run 1; only then is its `regis
 entry added to `governance.mainnet.json`. The step runs after the upgrade batch of
 simplex-network/ens-contracts#51 has executed, which replaces `RegisterName` and
 `registerWithCredit` in place, so no `RegisterName` of the old form is signed for the v2
-sponsor. After the step, the store service's name sales reopen, and the two v1 names are
-registered again (D21 and D22 of `docs/plans/upgradeable-stack.md`).
+sponsor. After the step, the names service registers the two v1 names again while purchase
+entry is still closed, and only then does purchase entry open (D14, D21 and D22 of
+`docs/plans/upgradeable-stack.md`).
 
 | # | Caller | Call |
 |---|---|---|
@@ -424,7 +426,8 @@ registered again (D21 and D22 of `docs/plans/upgradeable-stack.md`).
 | 2 | operator | `RUN=registrar` of `deploy-mainnet.mjs`, without a key: the entry checked (no code at the address); the Transaction Builder file of the guardian Safe written |
 | 3 | guardian Safe | `sponsor.setRegistrarAllowance(registrarHotWallet, N)`, from that file, with `N` in **attoUSD**, sized to expected sales plus headroom |
 | 4 | operator | `RUN=registrar-read-back`: `sponsor.registrarAllowance(registrarHotWallet)` is `N` |
-| 5 | names service | the store service's name sales reopen |
+| 5 | names service | the two v1 names registered again, while purchase entry is still closed |
+| 6 | operator | purchase entry opened in the webstore and the SimpleX app |
 
 ```mermaid
 sequenceDiagram
@@ -438,7 +441,8 @@ sequenceDiagram
   O->>O: entry committed; RUN=registrar
   G->>G: setRegistrarAllowance(registrarHotWallet, N)
   O->>O: RUN=registrar-read-back
-  N->>N: reopen name sales
+  N->>N: the two v1 names registered again
+  O->>O: purchase entry opened
 ```
 
 Not before the post-deploy read-back has reported every reserved name: a funded registrar

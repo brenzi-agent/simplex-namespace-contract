@@ -732,14 +732,13 @@ rewritten, and stealth-received names reconstructed from the announcements.
 The client holds no contract address — `Simplex/Chat/Names.hs` has none, and resolution
 goes over SMP to the names role — so a redeploy never requires an app release. What does
 change: `deployments.mainnet.simplex.json` and `verification.mainnet.simplex.json`;
-`SNRC_REGISTRY_SIMPLEX` for `snrc-resolve.py`, and nothing at all if the registry is kept;
-the names service's four `[chain]` addresses (`controller`, `sponsor`, `base_registrar`,
-`resolver`) and a restart of the service; `ens-metadata-service`'s `ADDRESS_ETH_REGISTRAR` and `ADDRESS_ETH_REGISTRY`;
-`ens-subgraph/subgraph.yaml` addresses and start blocks plus a re-index; and in
-`ens-app-v3`, `.env.simplex`'s `NEXT_PUBLIC_DEPLOYMENT_ADDRESSES`,
-`deploy/01_get_contract_addresses.ts`, its copy of the deployments JSON, and
-`src/constants/{chains,resolverAddressData,tldData}.ts`, which are keyed by chain id and
-must move together. Then Etherscan verification.
+`SNRC_REGISTRY_SIMPLEX`, `SNRC_REGISTRAR_SIMPLEX` and `SNRC_CONTROLLER_SIMPLEX` for
+`snrc-resolve.py`; the names service's four `[chain]` addresses (`controller`, `sponsor`,
+`base_registrar`, `resolver`) and a restart of the service; and the dApp's own
+`deployments.mainnet.simplex.json` (simplex-chat/simplex-domains-app-v3), from which
+app.simplex.domains is built by `.github/workflows/deploy-pages.yml`. Then Etherscan
+verification. The switch of the v2 redeploy is in `docs/plans/upgradeable-stack.md`,
+section 9.
 
 ## 9. Requirements handed to the names service
 
