@@ -158,12 +158,13 @@ own output may still name the URL: it is printed when the fork of a dry run fail
 | 8 | deploy key | v1 retirement | run 1 |
 | 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch | Safe, the batch of run 1 |
 | 10 | operator | handover read-back, without transactions | run 2 |
-| 11 | operator, names service | the switch: the store service, the resolver service and the production dApp switched to v2 (The switch); the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer committed to main together (Commit the files at the switch) | ini, env, dApp pull request, git |
+| 11 | operator, names service | the switch: the store service and the resolver service switched to v2 (The switch); the renamed v1 files, the v2 addresses file, the v2 journal and `verification.mainnet.simplex.json` committed to main together (Commit the files at the switch) | ini, env, git |
 | 12 | operator, guardian Safe | registrar step, after step 11, once the owner provides the names service's registrar wallet: its `registrarWallet` entry committed, checked and written as the guardian Safe's batch; the guardian Safe sets the allowance; the allowance read back | git, `RUN=registrar`, Safe, `RUN=registrar-read-back` |
 | 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed, by the store service in #51's form of `RegisterName` | names service |
 | 14 | operator | purchase entry opened in the webstore and the SimpleX app | store |
 | 15 | operator | Etherscan verification | `verify-etherscan.mjs` |
 | 16 | operator | deploy key destroyed | — |
+| 17 | operator | the dApp switch, before public sales open: the dApp pull request merged, `production` fast-forwarded and admitted to the `github-pages` environment, the `simplex-app` submodule pointer committed, the dApp checked (The dApp switch) | dApp pull request, GitHub settings, git |
 
 Step 3 precedes run 1: an order still in flight holds a commitment on the v1 controller
 and signatures whose EIP-712 domains name the v1 sponsor and name policy, and v1 reverts
@@ -174,7 +175,9 @@ registration; the store service is changed to sign that form before step 13 (the
 D21). Steps 13 and 14 follow step 12: a sponsored registration reverts
 `InsufficientAllowance` while the registrar wallet's allowance is zero. Step 14 follows
 step 13, so the two v1 names are registered for their holders before any buyer can order
-them.
+them. The prelaunch is made without the dApp (the owner, 20 Nov), so its switch is step
+17: after step 11, whose v2 addresses file is copied into the dApp's pull request, and
+before public sales open (launch-to-freeze plan, A4).
 
 ```mermaid
 sequenceDiagram
@@ -192,14 +195,15 @@ sequenceDiagram
   D->>D: run 1: transfers, proposals, v1 retirement
   A->>A: acceptOwnership x2, the batch of run 1
   O->>O: run 2: read-back
-  N->>N: switch: store and resolver services, production dApp
-  O->>O: commit files and the simplex-app pointer
+  N->>N: switch: store and resolver services
+  O->>O: commit files
   O->>O: registrarWallet entry committed; RUN=registrar
   G->>G: setRegistrarAllowance, the batch of the registrar step
   O->>O: RUN=registrar-read-back
   N->>N: register the two v1 names again
   O->>O: open purchase entry
   O->>O: Etherscan, destroy deploy key
+  O->>O: dApp switch, before public sales open
 ```
 
 ### The store check
@@ -251,25 +255,35 @@ The store service reads the name policy, the registry and the subname registrar 
 contracts; it keeps the registry until it restarts, and the policy until it restarts or a
 registration reverts `TermsNotAccepted`, so the restart is part of the switch.
 
-The production dApp, app.simplex.domains, is built by `.github/workflows/deploy-pages.yml`
-of simplex-chat/simplex-domains-app-v3 on each push to `production`, from that
-repository's own `deployments.mainnet.simplex.json`:
+The staging dApp (`scripts/cloudflare-build-simplex.sh`) reads the parent's
+`deployments.mainnet.simplex.json`, so it is built against v2 from the commit of step 11,
+with the storage slots of the pinned `simplex-app`, v1's until step 17.
 
-1. A copy of the v2 addresses file and the storage slots of the gas estimate set to v2's
-   are put in one pull request from `ab/v2-storage-slots` into `simplex`, the repository's
-   default branch: `SimplexNamePolicy.acceptedTerms` at slot 2 and
-   `SimplexController.commitments` at slot 160, in place of v1's 103 and 260
+### The dApp switch
+
+The prelaunch is made without the dApp, so the dApp is switched at step 17, before public
+sales open (launch-to-freeze plan, A4). The production dApp, app.simplex.domains, is built
+by `.github/workflows/deploy-pages.yml` of simplex-chat/simplex-domains-app-v3 on each push
+to `production`, from that repository's own `deployments.mainnet.simplex.json`:
+
+1. A copy of the v2 addresses file committed at step 11 and the storage slots of the gas
+   estimate set to v2's are put in one pull request from `ab/v2-storage-slots` into
+   `simplex`, the repository's default branch: `SimplexNamePolicy.acceptedTerms` at slot
+   2 and `SimplexController.commitments` at slot 160, in place of v1's 103 and 260
    (`src/hooks/gasEstimation/calculateTransactions.ts`). Without the slot change, the
    estimate of `registerName` reverts and a fixed 700,000 gas is used.
-2. At step 11 it is merged, `production` is fast-forwarded to that merge commit, and the
-   parent's `simplex-app` submodule pointer moves to the same commit.
+2. Deployments from `production` are admitted in the repository's `github-pages`
+   environment: the deployment from `production` of 4 Nov was refused there
+   ([dApp hosting](#simplex--github-pages-appsimplexdomains)).
+3. The pull request is merged, `production` is fast-forwarded to that merge commit, and the
+   parent's `simplex-app` submodule pointer, moved to the same commit, is committed to main.
+4. On app.simplex.domains, an unregistered name of six characters is shown as available
+   after a search, and "Public sales are not open yet" is shown on its registration page
+   while `publicSalesOpen` is false (`Pricing.tsx`).
 
-The deployment from `production` of 4 Nov was refused by the repository's `github-pages`
-environment, so `production` is admitted there before step 11
-([dApp hosting](#simplex--github-pages-appsimplexdomains)).
-
-The staging dApp (`scripts/cloudflare-build-simplex.sh`) reads the parent's
-`deployments.mainnet.simplex.json`, so it is built against v2 from the commit of step 11.
+Once public sales are open, the dApp's registration is checked by hand: search a name of
+six characters → "Available"; register it; set `simplex.contact` and `simplex.channel`;
+visit the profile and confirm both records render as clickable links.
 
 ### Inputs
 
@@ -778,8 +792,9 @@ At step 11, commit to main together:
 - `deployments.mainnet.simplex.journal.jsonl` — one line per mined transaction (hash,
   address, gas, effective price, cost); the paper trail and the resume source
 - `verification.mainnet.simplex.json`
-- the `simplex-app` submodule pointer, moved to the merge commit of the dApp pull request
-  ([The switch](#the-switch))
+
+The `simplex-app` submodule pointer is committed at step 17
+([The dApp switch](#the-dapp-switch)).
 
 The attempts log, with each attempt and the reason of its failure, is kept on the
 operator's machine. The attempts logs (`/deployments.mainnet.*.attempts.log`) and the Safe
@@ -1380,9 +1395,9 @@ State on 20 Nov 2026:
 | run of the workflow for `561a12b` on `production`, 4 Nov | build passed; deploy refused: `Branch "production" is not allowed to deploy to github-pages due to environment protection rules.` |
 | build served at `app.simplex.domains` | `38a90e6` of 3 Nov, deployed from `simplex` by the workflow's earlier version, a `.testing` build |
 
-Before step 11, deployments from `production` are admitted in the repository's
-`github-pages` environment (Settings → Environments). At step 11 the dApp is switched as
-[The switch](#the-switch) describes.
+Before the merge of step 17, deployments from `production` are admitted in the
+repository's `github-pages` environment (Settings → Environments). At step 17 the dApp is
+switched as [The dApp switch](#the-dapp-switch) describes.
 
 > The `.simplex` staging project on Cloudflare Pages builds `simplex-app` with the
 > parent's addresses file — see [`legacy/hosting-cloudflare.md`](./legacy/hosting-cloudflare.md).
@@ -1433,10 +1448,10 @@ After each deployment:
 3. Bring up the stack and run the parent-repo Playwright e2e suite:
    `./scripts/run-local.sh` then `npx playwright test --project=simplex` — every
    test passes (some conditionally skip based on live chain state).
-4. Manual smoke: search a 6-char name → "Available"; register it; set
-   `simplex.contact` and `simplex.channel`; visit the profile and confirm both
-   records render as clickable links.
-5. Admin panel `/admin`: confirm `minCharLength`, `nftGateEnabled`, and owner.
+4. Admin panel `/admin`: confirm `minCharLength`, `nftGateEnabled`, and owner.
+
+On mainnet `.simplex`, the dApp's registration is checked after step 17, once public sales
+are open ([The dApp switch](#the-dapp-switch)).
 
 ## Gotchas
 

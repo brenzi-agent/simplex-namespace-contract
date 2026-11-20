@@ -462,7 +462,8 @@ how far the handover has got.
 
 ### A4. Open public sales (GOV7)
 
-Caller: **guardian Safe**.
+Caller: **guardian Safe**. Before step 1, the dApp is switched to v2, at step 17 of
+`docs/deployment.md`; the prelaunch is made without it.
 
 1. `guardianSafe.changeThreshold(2)`, executed by the Safe itself; `scripts/governance-check.mjs`
    then passes for the guardian Safe with threshold 2 in `governance.mainnet.json`.

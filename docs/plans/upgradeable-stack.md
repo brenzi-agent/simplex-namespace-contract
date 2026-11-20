@@ -558,12 +558,13 @@ Unchanged:
 | 8 | deploy key, run 1 | v1 retirement (D18) |
 | 9 | admin Safe | `acceptOwnership()` on the controller and the oracle, one batch |
 | 10 | operator, run 2 | handover read-back, without transactions |
-| 11 | operator, names service | the switch (section 9): the store service, the resolver service and the production dApp switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal, `verification.mainnet.simplex.json` and the `simplex-app` submodule pointer |
+| 11 | operator, names service | the switch (section 9): the store service and the resolver service switched to v2; committed to main together: the renamed v1 files, the v2 addresses file, the v2 journal and `verification.mainnet.simplex.json` |
 | 12 | operator, guardian Safe, registrar step | after step 11, once the owner provides the registrar wallet: its entry committed and checked; the guardian Safe sets its allowance; the allowance read back (D21) |
 | 13 | names service | the two v1 names registered again for their holders, while purchase entry is still closed, by the store service in #51's form of `RegisterName` (D14, D21) |
 | 14 | operator | purchase entry opened in the webstore and the SimpleX app (D22) |
 | 15 | operator | Etherscan verification |
 | 16 | operator | deploy key destroyed |
+| 17 | operator | the dApp switch (section 9), before public sales open (launch-to-freeze plan, A4): the dApp pull request merged, `production` fast-forwarded and admitted to the `github-pages` environment, the `simplex-app` submodule pointer committed to main |
 
 ```mermaid
 sequenceDiagram
@@ -580,14 +581,15 @@ sequenceDiagram
   D->>D: run 1: single-step transfers, proposals, v1 retirement
   A->>A: acceptOwnership x2
   O->>O: run 2: read-back
-  N->>N: switch: store and resolver services, production dApp
-  O->>O: commit files and the simplex-app pointer
+  N->>N: switch: store and resolver services
+  O->>O: commit files
   O->>O: registrar step: entry committed and checked
   G->>G: v2 sponsor setRegistrarAllowance
   O->>O: registrar step: allowance read back
   N->>N: register the two v1 names again
   O->>O: open purchase entry
   O->>O: Etherscan verification, destroy deploy key
+  O->>O: dApp switch, before public sales open
 ```
 
 ### Runs, resume and restore
@@ -597,6 +599,8 @@ Each run of `deploy-mainnet.mjs` is one invocation with a `RUN` of 1, 2, `regist
 After step 8, registration and renewal on v1 revert: both v1 registrar controllers are removed by D18.
 
 Steps 13 and 14 follow step 12: a sponsored registration reverts while the registrar wallet's allowance is zero. Step 14 follows step 13, so the two v1 names are registered for their holders before any buyer can order them (D14).
+
+The prelaunch is made without the dApp (the owner, 20 Nov), so its switch is step 17: after step 11, whose v2 addresses file is copied into the dApp's pull request, and before public sales open.
 
 Until step 11, v1 is restored by the deploy key: `addController` for the v1 controller and the v1 name policy on the v1 registrar, and `transferOwnership(admin Safe)` on the v1 controller and the v1 oracle.
 
@@ -810,12 +814,13 @@ The resolver service, also at step 11, with the store service, so that a name re
 | resolver service | `SNRC_REGISTRAR_SIMPLEX` | registrar proxy |
 | resolver service | `SNRC_CONTROLLER_SIMPLEX` | controller proxy |
 
-The production dApp, app.simplex.domains, is built by `.github/workflows/deploy-pages.yml` of simplex-chat/simplex-domains-app-v3 on each push to its `production` branch, from that repository's own `deployments.mainnet.simplex.json`. Its switch:
+The production dApp, app.simplex.domains, is built by `.github/workflows/deploy-pages.yml` of simplex-chat/simplex-domains-app-v3 on each push to its `production` branch, from that repository's own `deployments.mainnet.simplex.json`. Its switch is step 17 of section 6, before public sales open:
 
 1. A copy of the v2 addresses file and the change of the storage slots of the gas estimate (`src/hooks/gasEstimation/calculateTransactions.ts`) to v2's are put in one pull request from `ab/v2-storage-slots` into `simplex`, the repository's default branch.
-2. At step 11 it is merged, `production` is fast-forwarded to that merge commit, and the parent's `simplex-app` submodule pointer moves to the same commit.
+2. `production` is admitted in the repository's `github-pages` environment.
+3. The pull request is merged, `production` is fast-forwarded to that merge commit, and the parent's `simplex-app` submodule pointer moves to the same commit.
 
-The deployment from `production` of 4 Nov was refused by the repository's `github-pages` environment (`Branch "production" is not allowed to deploy to github-pages due to environment protection rules.`), and the `.testing` build of `38a90e6`, deployed from `simplex` on 3 Nov, is served at app.simplex.domains; `production` is admitted in that environment before step 11.
+The deployment from `production` of 4 Nov was refused by the repository's `github-pages` environment (`Branch "production" is not allowed to deploy to github-pages due to environment protection rules.`), and the `.testing` build of `38a90e6`, deployed from `simplex` on 3 Nov, is served at app.simplex.domains.
 
 | Variable | v1 slot | v2 slot |
 |---|---|---|
@@ -824,7 +829,7 @@ The deployment from `production` of 4 Nov was refused by the repository's `githu
 
 Without the slot change, the estimate of `registerName` reverts and a fixed 700,000 gas is used (`src/hooks/chain/useEstimateGasWithStateOverride.ts`).
 
-`scripts/cloudflare-build-simplex.sh`, the staging build, reads the parent's `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 11.
+`scripts/cloudflare-build-simplex.sh`, the staging build, reads the parent's `deployments.mainnet.simplex.json` from main, so the staging dApp is built against v2 from the commit of step 11, with the storage slots of the pinned `simplex-app`, v1's until step 17.
 
 ### Etherscan verification
 
