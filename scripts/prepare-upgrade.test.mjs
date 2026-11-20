@@ -2,8 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ContractFunctionRevertedError, encodeFunctionData, keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
 import {
-  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, intendedNames,
-  interfaceFailures, layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
+  artifactFailures, batchChecksum, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, intendedNames,
+  interfaceFailures, layoutFailures, ownImmutables, safeBatch, slotFailures, transferCall, upgradeCallFailures,
+  upgradeData,
 } from './prepare-upgrade.mjs'
 import { assembleVerification } from './build-verification.mjs'
 import {
@@ -430,4 +431,48 @@ test('an upgradeAndCall whose simulation reverts is refused', async () => {
     `upgradeAndCall(${target.proxy}, ${OTHER}, 0x8fd3ab80) from ${ADMIN_SAFE} reverts: ` +
       'The contract function "upgradeAndCall" reverted with the following reason: not the ProxyAdmin',
   ])
+})
+
+const TX_BUILDER_TEST_BATCH = {
+  version: '1.0',
+  chainId: '4',
+  createdAt: 1646321521061,
+  meta: {
+    name: 'test batch file',
+    txBuilderVersion: '1.4.0',
+    checksum: '',
+    createdFromSafeAddress: '0xDF8a1Ce35c9a6ACE153B4e0767942f1E2291a1Aa',
+    createdFromOwnerAddress: '0x49d4450977E2c95362C13D3a31a09311E0Ea26A6',
+  },
+  transactions: [
+    {
+      to: '0x49d4450977E2c95362C13D3a31a09311E0Ea26A6',
+      value: '0',
+      contractMethod: { inputs: [{ internalType: 'address', name: 'paramAddress', type: 'address' }], name: 'testAddress', payable: false },
+      contractInputsValues: { paramAddress: '0x49d4450977E2c95362C13D3a31a09311E0Ea26A6' },
+    },
+    {
+      to: '0x49d4450977E2c95362C13D3a31a09311E0Ea26A6',
+      value: '0',
+      contractMethod: { inputs: [{ internalType: 'bool', name: 'paramBool', type: 'bool' }], name: 'testBool', payable: false },
+      contractInputsValues: { paramAddress: '', paramBool: 'false' },
+    },
+    {
+      to: '0x49d4450977E2c95362C13D3a31a09311E0Ea26A6',
+      value: '2000000000000000000',
+      data: '0x42f4579000000000000000000000000049d4450977e2c95362c13d3a31a09311e0ea26a6',
+    },
+  ],
+}
+
+test("the batch checksum equals the Safe Transaction Builder's for the builder's own test batch", () => {
+  assert.equal(batchChecksum(TX_BUILDER_TEST_BATCH), '0x4ecbfd364aa6759983915644e73f8bd411e85a2dc306f252a387c2728c4db64c')
+})
+
+test('a Safe batch sends its one transaction to the ProxyAdmin, with the checksum of the batch without it', () => {
+  const batch = safeBatch({ safe: ADMIN_SAFE, to: PROXY_ADMIN, data: '0x715018a6', name: 'freeze SimplexNamePolicy', description: 'renounceOwnership()', createdAt: 1 })
+  const { checksum, ...meta } = batch.meta
+  assert.deepEqual(batch.transactions, [{ to: PROXY_ADMIN, value: '0', data: '0x715018a6' }])
+  assert.deepEqual([batch.chainId, meta.createdFromSafeAddress], ['1', ADMIN_SAFE])
+  assert.equal(checksum, batchChecksum({ ...batch, meta }))
 })

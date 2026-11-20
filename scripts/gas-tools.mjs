@@ -17,11 +17,6 @@
  * monotonic step labels, JSONL attempts log.
  *
  * Exports:
- *   spawnHardhatFork({mainnetRpcUrl, port, ensContractsDir})
- *     → { url, chainId, stop(), state() } — spawns `npx hardhat node`, waits
- *       for the port, returns the local URL, the chain id, a stop function and
- *       a function that returns the node's exit status, stdout and stderr.
- *
  *   fundOnFork({forkUrl, address, weiHex})
  *     → uses `hardhat_setBalance` so the deployer EOA can pay gas on the fork.
  *
@@ -192,7 +187,7 @@ export async function spawnHardhatFork({ mainnetRpcUrl, port = 8546, ensContract
       cwd: ensContractsDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...process.env, MAINNET_RPC_URL: mainnetRpcUrl },
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, MAINNET_RPC_URL: mainnetRpcUrl },
     },
   )
   proc.on('error', (e) => console.error('hardhat node spawn error:', e))
@@ -484,88 +479,104 @@ export function createWaitForBaseRunner({
     // BUMP_AFTER_HOURS for inclusion; a kill in that window leaves the tx on
     // chain and nothing in the journal, so a naive resume would send it twice.
     // The attempts log recorded every hash, so check them before spending.
+    const pending = []
     for (const a of priorAttempts) {
-      if (a.step !== step || !a.txHash) continue
+      if (a.step !== step || a.outcome !== 'submitted') continue
+      const tx = await publicClient.getTransaction({ hash: a.txHash }).catch(() => null)
+      if (!tx) continue
+      // The attempts log outlives a journal moved aside, so the hash may be an
+      // earlier run's different call. Adopt only this exact call from this key.
+      const sent = callDigest(tx.to, tx.input, tx.value)
+      if (tx.from.toLowerCase() !== account.address.toLowerCase() || sent !== digest) {
+        throw new Error(
+          `[${step}] the attempts log names ${a.txHash}, sent by ${tx.from} as ${sent},\n` +
+            `  but this run would send ${digest} from ${account.address}. That is an earlier\n` +
+            `  run's call: to start over, move ${attemptsLogPath} aside along with the journal.`,
+        )
+      }
       const r = await publicClient
         .getTransactionReceipt({ hash: a.txHash })
         .catch(() => null)
-      if (r) {
-        // The attempts log outlives a journal moved aside, so the hash may be an
-        // earlier run's different call. Adopt only this exact call from this key.
-        const tx = await publicClient.getTransaction({ hash: a.txHash })
-        const sent = callDigest(tx.to, tx.input, tx.value)
-        if (tx.from.toLowerCase() !== account.address.toLowerCase() || sent !== digest) {
-          throw new Error(
-            `[${step}] the attempts log names ${a.txHash}, sent by ${tx.from} as ${sent},\n` +
-              `  but this run would send ${digest} from ${account.address}. That is an earlier\n` +
-              `  run's call: to start over, move ${attemptsLogPath} aside along with the journal.`,
-          )
-        }
-        const settled = await awaitConfirmations(step, r)
-        if (!settled) continue
-        console.log(`  ⤿ ${step}: recovered ${a.txHash} from a previous run — not resending`)
-        return recordSuccess(step, settled, digest)
+      if (!r) {
+        pending.push({ ...a, nonce: tx.nonce, maxFeePerGas: tx.maxFeePerGas })
+        continue
       }
-    }
-
-    // Real estimateGas once per step. A revert here = the tx would fail.
-    let gasEstimate
-    try {
-      const raw = await publicClient.estimateGas({
-        account: account.address, to, data, value,
-      })
-      gasEstimate = (raw * 110n) / 100n
-      logAttempt({ ts: nowIso(), step, outcome: 'estimated',
-        gasEstimate: gasEstimate.toString(), gasEstimateRaw: raw.toString() })
-      console.log(`  [${step}] estimated gas: ${gasEstimate.toLocaleString()} (raw ${raw.toLocaleString()} + 10%)`)
-    } catch (e) {
-      const msg = e.shortMessage || e.message || String(e)
-      logAttempt({ ts: nowIso(), step, outcome: 'estimate-error', reason: msg })
-      throw new Error(`[${step}] estimateGas reverted — would fail on chain: ${msg}`)
+      const settled = await awaitConfirmations(step, r)
+      if (!settled) continue
+      console.log(`  ⤿ ${step}: recovered ${a.txHash} from a previous run — not resending`)
+      return recordSuccess(step, settled, digest)
     }
 
     let cap = maxBaseFeeWei
-    let nonce = await publicClient.getTransactionCount({
-      address: account.address, blockTag: 'pending',
-    })
-    const hashes = []
+    let nonce
+    const hashes = pending.map(({ txHash }) => txHash)
     let bumps = 0
-
-    while (true) {
-      await waitForCheapBase(step, cap)
-      let hash
+    let hash
+    let deadline
+    const latest = pending.at(-1)
+    if (latest) {
+      ({ nonce, maxFeePerGas: cap, txHash: hash } = latest)
+      bumps = latest.bumps ?? 0
+      deadline = (Date.parse(latest.ts) || Date.now()) + bumpAfterMs
+      logAttempt({ ts: nowIso(), step, txHash: hash, outcome: 'adopted-pending' })
+      console.log(`  ⤿ ${step}: ${hash} from a previous run is pending — waiting for it, not resending`)
+    } else {
+      // Real estimateGas once per step. A revert here = the tx would fail.
+      let gasEstimate
       try {
-        hash = await walletClient.sendTransaction({
-          to, data, value, nonce,
-          maxFeePerGas: cap, maxPriorityFeePerGas: 0n,
+        const raw = await publicClient.estimateGas({
+          account: account.address, to, data, value,
         })
+        gasEstimate = (raw * 110n) / 100n
+        logAttempt({ ts: nowIso(), step, outcome: 'estimated',
+          gasEstimate: gasEstimate.toString(), gasEstimateRaw: raw.toString() })
+        console.log(`  [${step}] estimated gas: ${gasEstimate.toLocaleString()} (raw ${raw.toLocaleString()} + 10%)`)
       } catch (e) {
         const msg = e.shortMessage || e.message || String(e)
-        // If the tx was already mined under an earlier hash, collect it.
-        for (const h of hashes) {
-          const r = await publicClient.getTransactionReceipt({ hash: h }).catch(() => null)
-          if (r) return recordSuccess(step, r, digest)
-        }
-        // "Nonce too low" means a prior tx (probably from a prior partial
-        // run) already used this nonce — refresh and retry the same step.
-        if (/nonce too low/i.test(msg)) {
-          nonce = await publicClient.getTransactionCount({
-            address: account.address, blockTag: 'pending',
-          })
-          logAttempt({ ts: nowIso(), step, outcome: 'nonce-refresh', reason: msg })
-          continue
-        }
-        if (/insufficient funds/i.test(msg)) throw e
-        logAttempt({ ts: nowIso(), step, outcome: 'submit-error', reason: msg })
-        throw e
+        logAttempt({ ts: nowIso(), step, outcome: 'estimate-error', reason: msg })
+        throw new Error(`[${step}] estimateGas reverted — would fail on chain: ${msg}`)
       }
-      hashes.push(hash)
-      logAttempt({ ts: nowIso(), step, txHash: hash,
-        maxFeePerGas: cap.toString(), bumps,
-        outcome: 'submitted' })
-      console.log(`  [${step}] submitted ${hash}  (cap=${fmtGwei(cap)} gwei, bumps=${bumps})`)
+      nonce = await publicClient.getTransactionCount({
+        address: account.address, blockTag: 'pending',
+      })
+    }
 
-      const deadline = Date.now() + bumpAfterMs
+    while (true) {
+      if (!hash) {
+        await waitForCheapBase(step, cap)
+        try {
+          hash = await walletClient.sendTransaction({
+            to, data, value, nonce,
+            maxFeePerGas: cap, maxPriorityFeePerGas: 0n,
+          })
+        } catch (e) {
+          const msg = e.shortMessage || e.message || String(e)
+          // If the tx was already mined under an earlier hash, collect it.
+          for (const h of hashes) {
+            const r = await publicClient.getTransactionReceipt({ hash: h }).catch(() => null)
+            if (r) return recordSuccess(step, r, digest)
+          }
+          // "Nonce too low" means a prior tx (probably from a prior partial
+          // run) already used this nonce — refresh and retry the same step.
+          if (/nonce too low/i.test(msg)) {
+            nonce = await publicClient.getTransactionCount({
+              address: account.address, blockTag: 'pending',
+            })
+            logAttempt({ ts: nowIso(), step, outcome: 'nonce-refresh', reason: msg })
+            continue
+          }
+          if (/insufficient funds/i.test(msg)) throw e
+          logAttempt({ ts: nowIso(), step, outcome: 'submit-error', reason: msg })
+          throw e
+        }
+        hashes.push(hash)
+        logAttempt({ ts: nowIso(), step, txHash: hash,
+          maxFeePerGas: cap.toString(), bumps,
+          outcome: 'submitted' })
+        console.log(`  [${step}] submitted ${hash}  (cap=${fmtGwei(cap)} gwei, bumps=${bumps})`)
+        deadline = Date.now() + bumpAfterMs
+      }
+
       const result = await waitForInclusion(step, hash, deadline)
       if (result.status === 'mined') return recordSuccess(step, result.receipt, digest)
 
@@ -591,6 +602,7 @@ export function createWaitForBaseRunner({
       logAttempt({ ts: nowIso(), step, txHash: hash, outcome: 'stalled',
         reason: result.reason, bumps, newCap: cap.toString() })
       console.warn(`  [${step}] stalled — bumping cap to ${fmtGwei(cap)} gwei (bump ${bumps})`)
+      hash = undefined
     }
   }
 

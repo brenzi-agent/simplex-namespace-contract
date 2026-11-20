@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   BaseError, ContractFunctionRevertedError, createWalletClient, encodeFunctionData, encodeDeployData, http, keccak256,
-  pad, parseGwei, toFunctionSelector, zeroAddress,
+  pad, parseGwei, toBytes, toFunctionSelector, zeroAddress,
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -12,8 +12,9 @@ import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
 import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, PROXY_ADMIN_ABI, REPO_ROOT, TLD, UPGRADEABLE,
-  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames, immutablesIn,
-  interfaceOf, mainnetClient, placeImmutables, proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  immutableNames, immutablesIn, interfaceOf, mainnetClient, parentHead, placeImmutables, proxyAdminOf, proxySlots,
+  refusal, requireEnv, storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -21,9 +22,6 @@ const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.att
 const UUPS_SELECTORS = new Set(['0x3659cfe6', '0x4f1ef286', '0x52d1902d'])
 const PROXY_ADMIN_IMMUTABLE = '_proxyAdmin'
 const PROXY_ADMIN_INPUT = 'proxyAdmin'
-
-const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
-const accepted = (fields) => ({ refused: false, ...fields })
 
 const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
@@ -277,6 +275,28 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   })
 }
 
+function checksumInput(json) {
+  if (Array.isArray(json)) return `[${json.map(checksumInput).join(',')}]`
+  if (typeof json === 'object' && json !== null) {
+    const keys = Object.keys(json).sort()
+    return `{${JSON.stringify(keys)}${keys.map((key) => `${checksumInput(json[key])},`).join('')}}`
+  }
+  return JSON.stringify(json === undefined ? null : json)
+}
+
+export const batchChecksum = (batch) => keccak256(toBytes(checksumInput({ ...batch, meta: { ...batch.meta, name: null } })))
+
+export function safeBatch({ safe, to, data, name, description, createdAt = Date.now() }) {
+  const batch = {
+    version: '1.0',
+    chainId: '1',
+    createdAt,
+    meta: { name, description, createdFromSafeAddress: safe, createdFromOwnerAddress: '' },
+    transactions: [{ to, value: '0', data }],
+  }
+  return { ...batch, meta: { ...batch.meta, checksum: batchChecksum(batch) } }
+}
+
 export function intendedNames(text) {
   const names = ['']
   let depth = 0
@@ -317,6 +337,7 @@ const ACTIONS = {
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
     const source = assertTaggedSource()
+    assertCommitted(['scripts'])
     assertBuildFresh()
     const runner = createWaitForBaseRunner({
       publicClient: client, walletClient, account,
@@ -338,7 +359,9 @@ const ACTIONS = {
     }
     const prepared = await prepareUpgrade(confirmed, client, name, addresses, verification, account.address, request)
     if (prepared.refused) return prepared
-    verification.contracts[`${name}@${prepared.candidate}`] = { ...prepared.entry, ensContractsCommit: source.commit }
+    verification.contracts[`${name}@${prepared.candidate}`] = {
+      ...prepared.entry, ensContractsCommit: source.commit, parentCommit: parentHead(),
+    }
     writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2))
     console.log(`✓ ${name} candidate ${prepared.candidate} keeps the storage layout, the current immutables and the current interface`)
     for (const { name: immutable, current, next } of prepared.changes) {
@@ -373,10 +396,20 @@ async function main() {
     process.exit(1)
   }
   const { target: { name, proxy, implementation, proxyAdmin, owner }, functionName, args } = call
+  const data = encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })
   console.log(`\nThe implementation slot of the ${name} proxy ${proxy} holds ${implementation}.`)
   console.log(`The ProxyAdmin owner ${owner} submits to the ProxyAdmin ${proxyAdmin} of ${name}, not to its proxy:`)
   console.log(`  ${functionName}(${args.join(', ')})`)
-  console.log(`  calldata ${encodeFunctionData({ abi: PROXY_ADMIN_ABI, functionName, args })}`)
+  console.log(`  calldata ${data}`)
+  const batchPath = join(REPO_ROOT, `safe-transaction.mainnet.${TLD}.${process.env.ACTION}.${name}.json`)
+  writeFileSync(batchPath, JSON.stringify(safeBatch({
+    safe: owner,
+    to: proxyAdmin,
+    data,
+    name: `${process.env.ACTION} ${name}`,
+    description: `${functionName}(${args.join(', ')}) on the ProxyAdmin ${proxyAdmin} of the ${name} proxy ${proxy}`,
+  }), null, 2))
+  console.log(`Wrote ${batchPath}: load it into the Transaction Builder of the Safe ${owner}; its one transaction goes to the ProxyAdmin ${proxyAdmin}.`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

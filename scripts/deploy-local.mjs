@@ -131,9 +131,6 @@ async function main() {
   await write(baseRegistrar, 'setSubnameHook', [subnameRegistrar.address])
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
-  // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
-  // and the owner's signature check. Only this contract may call the controller's
-  // sponsored entry points. The guardian funds registrars here.
   const sponsor = await proxied('SimplexSponsor')
   await write(controller, 'setSponsor', [sponsor.address])
 

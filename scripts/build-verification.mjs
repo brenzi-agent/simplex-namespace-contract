@@ -30,20 +30,17 @@ import { loadJournal } from './gas-tools.mjs'
 import { loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ARTIFACT, SOURCE_TAG, TLD, TRANSPARENT_PROXY, UPGRADEABLE,
-  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, ensContractsHead, immutableNames,
-  immutablesIn, initializerData, interfaceOf, mainnetClient, placeImmutables, proxySlots, requireEnv, storageLayout,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, constructorArgs,
+  ensContractsHead, immutableNames, immutablesIn, initializerData, interfaceOf, mainnetClient, parentHead,
+  placeImmutables, proxySlots, refusal, requireEnv, storageLayout,
 } from './stack.mjs'
 
-/**
- * Given the deployment addresses, the deploy key and the admin Safe, return the
- * verification metadata object. Used by deploy-mainnet.mjs at the end of run 1,
- * where every input is already in scope.
- */
 export async function assembleVerification({ client, addresses, deployer, adminSafe }) {
   const ensContractsCommit = ensContractsHead()
+  const parentCommit = parentHead()
   const target = (path, address, args) => {
     const { abi, buildInfoId } = artifact(path)
-    return { address, artifact: path, constructorArgs: constructorArgs(abi, args), buildInfoId, ensContractsCommit }
+    return { address, artifact: path, constructorArgs: constructorArgs(abi, args), buildInfoId, ensContractsCommit, parentCommit }
   }
   const setup = { tld: TLD, deployer, chainlinkEthUsd: addresses.DummyOracle }
   const contracts = {}
@@ -74,6 +71,25 @@ export async function assembleVerification({ client, addresses, deployer, adminS
   return { network: 'mainnet', chainId: '1', tld: TLD, deployer, contracts }
 }
 
+export async function verificationFile(client, { addresses, exists, journal, deployer, adminSafe }) {
+  if (!addresses) return refusal([`${ADDRESSES_PATH} not found.`])
+  if (exists) return refusal([`${VERIFICATION_PATH} exists, and it records every implementation since run 1; it is not rebuilt.`])
+  const deployedByRunOne = new Map(journal.map(({ step, address }) => [step, address]))
+  const replaced = []
+  for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
+    const { implementation } = await proxySlots(client, addresses[key])
+    if (implementation.toLowerCase() !== deployedByRunOne.get(`deploy:${name}`)?.toLowerCase()) {
+      replaced.push(`the ${name} proxy runs ${implementation}, not the implementation run 1 deployed.`)
+    }
+  }
+  if (replaced.length) return refusal(replaced)
+  if (!deployer) {
+    return refusal(['deployer address not provided and no journal available to look it up. ' +
+      'Set DEPLOYER=0x… (the EOA that ran deploy-mainnet.mjs).'])
+  }
+  return accepted({ meta: await assembleVerification({ client, addresses, deployer, adminSafe }) })
+}
+
 // ----- CLI -----
 
 async function lookupDeployerFromJournal(rpcUrl) {
@@ -92,41 +108,21 @@ async function lookupDeployerFromJournal(rpcUrl) {
 async function cli() {
   const rpcUrl = requireEnv('MAINNET_RPC_URL')
   assertTaggedSource(SOURCE_TAG)
+  assertCommitted(['scripts', 'governance.mainnet.json'])
   assertBuildFresh()
-  if (!existsSync(ADDRESSES_PATH)) {
-    console.error(`ERROR: ${ADDRESSES_PATH} not found.`)
-    process.exit(1)
-  }
-  if (existsSync(VERIFICATION_PATH)) {
-    console.error(`ERROR: ${VERIFICATION_PATH} exists, and it records every implementation since run 1; it is not rebuilt.`)
-    process.exit(1)
-  }
-  const addresses = JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8'))
   const client = await mainnetClient(rpcUrl)
-  const deployedByRunOne = new Map(loadJournal(JOURNAL_PATH).map(({ step, address }) => [step, address]))
-  for (const [name, { key }] of Object.entries(UPGRADEABLE)) {
-    const { implementation } = await proxySlots(client, addresses[key])
-    if (implementation.toLowerCase() !== deployedByRunOne.get(`deploy:${name}`)?.toLowerCase()) {
-      console.error(`ERROR: the ${name} proxy runs ${implementation}, not the implementation run 1 deployed.`)
-      process.exit(1)
-    }
-  }
-
-  const deployer = process.env.DEPLOYER || (await lookupDeployerFromJournal(rpcUrl))
-  if (!deployer) {
-    console.error(
-      'ERROR: deployer address not provided and no journal available to look it up. ' +
-        'Set DEPLOYER=0x… (the EOA that ran deploy-mainnet.mjs).',
-    )
-    process.exit(1)
-  }
-
-  const meta = await assembleVerification({
-    client,
-    addresses,
-    deployer,
+  const built = await verificationFile(client, {
+    addresses: existsSync(ADDRESSES_PATH) ? JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8')) : undefined,
+    exists: existsSync(VERIFICATION_PATH),
+    journal: loadJournal(JOURNAL_PATH),
+    deployer: process.env.DEPLOYER || (await lookupDeployerFromJournal(rpcUrl)),
     adminSafe: loadGovernance().adminSafe.address,
   })
+  if (built.refused) {
+    for (const failure of built.failures) console.error(`ERROR: ${failure}`)
+    process.exit(1)
+  }
+  const { meta } = built
 
   writeFileSync(VERIFICATION_PATH, JSON.stringify(meta, null, 2))
   console.log(`Wrote ${VERIFICATION_PATH}`)

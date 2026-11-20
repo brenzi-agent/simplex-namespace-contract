@@ -29,7 +29,8 @@
  *
  * Required env vars:
  *   RUN                1 | 2
- *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real)
+ *   MAINNET_RPC_URL    JSON-RPC URL for mainnet (used by both fork + real), serving
+ *                      eth_getLogs from old blocks
  *   DEPLOYER_KEY       run 1: hex private key (0x...) of the deploy key
  *   MAX_BASE_FEE_GWEI  run 1: cap on per-gas price (e.g. "0.078")
  *
@@ -79,8 +80,8 @@ import {
   USD_FEED_DECIMALS,
 } from './simplex-price-curve.mjs'
 import {
-  ADDRESSES_PATH, ENS_CONTRACTS_DIR, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
-  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, deployBehindProxy,
+  ADDRESSES_PATH, ENS_CONTRACTS_DIR, IMMUTABLE, JOURNAL_PATH, PROXY_ADMIN_ABI, REPO_ROOT, SOURCE_TAG, TLD, TRANSPARENT_PROXY,
+  UPGRADEABLE, V1_ABI, VERIFICATION_PATH, artifact, assertBuildFresh, assertCommitted, assertTaggedSource, deployBehindProxy,
   deployImmutable, logsSince, mainnetClient, proxyAdminOf, proxySlots, requireEnv, runtimeCode, sortedAddresses,
   storedValue,
 } from './stack.mjs'
@@ -100,6 +101,8 @@ const COMMUNITY_BATCH = 100
 // The labels users can register: simplex-app src/hooks/useValidate.ts ALLOWED_LABEL_REGEX.
 const ALLOWED_LABEL_REGEX = /^(?!.{2}--)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const CONTROLLER_ADDED = parseAbiItem('event ControllerAdded(address indexed controller)')
+const FRESH_RUN_LOG_DEPTH = 50_400n
+const RUN_ONE_INPUTS = ['scripts', 'governance.mainnet.json', `reserved-names.${TLD}.csv`, `terms.${TLD}.json`, `community-names.${TLD}.csv`]
 
 const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.attempts.log`)
 const v1AddressesPath = join(REPO_ROOT, `deployments.mainnet.${TLD}-v1.json`)
@@ -225,11 +228,6 @@ export function loadInputs() {
   }
 }
 
-/**
- * The deployment and wiring of run 1, parameterised by a runner: a dry-run
- * runner (forked node) to capture gas, then the real wait-for-base runner
- * against mainnet.
- */
 async function deployAndWire({ deploy, write }, { governance, reservedByReason, terms, communityNames }, deployer, client) {
   const setup = { tld: TLD, deployer, chainlinkEthUsd }
   const addresses = {}
@@ -254,9 +252,6 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   // ReverseClaimer, so nothing needs to own addr.reverse for the resolver to deploy.
   await write(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash(TLD), deployer])
 
-  // SimplexPriceOracle's curve and feed are both settable by call afterwards, so
-  // it never has to be redeployed to change what a name costs. Its base price
-  // covers every length, so lowering minCharLength never hands out free names.
   const priceOracle = await immutable('SimplexPriceOracle')
 
   const controller = await proxied('SimplexController')
@@ -292,9 +287,6 @@ async function deployAndWire({ deploy, write }, { governance, reservedByReason, 
   // ever holding ETH.
   await write(controller, 'setDefaultResolver', [publicResolver.address])
 
-  // The sponsored path: registrar allowances, registerWithCredit/renewWithCredit
-  // and the owner's signature check. Only this contract may call the controller's
-  // sponsored entry points. The guardian funds registrars here.
   const sponsor = await proxied('SimplexSponsor')
   await write(controller, 'setSponsor', [sponsor.address])
 
@@ -354,6 +346,9 @@ async function handOver({ deploy, write }, { addresses, upgradeable, priceOracle
   await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [namehash('eth'), labelhash('data'), admin])
   await transferToAdminSafe(ensRegistry, 'setSubnodeOwner', [zeroHash, labelhash('eth'), admin])
   const root = await deployImmutable(deploy, 'Root', addresses, {})
+  if ((await client.getCode({ address: root.address })) !== runtimeCode(artifact(IMMUTABLE.Root.artifact), {})) {
+    throw new Error(`the code at ${root.address} is not the Root artifact's: Root is not called, and ens.setOwner(0x0, root) is not sent`)
+  }
   await transferToAdminSafe(root, 'setController', [admin, true])
   await transferToAdminSafe(root, 'transferOwnership', [admin])
   await write(ensRegistry, 'setOwner', [zeroHash, root.address])
@@ -435,6 +430,27 @@ function readBack(client) {
 const ADDR = [{ type: 'address' }]
 const BYTES32 = [{ type: 'bytes32' }]
 const BOOL = [{ type: 'bool' }]
+
+export async function logsFailures(client, governance, journal) {
+  const registrar = journal.find(({ step }) => step === 'deploy:BaseRegistrarImplementationProxy')
+  const head = await client.getBlockNumber()
+  const needed = [
+    registrar
+      ? { block: BigInt(registrar.blockNumber), address: registrar.address, logs: `the ControllerAdded logs of the registrar proxy` }
+      : { block: head - FRESH_RUN_LOG_DEPTH, logs: `the ControllerAdded logs of the registrar proxy, ${FRESH_RUN_LOG_DEPTH} blocks after its deployment` },
+    ...Object.entries(governance).filter(([, { kind }]) => kind === 'TimelockController')
+      .map(([name, { address, deployBlock }]) => ({ block: BigInt(deployBlock), address, logs: `the RoleGranted logs of ${name}` })),
+  ]
+  const failures = []
+  for (const { block, address, logs } of needed) {
+    try {
+      await client.getLogs({ address, fromBlock: block, toBlock: block })
+    } catch (error) {
+      failures.push(`MAINNET_RPC_URL serves no eth_getLogs at block ${block}, from which run 1 reads ${logs}: ${error.shortMessage ?? error.message}`)
+    }
+  }
+  return failures
+}
 
 async function controllersAdded(client, registrar, fromBlock) {
   const logs = await logsSince(client, { address: registrar, event: CONTROLLER_ADDED }, fromBlock)
@@ -531,8 +547,6 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
   report(`community names read back`, unlisted.length === 0,
     `${communityNames.length - unlisted.length} of ${communityNames.length}` +
       (unlisted.length ? `; missing ${unlisted.slice(0, 5).join(', ')}${unlisted.length > 5 ? ', …' : ''}` : ''))
-  // A six-character name must quote the cheapest rung; zero means the oracle is
-  // misconfigured and every name would be free.
   try {
     const p = await client.readContract({
       address: controller,
@@ -591,6 +605,9 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
     await check(`${name} ProxyAdmin owner is the admin Safe`, governance.adminSafe.address,
       () => client.readContract({ address: proxyAdmin, abi: PROXY_ADMIN_ABI, functionName: 'owner' }))
   }
+  for (const name of Object.keys(IMMUTABLE).filter((name) => Object.hasOwn(addresses, name))) {
+    await matchesCode(`${name} code`, addresses[name], () => runtimeCode(artifact(IMMUTABLE[name].artifact), {}))
+  }
   await check('registrar ens', registry, () => read(registrar, [], ADDR, 'ens'))
   await check('registrar baseNode', TLD_NODE, () => read(registrar, [], BYTES32, 'baseNode'))
   await check('controller ens', registry, () => read(controller, [], ADDR, 'ens'))
@@ -611,7 +628,7 @@ async function readBackOne(client, deployed, { governance, terms, reservedByReas
   await check('registry resolver of the TLD node', addresses.PublicResolver,
     () => read(registry, BYTES32, ADDR, 'resolver', [TLD_NODE]))
   await check('controllers added on the registrar', sortedAddresses([controller, addresses.SimplexNamePolicy]).join(', '),
-    async () => sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)).join(', '))
+    async () => [...new Set(sortedAddresses(await controllersAdded(client, registrar, deployed.upgradeable.BaseRegistrarImplementation.blockNumber)))].join(', '))
 
   const handedOver = await read(registrar, [], ADDR, 'owner')
     .then((owner) => owner.toLowerCase() === governance.adminSafe.address.toLowerCase(), () => false)
@@ -727,10 +744,16 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   const forkPort = parseInt(process.env.FORK_PORT || '18545', 10)
   const account = privateKeyToAccount(deployerKey)
   const { governance } = inputs
+  if (governance.registrarWallet.placeholder) {
+    console.error(`governance.mainnet.json registrarWallet ${governance.registrarWallet.address} is a placeholder: ` +
+      `${governance.registrarWallet.placeholder}. Run 1 refuses it before the fork.`)
+    process.exit(1)
+  }
 
   // Cheap and first: a stale build must not cost a fork spawn, let alone a
   // transaction.
   assertTaggedSource(SOURCE_TAG)
+  assertCommitted(RUN_ONE_INPUTS)
   assertBuildFresh()
 
   // A populated addresses file with no journal beside it means a previous
@@ -742,6 +765,13 @@ async function runOneOnMainnet(rpcUrl, inputs) {
         `  That pairing means a completed deployment whose journal is gone — this run would\n` +
         `  overwrite the record of live addresses. Move it and ${attemptsLogPath} aside deliberately if you\n` +
         `  really are starting over.`,
+    )
+    process.exit(1)
+  }
+  if (existsSync(VERIFICATION_PATH)) {
+    console.error(
+      `${VERIFICATION_PATH} exists. Run 1 writes it last, so run 1 is complete, and the file may record\n` +
+        `  upgrade candidates since; run 1 does not rewrite it. RUN=2 reads the handover back.`,
     )
     process.exit(1)
   }
@@ -762,6 +792,13 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   console.log(`  Bump rule:         after ${bumpAfterMs / 3600000}h stall, cap × ${Number(100n + bumpPct) / 100}`)
   console.log(`  Journal:           ${JOURNAL_PATH}`)
   console.log(`  Attempts log:      ${attemptsLogPath}`)
+
+  const publicClient = await mainnetClient(rpcUrl)
+  const unserved = await logsFailures(publicClient, governance, loadJournal(JOURNAL_PATH))
+  if (unserved.length) {
+    console.error(unserved.join('\n'))
+    process.exit(1)
+  }
 
   // ----- 1. Dry run against a forked mainnet -----
   activeFork = await spawnHardhatFork({
@@ -787,7 +824,6 @@ async function runOneOnMainnet(rpcUrl, inputs) {
   }
 
   // ----- 2. Preflight + confirm -----
-  const publicClient = await mainnetClient(rpcUrl)
   const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
 
   // A dead or misconfigured feed makes every price quote revert

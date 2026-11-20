@@ -65,8 +65,6 @@ console.log(`Chain: ${network} (chainId=${chainId})`)
 
 let TARGETS
 if (meta.contracts) {
-  // Comprehensive format — iterate over the dict. Artifact paths in the
-  // verification file are relative to ens-contracts/artifacts/.
   TARGETS = Object.entries(meta.contracts).map(([name, entry]) => ({
     label: name,
     address: entry.address,
@@ -208,6 +206,8 @@ async function pollStatus(guid) {
 }
 
 let failures = 0
+let verified = 0
+const skipped = []
 for (const t of TARGETS) {
   // Wrapper-free v3 leaves removed contracts (NameWrapper, DefaultReverseRegistrar,
   // legacy controllers) at the zero address — nothing is deployed there to verify,
@@ -220,6 +220,7 @@ for (const t of TARGETS) {
   if (t.buildInfoId && t.buildInfoId !== localBuild) {
     console.log(`\n--- ${t.label} ---\n  address: ${t.address}\n  skipped: built as ${t.buildInfoId} from ens-contracts ` +
       `${t.ensContractsCommit}, and the local artifact is ${localBuild}; check out and compile that commit to verify it`)
+    skipped.push(t)
     continue
   }
   const guid = await verify(t)
@@ -229,11 +230,17 @@ for (const t of TARGETS) {
   }
   const status = await pollStatus(guid)
   console.log(`  ${status.ok ? 'OK' : 'FAIL'}: ${status.msg}`)
-  if (!status.ok) failures++
+  if (status.ok) verified++
+  else failures++
 }
 
+const skippedCommits = [...new Set(skipped.map(({ ensContractsCommit }) => ensContractsCommit))]
+console.log(`\n${verified} verified, ${skipped.length} skipped` +
+  `${skippedCommits.length ? ` (built from ens-contracts ${skippedCommits.join(', ')})` : ''}.`)
 if (failures > 0) {
-  console.error(`\n${failures} contract(s) failed verification.`)
+  console.error(`${failures} contract(s) failed verification.`)
   process.exit(1)
 }
-console.log('\nAll contracts verified.')
+console.log(skipped.length
+  ? 'Not all contracts verified: run this again from a compiled checkout of each commit above.'
+  : 'All contracts verified.')

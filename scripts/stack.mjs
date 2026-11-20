@@ -55,6 +55,9 @@ export function requireEnv(name, hint = '') {
 
 export const sortedAddresses = (list) => list.map((address) => getAddress(address)).sort()
 
+export const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
+export const accepted = (fields) => ({ refused: false, ...fields })
+
 export const addressAt = async (client, address, slot) =>
   getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
 
@@ -72,9 +75,6 @@ export async function logsSince(client, filter, fromBlock) {
 
 export async function mainnetClient(rpcUrl) {
   const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
-  // MAINNET_RPC_URL pointing at a testnet would deploy the whole stack to the
-  // wrong chain and journal it as a success. viem only asserts the chain id on
-  // some paths, so assert it here, once, before any spend.
   const liveChainId = await client.getChainId()
   if (liveChainId !== mainnet.id) {
     console.error(`MAINNET_RPC_URL is chainId ${liveChainId}, expected ${mainnet.id}. Refusing to run.`)
@@ -195,13 +195,6 @@ export const IMMUTABLE = {
   },
 }
 
-/// L33: the deploy reads compiled artifacts, never sources, so an edit made
-/// after the last compile would deploy the previous bytecode and the journal
-/// would record it as a success. Rather than guess freshness from mtimes —
-/// Hardhat caches on content, so a touched-but-unchanged file would block the
-/// run forever — just compile. It is idempotent, it is the only thing that
-/// actually guarantees the artifacts match the sources, and it fails the run on
-/// a branch that does not build at all.
 export function assertBuildFresh() {
   console.log('Compiling contracts (artifacts must match sources) …')
   try {
@@ -209,6 +202,7 @@ export function assertBuildFresh() {
       cwd: ENS_CONTRACTS_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       encoding: 'utf8',
+      env: { PATH: process.env.PATH, HOME: process.env.HOME },
     })
   } catch (e) {
     console.error('`npx hardhat compile` failed — refusing to deploy.\n')
@@ -241,6 +235,16 @@ export function assertTaggedSource(tag) {
     process.exit(1)
   }
   return { commit, tags }
+}
+
+export const parentHead = () => git(REPO_ROOT, 'rev-parse', 'HEAD')
+
+export function assertCommitted(paths) {
+  const changes = git(REPO_ROOT, 'status', '--porcelain', '--', ...paths)
+  if (changes) {
+    console.error(`the parent repository has changes outside the commit ${parentHead()} in ${paths.join(', ')}:\n${changes}`)
+    process.exit(1)
+  }
 }
 
 export const artifact = (path) => JSON.parse(readFileSync(join(ARTIFACTS, path), 'utf8'))
