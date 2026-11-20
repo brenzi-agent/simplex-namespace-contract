@@ -336,7 +336,6 @@ const ACTIONS = {
     const account = privateKeyToAccount(deployerKey)
     const walletClient = createWalletClient({ chain: mainnet, transport: http(rpcUrl), account })
     const source = assertTaggedSource()
-    assertCommitted(['scripts'])
     assertBuildFresh()
     const runner = createWaitForBaseRunner({
       publicClient: client, walletClient, account,
@@ -385,6 +384,7 @@ async function main() {
     console.error(`ACTION must be one of ${Object.keys(ACTIONS).join(', ')} (got ${JSON.stringify(process.env.ACTION)})`)
     process.exit(1)
   }
+  assertCommitted(['scripts', 'governance.mainnet.json', `deployments.mainnet.${TLD}.json`, `verification.mainnet.${TLD}.json`])
   const client = await mainnetClient(requireEnv('MAINNET_RPC_URL'))
   const addresses = JSON.parse(readFileSync(ADDRESSES_PATH, 'utf8'))
   const verification = JSON.parse(readFileSync(VERIFICATION_PATH, 'utf8'))
