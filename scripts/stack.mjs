@@ -55,6 +55,9 @@ export function requireEnv(name, hint = '') {
 
 export const sortedAddresses = (list) => list.map((address) => getAddress(address)).sort()
 
+export const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
+export const accepted = (fields) => ({ refused: false, ...fields })
+
 export const addressAt = async (client, address, slot) =>
   getAddress(`0x${(await client.getStorageAt({ address, slot })).slice(-40)}`)
 

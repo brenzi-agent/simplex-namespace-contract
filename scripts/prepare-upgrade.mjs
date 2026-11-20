@@ -12,8 +12,9 @@ import { createWaitForBaseRunner, promptYesNo, DEFAULTS } from './gas-tools.mjs'
 import { entryFailures, loadGovernance } from './governance-check.mjs'
 import {
   ADDRESSES_PATH, ERC1967_ADMIN_SLOT, ERC1967_IMPLEMENTATION_SLOT, PROXY_ADMIN_ABI, REPO_ROOT, TLD, UPGRADEABLE,
-  VERIFICATION_PATH, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames, immutablesIn,
-  interfaceOf, mainnetClient, placeImmutables, proxyAdminOf, proxySlots, requireEnv, storageLayout, storedValue,
+  VERIFICATION_PATH, accepted, artifact, assertBuildFresh, assertTaggedSource, constructorArgs, immutableNames,
+  immutablesIn, interfaceOf, mainnetClient, placeImmutables, proxyAdminOf, proxySlots, refusal, requireEnv,
+  storageLayout, storedValue,
 } from './stack.mjs'
 
 const journalPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.journal.jsonl`)
@@ -21,9 +22,6 @@ const attemptsLogPath = join(REPO_ROOT, `deployments.mainnet.${TLD}.upgrades.att
 const UUPS_SELECTORS = new Set(['0x3659cfe6', '0x4f1ef286', '0x52d1902d'])
 const PROXY_ADMIN_IMMUTABLE = '_proxyAdmin'
 const PROXY_ADMIN_INPUT = 'proxyAdmin'
-
-const refusal = (failures, fields = {}) => ({ refused: true, failures, ...fields })
-const accepted = (fields) => ({ refused: false, ...fields })
 
 const qualified = ({ contract, label }) => `${contract}.${label}`
 const isGap = (variable) => variable?.label === '__gap'
