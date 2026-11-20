@@ -148,7 +148,7 @@ own output may still name the URL: it is printed when the fork of a dry run fail
 
 | # | Actor | Step | Tool |
 |---|---|---|---|
-| 1 | maintainers | the conditions version of the plan's D13 merged, tagged and mirrored to git.simplex.chat: simplex-chat/simplex-chat#8272, then #8271 (the dispute period), whose merge commit is tagged | git |
+| 1 | maintainers | ens-contracts tagged `simplex-mainnet-v2` at the commit the parent pins; the conditions version of the plan's D13 (simplex-chat/simplex-chat#8272, then #8271) replaces v1's terms before launch | git |
 | 2 | operator | `terms.simplex.json` set to its links, both links checked without a key, and the file committed; v1 files renamed on the operator's checkout | git, `scripts/terms-check.mjs`, `mv` |
 | 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, no open name invoice, and no store order in the phase queued, committing, committed or registering, so that every paid order has registered on v1 (The store check) | store metrics |
 | 4 | deploy key | governance check | run 1 |
@@ -357,23 +357,20 @@ fails.
 required. Run 1 checks each link with `scripts/terms-check.mjs` before any transaction and
 stops on a failure:
 
-- the form `https://git.simplex.chat/simplex-chat/simplex-chat/raw/commit/<sha>/<path>.md#sha256=<hex>`
-- the commit is the target of a `general-terms-v*` (general) or `community-terms-v*`
-  (community) tag on both git.simplex.chat and github.com
-- both hosts serve the file as UTF-8 text of at most 256 KiB, with the same bytes, whose
-  sha256 equals the link's
+- the form `https://raw.githubusercontent.com/simplex-chat/simplex-chat/<sha>/<path>.md#sha256=<hex>`
+- GitHub serves the file as UTF-8 text of at most 256 KiB, whose sha256 equals the link's
 
-The committed file holds raw GitHub links, which fail this check: step 2 replaces them
-with the links of the tagged conditions version. The conditions linked at run 1 describe
-v2 with its dispute period: simplex-chat/simplex-chat#8272 (the registry paragraph) is
-merged first, then #8271 (the dispute period), with master merged into it; #8271's merge
-commit is tagged `general-terms-v1` and `community-terms-v1` and mirrored, and both links
-name `docs/NAMES-CONDITIONS.md` at that commit (the plan's D13):
+The webstore accepts a link only with its `#sha256=`; the dApp accepts git.simplex.chat
+links only, so its terms parser is extended to this form before its switch at step 17.
+
+Run 1 links the files of v1, simplex-chat 72fcd358 (the owner, 20 Nov); the conditions of
+the plan's D13 replace them before launch, through the admin Safe's `setGeneralTerms` and
+`setCommunityTerms`:
 
 ```json
 {
-  "generalTerms": "https://git.simplex.chat/simplex-chat/simplex-chat/raw/commit/<merge commit>/docs/NAMES-CONDITIONS.md#sha256=<hex>",
-  "communityTerms": "https://git.simplex.chat/simplex-chat/simplex-chat/raw/commit/<merge commit>/docs/NAMES-CONDITIONS.md#sha256=<hex>"
+  "generalTerms": "https://raw.githubusercontent.com/simplex-chat/simplex-chat/72fcd35893ec8ea20531757a455699f41fbaf84e/docs/NAMES-TERMS-GENERAL.md#sha256=43d5198814c6dc846bed6e539e6f0c1df0bd3b50077a816f1e6a083d58ed6969",
+  "communityTerms": "https://raw.githubusercontent.com/simplex-chat/simplex-chat/72fcd35893ec8ea20531757a455699f41fbaf84e/docs/NAMES-TERMS-COMMUNITY.md#sha256=864d07ee1cfa6a897ba8cdcccb27106c8a6da7c6f7bfc0270d8e41c0baa044c9"
 }
 ```
 
@@ -444,7 +441,6 @@ names for it:
 | Child process | Environment |
 |---|---|
 | `git rev-parse`, `git tag --points-at`, `git ls-tree` and `git status`, from the `git` helper of `scripts/stack.mjs` | `PATH`, `HOME` |
-| `git ls-remote` of `scripts/terms-check.mjs` | `PATH`, `HOME` |
 | `npx hardhat compile` | `PATH`, `HOME` |
 | the fork's `npx hardhat node` | `PATH`, `HOME`, `MAINNET_RPC_URL` |
 
@@ -1301,9 +1297,8 @@ oracle.
     `setCommunityTerms(string link)` — owner-only. After a new link, an
     acceptance of that kind not yet used at registration or claim must be made
     again; existing holders are not asked to accept it. Publish a new version by
-    committing the file, tagging it `general-terms-vN` or `community-terms-vN`,
-    waiting for the git.simplex.chat mirror, running `scripts/terms-check.mjs`,
-    and only then calling the setter through the timelock.
+    committing the file, running `scripts/terms-check.mjs` on its link, and only
+    then calling the setter through the timelock.
   - `setNamePolicy(address)` on the controller and on the registrar —
     owner-only, and they survive every freeze. Each reverts unless the address is
     a contract whose `controller()` (or `registrar()`) returns the contract

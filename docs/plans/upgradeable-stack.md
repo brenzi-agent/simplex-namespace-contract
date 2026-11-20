@@ -51,7 +51,7 @@ On v1, the registry, the registrar, the resolver and the subname registrar are i
   - `reserved-names.simplex.csv`, unchanged: `evgeny`, `brenzi` and `evgenypoberezkin` are left unreserved
   - `community-names.simplex.csv`
   - `terms.simplex.json`, with the links of the conditions version of D13
-- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version is simplex-chat/simplex-chat#8272. The terms linked at run 1 describe v2 with the dispute period of D9, so they are `docs/NAMES-CONDITIONS.md` at the merge commit of simplex-chat/simplex-chat#8271 (the dispute period), merged after #8272, with master merged into #8271 after #8272's merge. That merge commit is tagged `general-terms-v1` and `community-terms-v1` and mirrored to git.simplex.chat before run 1, and both links of `terms.simplex.json` name the file at that commit. Run 1 is stopped by a failed terms check in every case.
+- D13. The registry paragraph of simplex-chat `docs/NAMES-CONDITIONS.md` (line 7) reads: "**Registry**. The .simplex names registry is a set of contracts on the Ethereum blockchain. The contracts may be updated during a stabilization period, expected to last 12 to 24 months from the first registration, after which each of them is made immutable." This version is simplex-chat/simplex-chat#8272. The terms set before launch describe v2 with the dispute period of D9, so they are `docs/NAMES-CONDITIONS.md` at the merge commit of simplex-chat/simplex-chat#8271 (the dispute period), merged after #8272, with master merged into #8271 after #8272's merge; both links name the file at that merge commit, and the admin Safe sets them. Run 1 links v1's terms files, simplex-chat 72fcd358 (the owner, 20 Nov). Run 1 is stopped by a failed terms check in every case.
 - D14. The two names registered on v1 are registered again on v2 for their holders through the names service, as the first check of the v2 line: after the registrar step (D21), while purchase entry is still closed (D22); purchase entry opens only afterwards (the owner, 20 Nov).
 - D15. `.simplex` stays unlocked at deployment. `root.lock(labelhash("simplex"))` is a step of the launch-to-freeze plan, which keeps its freeze naming for the end state.
 - D16. Single-step transfers, by the deploy key in run 1:
@@ -548,7 +548,7 @@ Unchanged:
 
 | # | Actor | Step |
 |---|---|---|
-| 1 | maintainers | the conditions version of D13 merged, tagged and mirrored to git.simplex.chat |
+| 1 | maintainers | ens-contracts tagged `simplex-mainnet-v2` at the commit the parent pins; the conditions version of D13 replaces v1's terms before launch |
 | 2 | operator | `terms.simplex.json` set to its links, both links checked with `scripts/terms-check.mjs` without a key, and the file committed to main; v1 files renamed on the operator's checkout (section 9) |
 | 3 | operator | operator check: purchase entry closed in the webstore and the SimpleX app, no open name invoice, and no store order in the phase queued, committing, committed or registering (D22) |
 | 4 | deploy key, run 1 | governance checks (section 7) |
