@@ -2,8 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ContractFunctionRevertedError, encodeFunctionData, keccak256, pad, parseAbi, toHex, zeroAddress } from 'viem'
 import {
-  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, interfaceFailures,
-  layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
+  artifactFailures, candidateArgs, checkedProxyAdmin, dataGuardFailures, immutableReview, intendedNames,
+  interfaceFailures, layoutFailures, ownImmutables, slotFailures, transferCall, upgradeCallFailures, upgradeData,
 } from './prepare-upgrade.mjs'
 import { assembleVerification } from './build-verification.mjs'
 import {
@@ -71,6 +71,28 @@ for (const [kind, signature] of [['function', 'setSponsor(address)'], ['event', 
     assert.deepEqual(artifactFailures(compiledWith(without(signature)), new Map(), deployed, currentController, [signature]), [])
   })
 }
+
+const PRICED_ABI = parseAbi([
+  'function rentPrice(string label, uint256 duration) view returns (uint256)',
+  'event NameRenewed(string label, bytes32 indexed labelhash, uint256 cost, uint256 expires)',
+  'function sponsor() view returns (address)',
+])
+const currentPriced = { storageLayout: deployed, immutables: {}, ...interfaceOf(PRICED_ABI) }
+const unpriced = compiledWith(parseAbi(['function sponsor() view returns (address)']))
+
+test('a two-parameter function and a multi-parameter event named in INTENDED are accepted', () => {
+  const intended = intendedNames('rentPrice(string,uint256),NameRenewed(string,bytes32,uint256,uint256)')
+  assert.deepEqual(intended, ['rentPrice(string,uint256)', 'NameRenewed(string,bytes32,uint256,uint256)'])
+  assert.deepEqual(artifactFailures(unpriced, new Map(), deployed, currentPriced, intended), [])
+})
+
+test('a fragment of a signature named in INTENDED is refused', () => {
+  assert.deepEqual(artifactFailures(unpriced, new Map(), deployed, currentPriced, intendedNames('rentPrice(string')), [
+    'it lacks the function rentPrice(string,uint256) of the current implementation',
+    'it lacks the event NameRenewed(string,bytes32,uint256,uint256) of the current implementation',
+    'INTENDED names rentPrice(string, neither an immutable nor a function or event of the current implementation',
+  ])
+})
 
 test('a variable appended in place of the first slot of the trailing __gap is accepted', () => {
   const appended = [...prefix, controller('nextSponsor', 55, 0, address), controller('__gap', 56, 0, gap(42))]

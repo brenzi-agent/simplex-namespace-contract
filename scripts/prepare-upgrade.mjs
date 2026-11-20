@@ -277,6 +277,21 @@ export async function prepareUpgrade({ deploy }, client, name, addresses, verifi
   })
 }
 
+export function intendedNames(text) {
+  const names = ['']
+  let depth = 0
+  for (const char of text) {
+    if (char === ',' && depth === 0) {
+      names.push('')
+      continue
+    }
+    if (char === '(') depth += 1
+    if (char === ')') depth -= 1
+    names[names.length - 1] += char
+  }
+  return names.map((name) => name.trim()).filter(Boolean)
+}
+
 function jsonArrayEnv(name) {
   const text = process.env[name]
   if (text === undefined) return undefined
@@ -295,7 +310,7 @@ const ACTIONS = {
     const rpcUrl = requireEnv('MAINNET_RPC_URL')
     const maxBaseFeeGwei = requireEnv('MAX_BASE_FEE_GWEI')
     const request = {
-      intended: (process.env.INTENDED ?? '').split(',').filter(Boolean),
+      intended: intendedNames(process.env.INTENDED ?? ''),
       constructorArgs: jsonArrayEnv('CTOR_ARGS'),
       call: process.env.DATA ? { signature: process.env.DATA, args: jsonArrayEnv('DATA_ARGS') ?? [] } : undefined,
     }
